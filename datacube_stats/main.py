@@ -23,8 +23,8 @@ from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
-from datacube_apps.stats.output_drivers import NetcdfOutputDriver, RioOutputDriver
-from datacube_apps.stats.statistics import ValueStat, WofsStats, NormalisedDifferenceStats, PerStatIndexStat, \
+from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver
+from datacube_stats.statistics import ValueStat, WofsStats, NormalisedDifferenceStats, PerStatIndexStat, \
     compute_medoid, percentile_stat, StatsConfigurationError, percentile_stat_no_prov
 
 _LOG = logging.getLogger(__name__)
