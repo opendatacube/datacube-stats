@@ -1,1 +1,0 @@
-# agdc_statistics
