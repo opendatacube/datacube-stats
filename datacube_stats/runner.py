@@ -19,7 +19,7 @@ def run_tasks(tasks, executor, run_task, process_result, queue_size=50):
     results = []
     task_queue = itertools.islice(tasks, queue_size)
     for task in task_queue:
-        _LOG.info('Running task: %s', task['tile_index'])
+        _LOG.info('Running _task: %s', task['tile_index'])
         results.append(executor.submit(run_task, task=task))
 
     click.echo('Task queue filled, waiting for first result...')
@@ -28,10 +28,10 @@ def run_tasks(tasks, executor, run_task, process_result, queue_size=50):
     while results:
         result, results = executor.next_completed(results, None)
 
-        # submit a new task to replace the one we just finished
+        # submit a new _task to replace the one we just finished
         task = next(tasks, None)
         if task:
-            _LOG.info('Running task: %s', task['tile_index'])
+            _LOG.info('Running _task: %s', task['tile_index'])
             results.append(executor.submit(run_task, task=task))
 
         # Process the result
@@ -44,7 +44,7 @@ def run_tasks(tasks, executor, run_task, process_result, queue_size=50):
             failed += 1
             continue
         finally:
-            # Release the task to free memory so there is no leak in executor/scheduler/worker process
+            # Release the _task to free memory so there is no leak in executor/scheduler/worker process
             executor.release(result)
 
     click.echo('%d successful, %d failed' % (successful, failed))

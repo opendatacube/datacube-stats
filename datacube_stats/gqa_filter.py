@@ -23,5 +23,5 @@ def list_gqa_filtered_cells(index, gw, pix_th=1, cell_index=None, **indexers):
         if check_intersect(geobox.extent, dataset.extent.to_crs(gw.grid_spec.crs)):
             if get_gqa(index, dataset.id) < pix_th:
                 datasets.setdefault(cell_index, {'datasets': [],
-                                                 'geobox': geobox})['datasets'].append(dataset)
+                                                 '_geobox': geobox})['datasets'].append(dataset)
     return gw.cell_sources(datasets, query_group_by(**indexers))

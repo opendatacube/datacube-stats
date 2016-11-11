@@ -22,20 +22,36 @@ STANDARD_VARIABLE_PARAM_NAMES = {'zlib',
 
 
 class OutputDriver(object):
+    """
+    Handles the creation of output data files for a StatsTask.
+
+    Depending on the implementation, may create one or more files per instance.
+
+    To use, instantiate the class, then use as a context manager, eg.
+
+        output_driver = MyOutputDriver(storage, task, output_path)
+        with output_driver:
+            output_driver.write_data(prod_name, measure_name, tile_index, values)
+
+    :param StatsTask task: A StatsTask that will be producing data
+    :param output_path: Directory name to output file/s into
+    :param storage: Dictionary structure describing the _storage format
+    :param app_info:
+    """
     # TODO: Add check for valid filename extensions in each driver
     def __init__(self, storage, task, output_path, app_info=None):
-        self.task = task
-        self.output_path = output_path
-        self.storage = storage
+        self._task = task
+        self._output_path = output_path
+        self._storage = storage
 
-        self.geobox = task.geobox
-        self.output_products = task.output_products
+        self._geobox = task.geobox
+        self._output_products = task.output_products
 
-        self.output_files = {}
-        self.app_info = app_info
+        self._output_files = {}
+        self._app_info = app_info
 
     def close_files(self):
-        for output_file in self.output_files.values():
+        for output_file in self._output_files.values():
             output_file.close()
 
     def open_output_files(self):
@@ -45,7 +61,7 @@ class OutputDriver(object):
         raise NotImplementedError
 
     def _get_dtype(self, out_prod_name, measurement_name):
-        return self.output_products[out_prod_name].product.measurements[measurement_name]['dtype']
+        return self._output_products[out_prod_name].product.measurements[measurement_name]['dtype']
 
     def __enter__(self):
         self.open_output_files()
@@ -62,16 +78,16 @@ class NetcdfOutputDriver(OutputDriver):
     valid_extensions = ['nc']
 
     def open_output_files(self):
-        for prod_name, stat in self.output_products.items():
-            filename_template = str(Path(self.output_path, stat.definition['file_path_template']))
-            output_filename = _format_filename(filename_template, **self.task)
-            self.output_files[prod_name] = self._create_storage_unit(stat, output_filename)
+        for prod_name, stat in self._output_products.items():
+            filename_template = str(Path(self._output_path, stat.definition['file_path_template']))
+            output_filename = _format_filename(filename_template, **self._task)
+            self._output_files[prod_name] = self._create_storage_unit(stat, output_filename)
 
     def _create_storage_unit(self, stat, output_filename):
-        geobox = self.geobox
+        geobox = self._geobox
         all_measurement_defns = list(stat.product.measurements.values())
 
-        datasets, sources = _find_source_datasets(self.task, stat, geobox, self.app_info, uri=output_filename.as_uri())
+        datasets, sources = _find_source_datasets(self._task, stat, geobox, self._app_info, uri=output_filename.as_uri())
 
         variable_params = self._create_netcdf_var_params(stat)
         nco = self._nco_from_sources(sources,
@@ -85,8 +101,8 @@ class NetcdfOutputDriver(OutputDriver):
         return nco
 
     def _create_netcdf_var_params(self, stat):
-        chunking = self.storage['chunking']
-        chunking = [chunking[dim] for dim in self.storage['dimension_order']]
+        chunking = self._storage['chunking']
+        chunking = [chunking[dim] for dim in self._storage['dimension_order']]
 
         variable_params = {}
         for measurement in stat.data_measurements:
@@ -111,8 +127,8 @@ class NetcdfOutputDriver(OutputDriver):
         return create_netcdf_storage_unit(filename, geobox.crs, coordinates, variables, variable_params)
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
-        self.output_files[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(values)
-        self.output_files[prod_name].sync()
+        self._output_files[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(values)
+        self._output_files[prod_name].sync()
         _LOG.debug("Updated %s %s", measurement_name, tile_index[1:])
 
 
@@ -132,13 +148,13 @@ class RioOutputDriver(OutputDriver):
     }
 
     def open_output_files(self):
-        for prod_name, stat in self.output_products.items():
+        for prod_name, stat in self._output_products.items():
             for measurename, measure_def in stat.product.measurements.items():
-                filename_template = str(Path(self.output_path, stat.definition['file_path_template']))
+                filename_template = str(Path(self._output_path, stat.definition['file_path_template']))
 
                 output_filename = _format_filename(filename_template,
                                                    var_name=measurename,
-                                                   **self.task)
+                                                   **self._task)
                 try:
                     output_filename.parent.mkdir(parents=True)
                 except OSError:
@@ -147,15 +163,15 @@ class RioOutputDriver(OutputDriver):
                 profile = self.default_profile.copy()
 
                 profile.update({
-                    'blockxsize': self.storage['chunking']['x'],
-                    'blockysize': self.storage['chunking']['y'],
+                    'blockxsize': self._storage['chunking']['x'],
+                    'blockysize': self._storage['chunking']['y'],
 
                     'dtype': measure_def['dtype'],
                     'nodata': measure_def['nodata'],
-                    'width': self.geobox.width,
-                    'height': self.geobox.height,
-                    'affine': self.geobox.affine,
-                    'crs': self.geobox.crs.crs_str,
+                    'width': self._geobox.width,
+                    'height': self._geobox.height,
+                    'affine': self._geobox.affine,
+                    'crs': self._geobox.crs.crs_str,
                     'count': 1
                 })
 
@@ -164,10 +180,10 @@ class RioOutputDriver(OutputDriver):
                 _LOG.debug("Opening %s for writing.", output_filename)
 
                 src = rasterio.open(str(output_filename), mode='w', **profile)
-                # src.update_tags(created=self.app_info) # TODO record creation metadata
-                src.update_tags(1, platform=self.task.sources[0]['data'].product.name,
-                                date='{:%Y-%m-%d}'.format(self.task.time_period[0]))
-                self.output_files[output_name] = src
+                # src.update_tags(created=self._app_info) # TODO record creation metadata
+                src.update_tags(1, platform=self._task.sources[0]['data'].product.name,
+                                date='{:%Y-%m-%d}'.format(self._task.time_period[0]))
+                self._output_files[output_name] = src
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
         output_name = prod_name + measurement_name
@@ -177,7 +193,7 @@ class RioOutputDriver(OutputDriver):
 
         dtype = self._get_dtype(prod_name, measurement_name)
 
-        self.output_files[output_name].write(values.astype(dtype), indexes=1, window=window)
+        self._output_files[output_name].write(values.astype(dtype), indexes=1, window=window)
 
 
 def _format_filename(path_template, **kwargs):

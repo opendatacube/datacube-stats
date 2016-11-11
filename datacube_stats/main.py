@@ -23,14 +23,20 @@ from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
-from datacube_stats.as_task_app import run_tasks
-from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver
+from datacube_stats.runner import run_tasks
+from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver, OutputDriver
 from datacube_stats.statistics import ValueStat, WofsStats, NormalisedDifferenceStats, PerStatIndexStat, \
     compute_medoid, percentile_stat, StatsConfigurationError, percentile_stat_no_prov
 
-__all__ = ['StatsApp']
+__all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
 DEFAULT_GROUP_BY = 'time'
+DEFAULT_TASK_CHUNKING = {'chunking': {'x': 1000, 'y': 1000}}
+
+OUTPUT_DRIVERS = {
+    'NetCDF CF': NetcdfOutputDriver,
+    'Geotiff': RioOutputDriver
+}
 
 STATS = {
     'min': ValueStat.from_stat_name('min'),
@@ -55,6 +61,19 @@ STATS = {
     'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'wofs': WofsStats(),
 }
+
+
+@click.command(name='_output_products')
+@click.option('--app-config', '-c', 'stats_config_file',
+              type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
+              help='configuration file location', callback=to_pathlib)
+@ui.global_cli_options
+@ui.executor_cli_options
+@ui.pass_index(app_name='agdc-_output_products')
+def main(index, stats_config_file, executor):
+    app = create_stats_app(stats_config_file, index)
+
+    app.run(executor)
 
 
 class StatProduct(object):
@@ -92,11 +111,33 @@ class StatProduct(object):
                 'format': 'NetCDF',
                 'product_type': self.stat_name,
             },
-            'storage': storage,
+            '_storage': storage,
             'measurements': data_measurements
         }
         DatasetType.validate(product_definition)
         return DatasetType(metadata_type, product_definition)
+
+
+class StatsTask(object):
+    def __init__(self, time_period, tile_index=None, sources=None, output_products=None):
+        self.tile_index = tile_index  # Only used for file naming...
+        self.time_period = time_period
+        self.sources = sources if sources is not None else []
+        self.output_products = output_products if output_products is not None else []
+
+    @property
+    def geobox(self):
+        return self.sources[0]['data'].geobox
+
+    @property
+    def time_attributes(self):
+        return self.sources[0]['data'].sources.time.attrs
+
+    def keys(self):
+        return self.__dict__.keys()
+
+    def __getitem__(self, item):
+        return getattr(self, item)
 
 
 class StatsApp(object):
@@ -124,7 +165,7 @@ class StatsApp(object):
         #: :attr:`output_driver`.
         self.location = None
 
-        #: How to slice a task up spatially to to fit into memory.
+        #: How to slice a _task up spatially to to fit into memory.
         self.computation = None
 
         #: An iterable of date ranges.
@@ -134,15 +175,15 @@ class StatsApp(object):
         #: and will define spatial and temporal boundaries, as well as statistical operations to be run.
         self.task_generator = None
 
-        #: A class which knows how to create and write out data to a permanent storage format.
+        #: A class which knows how to create and write out data to a permanent _storage format.
         #: Implements :class:`.output_drivers.OutputDriver`.
         self.output_driver = None
 
         #: An open database connection
         self.index = None
 
-        #: A function to process the result of a complated task
-        #: Takes a single argument of the task result
+        #: A function to process the result of a complated _task
+        #: Takes a single argument of the _task result
         self.process_completed = None
 
     def validate(self):
@@ -170,9 +211,12 @@ class StatsApp(object):
 
         assert callable(self.task_generator)
         assert callable(self.output_driver)
+        assert isinstance(self.output_driver, OutputDriver)
         assert callable(self.process_completed)
 
-    def run(self, executor, output_products):
+    def run(self, executor):
+        output_products = self.ensure_output_products(self.index)
+
         tasks = self.generate_tasks(output_products)
 
         run_tasks(tasks, executor, self.execute_task, self.process_completed)
@@ -186,7 +230,7 @@ class StatsApp(object):
           * tile_index
           * time_period
           * sources: (list of)
-          * output_products
+          * _output_products
 
         Sources is a list of dictionaries containing:
 
@@ -203,12 +247,12 @@ class StatsApp(object):
             yield task
 
     def execute_task(self, task):
-        app_info = get_app_metadata(self.config_file)
+        app_info = _get_app_metadata(self.config_file)
         with self.output_driver(task=task, output_path=self.location, app_info=app_info,
                                 storage=self.storage) as output_files:
             example_tile = task.sources[0]['data']
             for sub_tile_slice in tile_iter(example_tile, self.computation['chunking']):
-                data = load_data(sub_tile_slice, task.sources)
+                data = _load_data(sub_tile_slice, task.sources)
 
                 for prod_name, stat in task.output_products.items():
                     _LOG.info("Computing %s in tile %s", prod_name, sub_tile_slice)
@@ -219,7 +263,7 @@ class StatsApp(object):
                     for var_name, var in stats_data.data_vars.items():
                         output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
 
-    def make_output_products(self, index, metadata_type='eo'):
+    def ensure_output_products(self, index, metadata_type='eo'):
         """
         Return a dict mapping Output Product Name to StatProduct
 
@@ -229,7 +273,7 @@ class StatsApp(object):
 
         output_products = {}
 
-        measurements = source_measurement_defs(index, self.sources)
+        measurements = _source_measurement_defs(index, self.sources)
 
         metadata_type = index.metadata_types.get_by_name(metadata_type)
         for prod in self.output_products:
@@ -241,14 +285,19 @@ class StatsApp(object):
         return output_products
 
 
-def _make_grid_spec(storage):
-    """Make a grid spec based on a storage spec."""
-    assert 'tile_size' in storage
+def _load_data(sub_tile_slice, sources):
+    """
+    Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
 
-    crs = CRS(storage['crs'])
-    return GridSpec(crs=crs,
-                    tile_size=[storage['tile_size'][dim] for dim in crs.dimensions],
-                    resolution=[storage['resolution'][dim] for dim in crs.dimensions])
+    :param sub_tile_slice: A portion of a tile, tuple coordinates
+    :param sources: a dictionary containing `data`, `spec` and `masks`
+    :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
+    """
+    datasets = [_load_masked_data(sub_tile_slice, source_prod) for source_prod in sources]
+    for idx, dataset in enumerate(datasets):
+        dataset.coords['source'] = ('time', numpy.repeat(idx, dataset.time.size))
+    data = xarray.concat(datasets, dim='time')
+    return data.isel(time=data.time.argsort())  # sort along time dim
 
 
 def _load_masked_data(sub_tile_slice, source_prod):
@@ -270,65 +319,117 @@ def _load_masked_data(sub_tile_slice, source_prod):
     return data
 
 
-def load_data(sub_tile_slice, sources):
+def _source_measurement_defs(index, sources):
     """
-    Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
+    Look up desired measurements from sources in the database index
 
-    :param sub_tile_slice: A portion of a tile, tuple coordinates
-    :param sources: a dictionary containing `data`, `spec` and `masks`
-    :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
+    :return: list of measurement definitions
     """
-    datasets = [_load_masked_data(sub_tile_slice, source_prod) for source_prod in sources]
-    for idx, dataset in enumerate(datasets):
-        dataset.coords['source'] = ('time', numpy.repeat(idx, dataset.time.size))
-    data = xarray.concat(datasets, dim='time')
-    return data.isel(time=data.time.argsort())  # sort along time dim
+    source_defn = sources[0]  # Sources should have been checked to all have the same measureemnts
+
+    source_measurements = index.products.get_by_name(source_defn['product']).measurements
+
+    measurements = [measurement for name, measurement in source_measurements.items()
+                    if name in source_defn['measurements']]
+
+    return measurements
 
 
-OUTPUT_DRIVERS = {
-    'NetCDF CF': NetcdfOutputDriver,
-    'Geotiff': RioOutputDriver
-}
+def _get_app_metadata(config_file):
+    return {
+        'lineage': {
+            'algorithm': {
+                'name': 'datacube-stats',
+                'version': datacube_stats.__version__,
+                'repo_url': 'https://github.com/GeoscienceAustralia/agdc_statistics.git',
+                'parameters': {'configuration_file': str(config_file)}
+            },
+        }
+    }
 
 
-class StatsTask(object):
-    def __init__(self, time_period, tile_index=None, sources=None, output_products=None):
-        self.tile_index = tile_index  # Only used for file naming...
-        self.time_period = time_period
-        self.sources = sources if sources is not None else []
-        self.output_products = output_products if output_products is not None else []
+def find_periods_with_data(index, product_names, period_duration='1 day',
+                           start_date='1985-01-01', end_date='2000-01-01'):
+    # TODO: Read 'simple' job configuration from file
+    query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
 
-    @property
-    def geobox(self):
-        return self.sources[0]['data'].geobox
+    valid_dates = set()
+    for product in product_names:
+        counts = index.datasets.count_product_through_time(period_duration, product=product,
+                                                           **Query(**query).search_terms)
+        valid_dates.update(time_range for time_range, count in counts if count > 0)
 
-    @property
-    def time_attributes(self):
-        return self.sources[0]['data'].sources.time.attrs
-
-    def keys(self):
-        return self.__dict__.keys()
-
-    def __getitem__(self, item):
-        return getattr(self, item)
+    for time_range in sorted(valid_dates):
+        yield time_range.begin, time_range.end
 
 
-def list_tiles_simple(index, product, time, group_by, res):
-    dc = Datacube(index=index)
-    datasets = dc.product_observations(product=product, time=time, **input_region)
-    group_by = query_group_by(group_by=group_by)
-    sources = dc.product_sources(datasets, group_by)
+def create_stats_app(configuration_file, index=None):
+    """
+    Create a StatsApp to run a processing job, based on a configuration file
 
-    res = storage['resolution']
+    :param configuration_file: pathname to a yaml configuration file
+    :param index: open database connection
+    :return: read to run StatsApp
+    """
+    _, config = next(read_documents(configuration_file))
+    stats_app = StatsApp()
+    stats_app.index = index
+    stats_app.config_file = configuration_file
+    stats_app.storage = config['storage']
+    stats_app.sources = config['sources']
+    stats_app.output_products = config['output_products']
+    stats_app.location = config['location']
+    stats_app.computation = config.get('computation', DEFAULT_TASK_CHUNKING)
 
-    geopoly = query_geopolygon(**input_region)
-    geopoly = geopoly.to_crs(CRS(storage['crs']))
-    geobox = GeoBox.from_geopolygon(geopoly, (res['y'], res['x']))
+    date_ranges = config['date_ranges']
+    if date_ranges['type'] == 'simple':  # TODO, Can't pickle generator objects
+        stats_app.date_ranges = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
+                                                   end=pd.to_datetime(date_ranges['end_date']),
+                                                   stats_duration=date_ranges['stats_duration'],
+                                                   step_size=date_ranges['step_size']))
+    elif date_ranges['type'] == 'find_daily_data':
+        product_names = [source['product'] for source in config['sources']]
+        stats_app.date_ranges = list(find_periods_with_data(index, product_names=product_names,
+                                                            start_date=date_ranges['start_date'],
+                                                            end_date=date_ranges['end_date']))
+    else:
+        raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
+                                      'type=find_daily_data')
 
-    return dict('only', Tile(sources, geobox))
+    if 'input_region' in config:
+        if config['input_region'].get('output_type') == 'tiled':
+            # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
+            _LOG.info('Found geojson `input region`, outputing tiles.')
+            grid_spec = _make_grid_spec(config['_storage'])
+            geopolygon = GeoPolygon.from_geojson(config['input_region']['geometry'], CRS('EPSG:4326'))
+            stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
+        else:
+            _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
+            stats_app.task_generator = partial(_generate_non_gridded_tasks, input_region=config['input_region'],
+                                               storage=stats_app.storage)
+    else:
+        _LOG.info('Default output, full available spatial region, gridded files.')
+        grid_spec = _make_grid_spec(config['storage'])
+        stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec)
+
+    stats_app.output_driver = OUTPUT_DRIVERS[config['_storage']['driver']]
+    stats_app.process_completed = lambda x: None  # TODO: Save dataset to database
+    stats_app.validate()
+
+    return stats_app
 
 
-def generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None):
+def _make_grid_spec(storage):
+    """Make a grid spec based on a _storage spec."""
+    assert 'tile_size' in storage
+
+    crs = CRS(storage['crs'])
+    return GridSpec(crs=crs,
+                    tile_size=[storage['tile_size'][dim] for dim in crs.dimensions],
+                    resolution=[storage['resolution'][dim] for dim in crs.dimensions])
+
+
+def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None):
     """
     Generate the required tasks through time and across a spatial grid.
 
@@ -337,7 +438,7 @@ def generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolyg
     """
     workflow = GridWorkflow(index, grid_spec=grid_spec)
     for time_period in date_ranges:
-        _LOG.debug('Making output_products tasks for time period: %s', time_period)
+        _LOG.debug('Making _output_products tasks for time period: %s', time_period)
 
         # Tasks are grouped by tile_index, and may contain sources from multiple places
         # Each source may be masked by multiple masks
@@ -367,7 +468,7 @@ def generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolyg
             yield task
 
 
-def generate_non_gridded_tasks(index, storage, date_ranges, input_region, sources_spec):
+def _generate_non_gridded_tasks(index, storage, date_ranges, input_region, sources_spec):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
 
@@ -415,135 +516,8 @@ def generate_non_gridded_tasks(index, storage, date_ranges, input_region, source
             })
 
         if task.sources:
-            _LOG.info('Created task for time period: %s', time_period)
+            _LOG.info('Created _task for time period: %s', time_period)
             yield task
-
-
-def gqa_filter():
-    import datacube
-
-    def get_gqa(index, id_):
-        dataset = index.datasets.get(id_, include_sources=True)
-        # dataset.sources['0'].sources['level1'].metadata_doc['gqa']['residual']['iterative_mean']
-        return dataset.sources['0'].sources['level1'].metadata.gqa
-
-    dc = datacube.Datacube()
-    datasets = dc.index.datasets.search(product='ls8_nbar_albers')
-    datasets = (dataset for dataset in datasets if get_gqa(dc.index, dataset.id) > 0.25)
-
-
-def source_measurement_defs(index, sources):
-    """
-    Look up desired measurements from sources in the database index
-
-    :return: list of measurement definitions
-    """
-    source_defn = sources[0]  # Sources should have been checked to all have the same measureemnts
-
-    source_measurements = index.products.get_by_name(source_defn['product']).measurements
-
-    measurements = [measurement for name, measurement in source_measurements.items()
-                    if name in source_defn['measurements']]
-
-    return measurements
-
-
-def get_app_metadata(config_file):
-    return {
-        'lineage': {
-            'algorithm': {
-                'name': 'datacube-stats',
-                'version': datacube_stats.__version__,
-                'repo_url': 'https://github.com/GeoscienceAustralia/agdc_statistics.git',
-                'parameters': {'configuration_file': str(config_file)}
-            },
-        }
-    }
-
-
-def find_periods_with_data(index, product_names, period_duration='1 day',
-                           start_date='1985-01-01', end_date='2000-01-01'):
-    query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
-
-    valid_dates = set()
-    for product in product_names:
-        counts = index.datasets.count_product_through_time(period_duration, product=product,
-                                                           **Query(**query).search_terms)
-        valid_dates.update(time_range for time_range, count in counts if count > 0)
-
-    for time_range in sorted(valid_dates):
-        yield time_range.begin, time_range.end
-
-
-def create_stats_app(configuration_file, index=None):
-    """
-    Create a StatsApp to run a processing job, based on a configuration file
-
-    :param configuration_file: pathname to a yaml configuration file
-    :param index: open database connection
-    :return: read to run StatsApp
-    """
-    _, config = next(read_documents(configuration_file))
-    stats_app = StatsApp()
-    stats_app.index = index
-    stats_app.config_file = configuration_file
-    stats_app.storage = config['storage']
-    stats_app.sources = config['sources']
-    stats_app.output_products = config['output_products']
-    stats_app.location = config['location']
-    stats_app.computation = config.get('computation', {'chunking': {'x': 1000, 'y': 1000}})
-
-    date_ranges = config['date_ranges']
-    if date_ranges['type'] == 'simple':  # TODO, Can't pickle generator objects
-        stats_app.date_ranges = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
-                                                   end=pd.to_datetime(date_ranges['end_date']),
-                                                   stats_duration=date_ranges['stats_duration'],
-                                                   step_size=date_ranges['step_size']))
-    elif date_ranges['type'] == 'find_daily_data':
-        product_names = [source['product'] for source in config['sources']]  # TODO: Hardcoded junk
-        stats_app.date_ranges = list(find_periods_with_data(index, product_names=product_names,
-                                                            start_date=date_ranges['start_date'],
-                                                            end_date=date_ranges['end_date']))
-    else:
-        raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
-                                      'type=find_daily_data')
-
-    if 'input_region' in config:
-        if config['input_region'].get('output_type') == 'tiled':
-            # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
-            _LOG.info('Found geojson `input region`, outputing tiles.')
-            grid_spec = _make_grid_spec(config['storage'])
-            geopolygon = GeoPolygon.from_geojson(config['input_region']['geometry'], CRS('EPSG:4326'))
-            stats_app.task_generator = partial(generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
-        else:
-            _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
-            stats_app.task_generator = partial(generate_non_gridded_tasks, input_region=config['input_region'],
-                                               storage=stats_app.storage)
-    else:
-        _LOG.info('Default output, full available spatial region, gridded files.')
-        grid_spec = _make_grid_spec(config['storage'])
-        stats_app.task_generator = partial(generate_gridded_tasks, grid_spec=grid_spec)
-
-    stats_app.output_driver = OUTPUT_DRIVERS[config['storage']['driver']]
-    stats_app.process_completed = lambda x: None  # TODO: Save dataset to database
-    stats_app.validate()
-
-    return stats_app
-
-
-@click.command(name='output_products')
-@click.option('--app-config', '-c', 'stats_config_file',
-              type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
-              help='configuration file location', callback=to_pathlib)
-@ui.global_cli_options
-@ui.executor_cli_options
-@ui.pass_index(app_name='agdc-output_products')
-def main(index, stats_config_file, executor):
-    app = create_stats_app(stats_config_file, index)
-
-    output_products = app.make_output_products(index)
-
-    app.run(executor, output_products)
 
 
 if __name__ == '__main__':
