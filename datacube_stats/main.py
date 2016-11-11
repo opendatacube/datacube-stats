@@ -5,7 +5,6 @@ Create statistical summaries command
 
 from __future__ import absolute_import, print_function
 
-import itertools
 import logging
 from functools import partial
 
@@ -165,7 +164,7 @@ class StatsApp(object):
     def run(self, index, executor, output_products, queue_length=50):
         tasks = self.generate_tasks(index, output_products)
 
-        completed_tasks = map_orderless(executor, self.execute_stats_task, tasks, queue=queue_length)
+        completed_tasks = map_orderless(executor, self.execute_stats_task, tasks, queue_length=queue_length)
 
         for task in completed_tasks:
             yield task
@@ -286,10 +285,10 @@ OUTPUT_DRIVERS = {
 
 class StatsTask(object):
     def __init__(self, time_period, tile_index=None, sources=None, output_products=None):
-        self.tile_index = tile_index
+        self.tile_index = tile_index  # Only used for file naming...
         self.time_period = time_period
-        self.sources = sources or []
-        self.output_products = output_products or []
+        self.sources = sources if sources is not None else []
+        self.output_products = output_products if output_products is not None else []
 
     @property
     def geobox(self):
@@ -304,6 +303,21 @@ class StatsTask(object):
 
     def __getitem__(self, item):
         return getattr(self, item)
+
+
+def list_tiles_simple(index, product, time, group_by, res):
+    dc = Datacube(index=index)
+    datasets = dc.product_observations(product=product, time=time, **input_region)
+    group_by = query_group_by(group_by=group_by)
+    sources = dc.product_sources(datasets, group_by)
+
+    res = storage['resolution']
+
+    geopoly = query_geopolygon(**input_region)
+    geopoly = geopoly.to_crs(CRS(storage['crs']))
+    geobox = GeoBox.from_geopolygon(geopoly, (res['y'], res['x']))
+
+    return dict('only', Tile(sources, geobox))
 
 
 def generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None):
@@ -321,12 +335,13 @@ def generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolyg
         # Each source may be masked by multiple masks
         tasks = {}
         for source_spec in sources_spec:
+            group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
             data = workflow.list_cells(product=source_spec['product'], time=time_period,
-                                       group_by=source_spec.get('group_by', DEFAULT_GROUP_BY),
+                                       group_by=group_by_name,
                                        geopolygon=geopolygon)
             masks = [workflow.list_cells(product=mask['product'],
                                          time=time_period,
-                                         group_by=source_spec.get('group_by', DEFAULT_GROUP_BY),
+                                         group_by=group_by_name,
                                          geopolygon=geopolygon)
                      for mask in source_spec.get('masks', [])]
 
@@ -369,7 +384,6 @@ def generate_non_gridded_tasks(index, storage, date_ranges, input_region, source
         return Tile(sources, geobox)
 
     for time_period in date_ranges:
-
         task = StatsTask(time_period)
 
         for source_spec in sources_spec:
@@ -395,6 +409,19 @@ def generate_non_gridded_tasks(index, storage, date_ranges, input_region, source
         if task.sources:
             _LOG.info('Created task for time period: %s', time_period)
             yield task
+
+
+def gqa_filter():
+    import datacube
+
+    def get_gqa(index, id_):
+        dataset = index.datasets.get(id_, include_sources=True)
+        # dataset.sources['0'].sources['level1'].metadata_doc['gqa']['residual']['iterative_mean']
+        return dataset.sources['0'].sources['level1'].metadata.gqa
+
+    dc = datacube.Datacube()
+    datasets = dc.index.datasets.search(product='ls8_nbar_albers')
+    datasets = (dataset for dataset in datasets if get_gqa(dc.index, dataset.id) > 0.25)
 
 
 def source_measurement_defs(index, sources):
@@ -426,11 +453,42 @@ def get_app_metadata(config_file):
     }
 
 
-def map_orderless(executor, core, tasks, queue=50):
-    # tasks = (i for i in tasks)  # ensure input is a generator
+from queue import Queue
+import threading
 
-    # pre-fill queue
-    results = [executor.submit(core, t) for t in itertools.islice(tasks, queue)]
+def results_submitter(queue, result_lock):
+    while True:
+        result = queue.get()
+        if result is None:
+            break
+        result.process()
+        queue.task_done()
+
+
+
+
+def map_orderless(executor, core, tasks, queue_length=50):
+    # tasks = (i for i in tasks)  # ensure input is a generator
+    results = []
+
+    result_lock = threading.Lock()
+
+    with result_lock:
+        results.append('foo')
+
+    jobs = Queue(maxsize=queue_length)
+
+    # Only need one
+    t = threading.Thread(target=results_submitter, kwargs=dict(queue=jobs))
+    t.start()
+
+    for task in tasks:
+        queue.put(executor.submit(core, task))
+
+
+    q.join()
+
+
 
     while results:
         future = next(executor.as_completed(results))  # block
@@ -439,9 +497,9 @@ def map_orderless(executor, core, tasks, queue=50):
 
         task = next(tasks, None)
         if task is not None:
-            results.append(executor.submit(core, *task))  # queue another
+            results.append(executor.submit(core, *task))  # queue_length another
 
-        yield executor.result(future)
+
 
 
 def find_periods_with_data(index, product_names, period_duration='1 day',
