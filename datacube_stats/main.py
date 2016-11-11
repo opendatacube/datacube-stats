@@ -2,7 +2,6 @@
 Create statistical summaries command
 
 """
-
 from __future__ import absolute_import, print_function
 
 import logging
@@ -12,6 +11,8 @@ import click
 import numpy
 import pandas as pd
 import xarray
+
+import datacube_stats
 from datacube import Datacube
 from datacube.api import make_mask
 from datacube.api.grid_workflow import GridWorkflow, Tile
@@ -22,10 +23,12 @@ from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
+from datacube_stats.as_task_app import run_tasks
 from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver
 from datacube_stats.statistics import ValueStat, WofsStats, NormalisedDifferenceStats, PerStatIndexStat, \
     compute_medoid, percentile_stat, StatsConfigurationError, percentile_stat_no_prov
 
+__all__ = ['StatsApp']
 _LOG = logging.getLogger(__name__)
 DEFAULT_GROUP_BY = 'time'
 
@@ -135,7 +138,14 @@ class StatsApp(object):
         #: Implements :class:`.output_drivers.OutputDriver`.
         self.output_driver = None
 
-    def validate_config(self):
+        #: An open database connection
+        self.index = None
+
+        #: A function to process the result of a complated task
+        #: Takes a single argument of the task result
+        self.process_completed = None
+
+    def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
         # Check output product names are unique
         output_names = [prod['name'] for prod in self.output_products]
@@ -160,16 +170,14 @@ class StatsApp(object):
 
         assert callable(self.task_generator)
         assert callable(self.output_driver)
+        assert callable(self.process_completed)
 
-    def run(self, index, executor, output_products, queue_length=50):
-        tasks = self.generate_tasks(index, output_products)
+    def run(self, executor, output_products):
+        tasks = self.generate_tasks(output_products)
 
-        completed_tasks = map_orderless(executor, self.execute_stats_task, tasks, queue_length=queue_length)
+        run_tasks(tasks, executor, self.execute_task, self.process_completed)
 
-        for task in completed_tasks:
-            yield task
-
-    def generate_tasks(self, index, output_products):
+    def generate_tasks(self, output_products):
         """
         Generate a sequence of `StatsTask` definitions.
 
@@ -189,12 +197,12 @@ class StatsApp(object):
         :param output_products: List of output product definitions
         :return:
         """
-        for task in self.task_generator(index=index, date_ranges=self.date_ranges,
+        for task in self.task_generator(index=self.index, date_ranges=self.date_ranges,
                                         sources_spec=self.sources):
             task.output_products = output_products
             yield task
 
-    def execute_stats_task(self, task):
+    def execute_task(self, task):
         app_info = get_app_metadata(self.config_file)
         with self.output_driver(task=task, output_path=self.location, app_info=app_info,
                                 storage=self.storage) as output_files:
@@ -445,61 +453,12 @@ def get_app_metadata(config_file):
         'lineage': {
             'algorithm': {
                 'name': 'datacube-stats',
-                'version': 'unknown',  # TODO get version from somewhere
+                'version': datacube_stats.__version__,
                 'repo_url': 'https://github.com/GeoscienceAustralia/agdc_statistics.git',
                 'parameters': {'configuration_file': str(config_file)}
             },
         }
     }
-
-
-from queue import Queue
-import threading
-
-def results_submitter(queue, result_lock):
-    while True:
-        result = queue.get()
-        if result is None:
-            break
-        result.process()
-        queue.task_done()
-
-
-
-
-def map_orderless(executor, core, tasks, queue_length=50):
-    # tasks = (i for i in tasks)  # ensure input is a generator
-    results = []
-
-    result_lock = threading.Lock()
-
-    with result_lock:
-        results.append('foo')
-
-    jobs = Queue(maxsize=queue_length)
-
-    # Only need one
-    t = threading.Thread(target=results_submitter, kwargs=dict(queue=jobs))
-    t.start()
-
-    for task in tasks:
-        queue.put(executor.submit(core, task))
-
-
-    q.join()
-
-
-
-    while results:
-        future = next(executor.as_completed(results))  # block
-
-        results.remove(future)  # pop completed
-
-        task = next(tasks, None)
-        if task is not None:
-            results.append(executor.submit(core, *task))  # queue_length another
-
-
 
 
 def find_periods_with_data(index, product_names, period_duration='1 day',
@@ -516,10 +475,18 @@ def find_periods_with_data(index, product_names, period_duration='1 day',
         yield time_range.begin, time_range.end
 
 
-def create_stats_app(filename, index=None):
-    _, config = next(read_documents(filename))
+def create_stats_app(configuration_file, index=None):
+    """
+    Create a StatsApp to run a processing job, based on a configuration file
+
+    :param configuration_file: pathname to a yaml configuration file
+    :param index: open database connection
+    :return: read to run StatsApp
+    """
+    _, config = next(read_documents(configuration_file))
     stats_app = StatsApp()
-    stats_app.config_file = filename
+    stats_app.index = index
+    stats_app.config_file = configuration_file
     stats_app.storage = config['storage']
     stats_app.sources = config['sources']
     stats_app.output_products = config['output_products']
@@ -533,7 +500,7 @@ def create_stats_app(filename, index=None):
                                                    stats_duration=date_ranges['stats_duration'],
                                                    step_size=date_ranges['step_size']))
     elif date_ranges['type'] == 'find_daily_data':
-        product_names = [source['product'] for source in config['sources']]
+        product_names = [source['product'] for source in config['sources']]  # TODO: Hardcoded junk
         stats_app.date_ranges = list(find_periods_with_data(index, product_names=product_names,
                                                             start_date=date_ranges['start_date'],
                                                             end_date=date_ranges['end_date']))
@@ -558,7 +525,8 @@ def create_stats_app(filename, index=None):
         stats_app.task_generator = partial(generate_gridded_tasks, grid_spec=grid_spec)
 
     stats_app.output_driver = OUTPUT_DRIVERS[config['storage']['driver']]
-    stats_app.validate_config()
+    stats_app.process_completed = lambda x: None  # TODO: Save dataset to database
+    stats_app.validate()
 
     return stats_app
 
@@ -574,14 +542,8 @@ def main(index, stats_config_file, executor):
     app = create_stats_app(stats_config_file, index)
 
     output_products = app.make_output_products(index)
-    # TODO: Store output products in database
 
-    completed_tasks = app.run(index, executor, output_products)
-
-    for ds in completed_tasks:
-        print('Completed: %s' % ds)
-        # index.datasets.add(ds, skip_sources=True)  # index completed work
-        # TODO: Record new datasets in database
+    app.run(executor, output_products)
 
 
 if __name__ == '__main__':

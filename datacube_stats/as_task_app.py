@@ -14,7 +14,7 @@ def add_dataset_to_db(index, datasets):
         _LOG.info('Dataset added')
 
 
-def run_tasks(tasks, executor, queue_size, run_task, process_result):
+def run_tasks(tasks, executor, run_task, process_result, queue_size=50):
     click.echo('Starting processing...')
     results = []
     task_queue = itertools.islice(tasks, queue_size)
