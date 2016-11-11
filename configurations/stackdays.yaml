@@ -1,0 +1,120 @@
+## Define inputs to perform statistics on
+sources:
+  - product: ls5_nbar_albers
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
+    masks:
+      - product: ls5_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
+  - product: ls7_nbar_albers
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
+    masks:
+      - product: ls7_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
+  - product: ls8_nbar_albers
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
+    masks:
+      - product: ls8_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
+
+
+## Define whether and how to chunk over time
+date_ranges:
+  #start_date: 1985-12-01
+#  #end_date: 2017-01-01
+#  stats_duration: 1d
+#  step_size: 1d
+  type: find_daily_data  # Or simple
+  start_date: 2000-01-01
+  end_date: 2000-03-01
+
+## Define output directory and file structure
+location: '/g/data/u46/users/dra547/statstesting'
+
+input_region:
+    crs: EPSG:4326
+#    x: [147, 148]
+#    y: [-33, -34]
+    x: [149, 150]
+    y: [-28, -29]
+
+#input_region:
+#    cell_index: [17, -40]
+
+# Output Storage Format
+storage:
+  driver: Geotiff
+
+  crs: EPSG:3577
+  resolution:
+          x: 25
+          y: -25
+  tile_size:
+          x: 100000.0
+          y: 100000.0
+  chunking:
+      x: 256
+      y: 256
+      time: 1
+  dimension_order: [time, y, x]
+
+
+## Computational/memory optimisation
+computation:
+  chunking:
+    x: 1000
+    y: 1000
+
+## Define statistics to perform and how to store the data
+
+output_products:
+  - name: ndvi
+    statistic: ndvi_daily
+    zlib: True
+    fletcher32: True
+    file_path_template: 'NDVI_DAILY/{var_name}_{config.input_region[x][0]}_{config.input_region[y][1]}_{time_period[0]:%Y%m%d}.tif'
+
