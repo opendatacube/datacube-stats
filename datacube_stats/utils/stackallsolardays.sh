@@ -1,0 +1,1 @@
+python /home/547/dra547/src/agdc-v2/datacube_apps/stats/stack_solar_days.py --date-from 1986 --date-to 2017 --x 147 148 --y -33 -34 --nd-bands nir red LS578_NDWI_WITH_PQA_147_-034_1985_01_01_2016_06_30_NDWI_STACK.tif
