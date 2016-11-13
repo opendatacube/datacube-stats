@@ -77,6 +77,14 @@ def main(index, stats_config_file, executor):
 
 
 class StatProduct(object):
+    """
+    Defines an 'output_product' statistical product.
+    Including:
+      - Name
+      - Statistical operation, ie max, mean, median, medoid. An implementation of `ValueStat`
+      - Output product definition
+      - Input measurements
+    """
     def __init__(self, metadata_type, input_measurements, definition, storage):
         self.definition = definition
 
@@ -119,6 +127,12 @@ class StatProduct(object):
 
 
 class StatsTask(object):
+    """
+    Contains everything a task runner requires to produce a single statistical output.
+    Including:
+      - Reference to all the source datasets
+      - A list of `StatsProduct`s to create
+    """
     def __init__(self, time_period, tile_index=None, sources=None, output_products=None):
         self.tile_index = tile_index  # Only used for file naming...
         self.time_period = time_period
