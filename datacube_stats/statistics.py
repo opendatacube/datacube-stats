@@ -1,5 +1,22 @@
 """
 Functions for performing statistical data analysis.
+
+Functions:
+- argnanmedoid
+- nanmedoid
+- argpercentile
+- nan_percentile
+
+- percentile_stat
+
+Classes:
+- ValueStat
+- WofsStats
+- IndexStat
+- StreamedStat
+- OneToManyStat
+- PerBandIndexStat
+- PerStatIndexStat
 """
 from __future__ import absolute_import
 
@@ -238,17 +255,20 @@ class ValueStat(object):
             {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
             for measurement in input_measurements]
 
-    @classmethod
-    def from_stat_name(cls, name, masked=True, **kwargs):
-        """
-        A value returning statistic, relying on an xarray function of `name` being available
 
-        :param name: The name of an `xarray.Dataset` statistical function
-        :param masked:
-        :return:
-        """
-        return cls(masked=masked,
-                   stat_func=partial(getattr(xarray.Dataset, name), dim='time', **kwargs))
+class SimpleXarrayStat(ValueStat):
+    """
+    Compute statistics using a reduction function defined on `xarray.Dataset`.
+
+    :param stat_func_name: name of reduction function to use
+    """
+    def __init__(self, stat_func_name, masked=True):
+        self.masked = masked
+        self._stat_func_name = stat_func_name
+
+    def compute(self, data):
+        func = getattr(xarray.Dataset, self._stat_func_name)
+        return func(data, dim='time')
 
 
 class WofsStats(object):

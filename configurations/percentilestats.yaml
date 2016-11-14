@@ -1,5 +1,4 @@
 ## Define inputs to perform statistics on
-## Define inputs to perform statistics on
 sources:
   - product: ls5_nbar_albers
     measurements: [blue, green, red, nir, swir1, swir2]

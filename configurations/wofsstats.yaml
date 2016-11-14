@@ -28,10 +28,11 @@ sources:
 
 
 ## Define whether and how to chunk over time
-start_date: 1970-01-01
-end_date: 2070-01-01
-stats_duration: 100y
-step_size: 100y
+date_ranges:
+  start_date: 1970-01-01
+  end_date: 2070-01-01
+  stats_duration: 100y
+  step_size: 100y
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'

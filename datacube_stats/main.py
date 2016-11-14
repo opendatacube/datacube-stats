@@ -17,16 +17,16 @@ from datacube import Datacube
 from datacube.api import make_mask
 from datacube.api.grid_workflow import GridWorkflow, Tile
 from datacube.api.query import query_group_by, query_geopolygon, Query
-from datacube.model import GridSpec, CRS, DatasetType, GeoBox, GeoPolygon
+from datacube.model import GridSpec, CRS, GeoBox, GeoPolygon
 from datacube.storage.masking import mask_valid_data as mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
+from datacube_stats.models import StatsTask, StatProduct, STATS
+from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver
 from datacube_stats.runner import run_tasks
-from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver, OutputDriver
-from datacube_stats.statistics import ValueStat, WofsStats, NormalisedDifferenceStats, PerStatIndexStat, \
-    compute_medoid, percentile_stat, StatsConfigurationError, percentile_stat_no_prov
+from datacube_stats.statistics import StatsConfigurationError
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -38,120 +38,19 @@ OUTPUT_DRIVERS = {
     'Geotiff': RioOutputDriver
 }
 
-STATS = {
-    'min': ValueStat.from_stat_name('min'),
-    'max': ValueStat.from_stat_name('max'),
-    'mean': ValueStat.from_stat_name('mean'),
-    'percentile_10': percentile_stat(10),
-    'percentile_25': percentile_stat(25),
-    'percentile_50': percentile_stat(50),
-    'percentile_75': percentile_stat(75),
-    'percentile_90': percentile_stat(90),
-    'percentile_10_no_prov': percentile_stat_no_prov(10),
-    'percentile_25_no_prov': percentile_stat_no_prov(25),
-    'percentile_50_no_prov': percentile_stat_no_prov(50),
-    'percentile_75_no_prov': percentile_stat_no_prov(75),
-    'percentile_90_no_prov': percentile_stat_no_prov(90),
-    'medoid': PerStatIndexStat(masked=True, stat_func=compute_medoid),
-    'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
-                                            stats=['min', 'mean', 'max']),
-    'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1',
-                                            stats=['min', 'mean', 'max']),
-    'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    'wofs': WofsStats(),
-}
 
-
-@click.command(name='_output_products')
-@click.option('--app-config', '-c', 'stats_config_file',
-              type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
-              help='configuration file location', callback=to_pathlib)
+@click.command(name='datacube-stats')
+@click.argument('stats_config_file',
+                type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
+                callback=to_pathlib)
 @ui.global_cli_options
 @ui.executor_cli_options
-@ui.pass_index(app_name='agdc-_output_products')
+@ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, executor):
     app = create_stats_app(stats_config_file, index)
+    app.validate()
 
     app.run(executor)
-
-
-class StatProduct(object):
-    """
-    Defines an 'output_product' statistical product.
-    Including:
-      - Name
-      - Statistical operation, ie max, mean, median, medoid. An implementation of `ValueStat`
-      - Output product definition
-      - Input measurements
-    """
-    def __init__(self, metadata_type, input_measurements, definition, storage):
-        self.definition = definition
-
-        #: The product name.
-        self.name = definition['name']
-
-        #: The name of the statistic. Eg, mean, max, medoid, percentile_10
-        self.stat_name = self.definition['statistic']
-
-        #: The implementation of a statistic. See :class:`ValueStat`.
-        #: Will provide `compute` and `measurements` functions.
-        self.statistic = STATS[self.stat_name]
-
-        self.data_measurements = self.statistic.measurements(input_measurements)
-
-        self.product = self._create_product(metadata_type, self.data_measurements, storage)
-
-    @property
-    def masked(self):
-        return self.statistic.masked
-
-    @property
-    def compute(self):
-        return self.statistic.compute
-
-    def _create_product(self, metadata_type, data_measurements, storage):
-        product_definition = {
-            'name': self.name,
-            'description': 'Description for ' + self.name,
-            'metadata_type': 'eo',
-            'metadata': {
-                'format': 'NetCDF',
-                'product_type': self.stat_name,
-            },
-            '_storage': storage,
-            'measurements': data_measurements
-        }
-        DatasetType.validate(product_definition)
-        return DatasetType(metadata_type, product_definition)
-
-
-class StatsTask(object):
-    """
-    Contains everything a task runner requires to produce a single statistical output.
-    Including:
-      - Reference to all the source datasets
-      - A list of `StatsProduct`s to create
-    """
-    def __init__(self, time_period, tile_index=None, sources=None, output_products=None):
-        self.tile_index = tile_index  # Only used for file naming...
-        self.time_period = time_period
-        self.sources = sources if sources is not None else []
-        self.output_products = output_products if output_products is not None else []
-
-    @property
-    def geobox(self):
-        return self.sources[0]['data'].geobox
-
-    @property
-    def time_attributes(self):
-        return self.sources[0]['data'].sources.time.attrs
-
-    def keys(self):
-        return self.__dict__.keys()
-
-    def __getitem__(self, item):
-        return getattr(self, item)
 
 
 class StatsApp(object):
@@ -225,15 +124,20 @@ class StatsApp(object):
 
         assert callable(self.task_generator)
         assert callable(self.output_driver)
-        assert isinstance(self.output_driver, OutputDriver)
+        assert hasattr(self.output_driver, 'open_output_files')
+        assert hasattr(self.output_driver, 'write_data')
         assert callable(self.process_completed)
 
     def run(self, executor):
-        output_products = self.ensure_output_products(self.index)
+        output_products = self.ensure_output_products()
 
         tasks = self.generate_tasks(output_products)
 
-        run_tasks(tasks, executor, self.execute_task, self.process_completed)
+        app_info = _get_app_metadata(self.config_file)
+        output_driver = partial(self.output_driver, output_path=self.location, app_info=app_info,
+                                storage=self.storage)
+        task_runner = partial(execute_task, output_driver=output_driver, chunking=self.computation['chunking'])
+        run_tasks(tasks, executor, task_runner, self.process_completed)
 
     def generate_tasks(self, output_products):
         """
@@ -260,24 +164,7 @@ class StatsApp(object):
             task.output_products = output_products
             yield task
 
-    def execute_task(self, task):
-        app_info = _get_app_metadata(self.config_file)
-        with self.output_driver(task=task, output_path=self.location, app_info=app_info,
-                                storage=self.storage) as output_files:
-            example_tile = task.sources[0]['data']
-            for sub_tile_slice in tile_iter(example_tile, self.computation['chunking']):
-                data = _load_data(sub_tile_slice, task.sources)
-
-                for prod_name, stat in task.output_products.items():
-                    _LOG.info("Computing %s in tile %s", prod_name, sub_tile_slice)
-                    assert stat.masked  # TODO: not masked
-                    stats_data = stat.compute(data)
-
-                    # For each of the data variables, shove this chunk into the output results
-                    for var_name, var in stats_data.data_vars.items():
-                        output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
-
-    def ensure_output_products(self, index, metadata_type='eo'):
+    def ensure_output_products(self, metadata_type='eo'):
         """
         Return a dict mapping Output Product Name to StatProduct
 
@@ -287,9 +174,9 @@ class StatsApp(object):
 
         output_products = {}
 
-        measurements = _source_measurement_defs(index, self.sources)
+        measurements = _source_measurement_defs(self.index, self.sources)
 
-        metadata_type = index.metadata_types.get_by_name(metadata_type)
+        metadata_type = self.index.metadata_types.get_by_name(metadata_type)
         for prod in self.output_products:
             output_products[prod['name']] = StatProduct(metadata_type=metadata_type,
                                                         input_measurements=measurements,
@@ -297,6 +184,27 @@ class StatsApp(object):
                                                         storage=self.storage)
 
         return output_products
+
+
+def execute_task(task, output_driver, chunking):
+    """
+    Load data, run the statistical operations and write results out to the filesystem.
+
+    :param datacube_stats.models.StatsTask task:
+    """
+    with output_driver(task=task) as output_files:
+
+        for sub_tile_slice in tile_iter(task.sample_tile, chunking):
+            data = _load_data(sub_tile_slice, task.sources)
+
+            for prod_name, stat in task.output_products.items():
+                _LOG.info("Computing %s in tile %s", prod_name, sub_tile_slice)
+                assert stat.masked  # TODO: not masked
+                stats_data = stat.compute(data)
+
+                # For each of the data variables, shove this chunk into the output results
+                for var_name, var in stats_data.data_vars.items():
+                    output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
 
 
 def _load_data(sub_tile_slice, sources):
@@ -396,7 +304,7 @@ def create_stats_app(configuration_file, index=None):
     stats_app.computation = config.get('computation', DEFAULT_TASK_CHUNKING)
 
     date_ranges = config['date_ranges']
-    if date_ranges['type'] == 'simple':  # TODO, Can't pickle generator objects
+    if 'type' not in date_ranges or date_ranges['type'] == 'simple':
         stats_app.date_ranges = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
                                                    end=pd.to_datetime(date_ranges['end_date']),
                                                    stats_duration=date_ranges['stats_duration'],
@@ -410,27 +318,34 @@ def create_stats_app(configuration_file, index=None):
         raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
                                       'type=find_daily_data')
 
-    if 'input_region' in config:
-        if config['input_region'].get('output_type') == 'tiled':
+    try:
+        if 'tile' in config['input_region']:  # Simple, single tile
+            grid_spec = _make_grid_spec(config['storage'])
+            stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec,
+                                               cell_index=config['input_region']['tile'])
+        elif 'geometry' in config['input_region']:  # Larger spatial region
             # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
             _LOG.info('Found geojson `input region`, outputing tiles.')
-            grid_spec = _make_grid_spec(config['_storage'])
+            grid_spec = _make_grid_spec(config['storage'])
             geopolygon = GeoPolygon.from_geojson(config['input_region']['geometry'], CRS('EPSG:4326'))
             stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
         else:
             _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
             stats_app.task_generator = partial(_generate_non_gridded_tasks, input_region=config['input_region'],
                                                storage=stats_app.storage)
-    else:
+    except KeyError:
         _LOG.info('Default output, full available spatial region, gridded files.')
         grid_spec = _make_grid_spec(config['storage'])
         stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec)
 
-    stats_app.output_driver = OUTPUT_DRIVERS[config['_storage']['driver']]
-    stats_app.process_completed = lambda x: None  # TODO: Save dataset to database
-    stats_app.validate()
+    stats_app.output_driver = OUTPUT_DRIVERS[config['storage']['driver']]
+    stats_app.process_completed = do_nothing  # TODO: Save dataset to database
 
     return stats_app
+
+
+def do_nothing(task):
+    pass
 
 
 def _make_grid_spec(storage):
@@ -443,7 +358,7 @@ def _make_grid_spec(storage):
                     resolution=[storage['resolution'][dim] for dim in crs.dimensions])
 
 
-def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None):
+def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None):
     """
     Generate the required tasks through time and across a spatial grid.
 
@@ -460,12 +375,11 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
         for source_spec in sources_spec:
             group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
             data = workflow.list_cells(product=source_spec['product'], time=time_period,
-                                       group_by=group_by_name,
-                                       geopolygon=geopolygon)
-            masks = [workflow.list_cells(product=mask['product'],
-                                         time=time_period,
-                                         group_by=group_by_name,
-                                         geopolygon=geopolygon)
+                                       group_by=group_by_name, geopolygon=geopolygon,
+                                       cell_index=cell_index)
+            masks = [workflow.list_cells(product=mask['product'], time=time_period,
+                                         group_by=group_by_name, geopolygon=geopolygon,
+                                         cell_index=cell_index)
                      for mask in source_spec.get('masks', [])]
 
             for tile_index, sources in data.items():
@@ -530,7 +444,7 @@ def _generate_non_gridded_tasks(index, storage, date_ranges, input_region, sourc
             })
 
         if task.sources:
-            _LOG.info('Created _task for time period: %s', time_period)
+            _LOG.info('Created task for time period: %s', time_period)
             yield task
 
 

@@ -63,13 +63,14 @@ sources:
 
 
 ## Define whether and how to chunk over time
-start_date: 2015-01-01
-end_date: 2015-04-01
-stats_duration: 3m
-step_size: 3m
+date_ranges:
+  start_date: 2015-01-01
+  end_date: 2015-04-01
+  stats_duration: 3m
+  step_size: 3m
 
 ## Define output directory and file structure
-location: '/g/data/u46/users/gxr547/gregcube/data'
+location: '/g/data/u46/users/dra547/statstests'
 
 storage:
   driver: NetCDF CF
@@ -90,11 +91,21 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 1000
-    y: 1000
+    x: 4000
+    y: 4000
+
+input_region:
+  tile: [12, -43]
+
+#input_region:
+#
+#    crs: EPSG:4326
+##    x: [147, 148]
+##    y: [-33, -34]
+#    x: [149, 150]
+#    y: [-28, -29]
 
 ## Define statistics to perform and how to store the data
-
 output_products:
  - name: landsat_yearly_mean
    statistic: mean

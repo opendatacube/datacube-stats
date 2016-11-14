@@ -65,10 +65,11 @@ sources:
 ## Define whether and how to chunk over time
 #start_date: 1985-12-01
 #end_date: 2017-01-01
-start_date: 1999-12-01
-end_date: 2001-01-01
-stats_duration: 3m
-step_size: 3m
+date_ranges:
+  start_date: 1999-12-01
+  end_date: 2001-01-01
+  stats_duration: 3m
+  step_size: 3m
 
 ## Define output directory and file structure
 location: '/g/data/u46/users/dra547/statstesting'

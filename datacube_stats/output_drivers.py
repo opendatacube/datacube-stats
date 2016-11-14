@@ -1,7 +1,16 @@
+"""
+Provide some classes for writing data out to files on disk.
+
+The `NetcdfOutputDriver` will write multiple variables into a single file.
+
+The `RioOutputDriver` writes a single __band__ of data per file.
+"""
+
 from collections import OrderedDict
 import logging
 from functools import reduce as reduce_
 from pathlib import Path
+import operator
 
 import numpy
 import rasterio
@@ -213,12 +222,12 @@ def _find_source_datasets(task, stat, geobox, app_info, uri=None):
     def merge_sources(prod):
         if stat.masked:
             all_sources = xarray.align(prod['data'].sources, *[mask_tile.sources for mask_tile in prod['masks']])
-            return reduce_(lambda a, b: a + b, (sources.sum() for sources in all_sources))
+            return reduce_(operator.add, (sources.sum() for sources in all_sources))
         else:
             return prod['data'].sources.sum()
 
     start_time, _ = task.time_period
-    sources = reduce_(lambda a, b: a + b, (merge_sources(prod) for prod in task.sources))
+    sources = reduce_(operator.add, (merge_sources(prod) for prod in task.sources))
     sources = unsqueeze_data_array(sources, dim='time', pos=0, coord=start_time,
                                    attrs=task.time_attributes)
 
