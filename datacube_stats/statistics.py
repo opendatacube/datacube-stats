@@ -272,6 +272,11 @@ class SimpleXarrayStat(ValueStat):
 
 
 class WofsStats(object):
+    """
+    Example stats calculator for Wofs
+
+    It's very hard coded, but maybe that's a good thing.
+    """
     def __init__(self):
         self.masked = True
 
