@@ -3,6 +3,9 @@ sources:
   - product: ls5_nbar_albers
     measurements: [blue, green, red, nir, swir1, swir2]
     group_by: solar_day
+    source_filter:
+      product: ls5_level1_scene
+      gqa: [-1, 1]
     masks:
       - product: ls5_pq_albers
         measurement: pixelquality

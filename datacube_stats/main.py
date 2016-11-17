@@ -47,7 +47,8 @@ OUTPUT_DRIVERS = {
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, executor):
-    app = create_stats_app(stats_config_file, index)
+    _, config = next(read_documents(stats_config_file))
+    app = create_stats_app(config, index)
     app.validate()
 
     app.run(executor)
@@ -68,17 +69,17 @@ class StatsApp(object):
 
         #: Definition of source products, including their name, which variables to pull from them, and
         #: a specification of any masking that should be applied.
-        self.sources = None
+        self.sources = []
 
         #: List of filenames and statistical methods used, describing what the outputs of the run will be.
-        self.output_products = None
+        self.output_products = []
 
         #: Base directory to write output files to.
         #: Files may be created in a sub-directory, depending on the configuration of the
         #: :attr:`output_driver`.
         self.location = None
 
-        #: How to slice a _task up spatially to to fit into memory.
+        #: How to slice a task up spatially to to fit into memory.
         self.computation = None
 
         #: An iterable of date ranges.
@@ -88,15 +89,15 @@ class StatsApp(object):
         #: and will define spatial and temporal boundaries, as well as statistical operations to be run.
         self.task_generator = None
 
-        #: A class which knows how to create and write out data to a permanent _storage format.
+        #: A class which knows how to create and write out data to a permanent storage format.
         #: Implements :class:`.output_drivers.OutputDriver`.
         self.output_driver = None
 
         #: An open database connection
         self.index = None
 
-        #: A function to process the result of a complated _task
-        #: Takes a single argument of the _task result
+        #: A function to process the result of a complated task
+        #: Takes a single argument of the task result
         self.process_completed = None
 
     def validate(self):
@@ -117,7 +118,10 @@ class StatsApp(object):
                 % (requested_statistics - available_statistics, available_statistics))
 
         # Check consistent measurements
-        first_source = self.sources[0]
+        try:
+            first_source = self.sources[0]
+        except IndexError:
+            raise StatsConfigurationError('No data sources specified.')
         if not all(first_source['measurements'] == source['measurements'] for source in self.sources):
             raise StatsConfigurationError("Configuration Error: listed measurements of source products "
                                           "are not all the same.")
@@ -148,7 +152,7 @@ class StatsApp(object):
           * tile_index
           * time_period
           * sources: (list of)
-          * _output_products
+          * output_products
 
         Sources is a list of dictionaries containing:
 
@@ -270,8 +274,8 @@ def _get_app_metadata(config_file):
     }
 
 
-def find_periods_with_data(index, product_names, period_duration='1 day',
-                           start_date='1985-01-01', end_date='2000-01-01'):
+def _find_periods_with_data(index, product_names, period_duration='1 day',
+                            start_date='1985-01-01', end_date='2000-01-01'):
     # TODO: Read 'simple' job configuration from file
     query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
 
@@ -285,18 +289,17 @@ def find_periods_with_data(index, product_names, period_duration='1 day',
         yield time_range.begin, time_range.end
 
 
-def create_stats_app(configuration_file, index=None):
+def create_stats_app(config, index=None):
     """
     Create a StatsApp to run a processing job, based on a configuration file
 
-    :param configuration_file: pathname to a yaml configuration file
+    :param config: dictionary based configuration
     :param index: open database connection
     :return: read to run StatsApp
     """
-    _, config = next(read_documents(configuration_file))
     stats_app = StatsApp()
     stats_app.index = index
-    stats_app.config_file = configuration_file
+    stats_app.config_file = config
     stats_app.storage = config['storage']
     stats_app.sources = config['sources']
     stats_app.output_products = config['output_products']
@@ -311,9 +314,9 @@ def create_stats_app(configuration_file, index=None):
                                                    step_size=date_ranges['step_size']))
     elif date_ranges['type'] == 'find_daily_data':
         product_names = [source['product'] for source in config['sources']]
-        stats_app.date_ranges = list(find_periods_with_data(index, product_names=product_names,
-                                                            start_date=date_ranges['start_date'],
-                                                            end_date=date_ranges['end_date']))
+        stats_app.date_ranges = list(_find_periods_with_data(index, product_names=product_names,
+                                                             start_date=date_ranges['start_date'],
+                                                             end_date=date_ranges['end_date']))
     else:
         raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
                                       'type=find_daily_data')
@@ -338,7 +341,16 @@ def create_stats_app(configuration_file, index=None):
         grid_spec = _make_grid_spec(config['storage'])
         stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec)
 
-    stats_app.output_driver = OUTPUT_DRIVERS[config['storage']['driver']]
+    try:
+        stats_app.output_driver = OUTPUT_DRIVERS[config['storage']['driver']]
+    except KeyError:
+        specified_driver = config.get('storage', {}).get('driver')
+        if specified_driver is None:
+            msg = 'No output driver specified.'
+        else:
+            msg = 'Invalid output driver "{}" specified.'
+        raise StatsConfigurationError('{} Specify one of {} in storage->driver in the '
+                                      'configuration file.'.format(msg, OUTPUT_DRIVERS.keys()))
     stats_app.process_completed = do_nothing  # TODO: Save dataset to database
 
     return stats_app
@@ -349,7 +361,7 @@ def do_nothing(task):
 
 
 def _make_grid_spec(storage):
-    """Make a grid spec based on a _storage spec."""
+    """Make a grid spec based on a storage spec."""
     assert 'tile_size' in storage
 
     crs = CRS(storage['crs'])
@@ -358,16 +370,22 @@ def _make_grid_spec(storage):
                     resolution=[storage['resolution'][dim] for dim in crs.dimensions])
 
 
-def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None):
+def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None,
+                            source_filter=None):
     """
     Generate the required tasks through time and across a spatial grid.
 
     :param index: Datacube Index
     :return:
     """
+    data_sources = [[
+        {'product': ''},
+        {'product': ''}
+    ], []]
+
     workflow = GridWorkflow(index, grid_spec=grid_spec)
     for time_period in date_ranges:
-        _LOG.debug('Making _output_products tasks for time period: %s', time_period)
+        _LOG.debug('Making output_products tasks for time period: %s', time_period)
 
         # Tasks are grouped by tile_index, and may contain sources from multiple places
         # Each source may be masked by multiple masks
@@ -376,7 +394,7 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
             group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
             data = workflow.list_cells(product=source_spec['product'], time=time_period,
                                        group_by=group_by_name, geopolygon=geopolygon,
-                                       cell_index=cell_index)
+                                       cell_index=cell_index, source_filter=source_filter)
             masks = [workflow.list_cells(product=mask['product'], time=time_period,
                                          group_by=group_by_name, geopolygon=geopolygon,
                                          cell_index=cell_index)
@@ -391,12 +409,12 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
                 })
 
         if tasks:
-            _LOG.info('Created tasks for time period: %s', time_period)
+            _LOG.debug('Created tasks for time period: %s', time_period)
         for task in tasks.values():
             yield task
 
 
-def _generate_non_gridded_tasks(index, storage, date_ranges, input_region, sources_spec):
+def _generate_non_gridded_tasks(index, sources_spec, date_ranges, input_region, storage):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
 
