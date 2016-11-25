@@ -57,8 +57,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 1000
-    y: 1000
+    x: 100
+    y: 100
 
 ## Define statistics to perform and how to store the data
 

@@ -17,10 +17,10 @@ class StatsTask(object):
         #: Start date - End date as a datetime tuple
         self.time_period = time_period
 
-        #: List of source datasets
+        #: List of source datasets, required masking datasets, and details on applying them
         self.sources = sources if sources is not None else []
 
-        #:
+        #: Defines which files will be output, and what operations are done
         self.output_products = output_products if output_products is not None else []
 
     @property

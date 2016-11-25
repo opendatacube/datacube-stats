@@ -35,13 +35,14 @@ def test_nan_percentile():
 
 
 def test_argpercentile():
+    # Create random Data
     test_arr = numpy.random.randint(0, 10000, 50000).reshape(5, 100, 100).astype(numpy.float32)
     numpy.random.shuffle(test_arr)
-    # place random NaN
+    # place random NaNs
     rand_nan = numpy.random.randint(0, 50000, 500).astype(numpy.float32)
     for r in rand_nan:
         test_arr[test_arr == r] = numpy.NaN
 
-    npres = numpy.nanpercentile(test_arr, q=25, axis=0, interpolation='nearest')
-    gregres = axisindex(test_arr, argpercentile(test_arr, q=25, axis=0), axis=0)
-    assert numpy.isclose(npres, gregres).all()
+    np_result = numpy.nanpercentile(test_arr, q=25, axis=0, interpolation='nearest')
+    argpercentile_result = axisindex(test_arr, argpercentile(test_arr, q=25, axis=0), axis=0)
+    assert numpy.isclose(np_result, argpercentile_result).all()

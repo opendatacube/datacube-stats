@@ -72,7 +72,7 @@ class StatsApp(object):
         self.sources = []
 
         #: List of filenames and statistical methods used, describing what the outputs of the run will be.
-        self.output_products = []
+        self.output_product_specs = []
 
         #: Base directory to write output files to.
         #: Files may be created in a sub-directory, depending on the configuration of the
@@ -103,14 +103,14 @@ class StatsApp(object):
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
         # Check output product names are unique
-        output_names = [prod['name'] for prod in self.output_products]
+        output_names = [prod['name'] for prod in self.output_product_specs]
         duplicate_names = [x for x in output_names if output_names.count(x) > 1]
         if duplicate_names:
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
 
         # Check statistics are available
-        requested_statistics = set(prod['statistic'] for prod in self.output_products)
+        requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
         available_statistics = set(STATS.keys())
         if not requested_statistics.issubset(available_statistics):
             raise StatsConfigurationError(
@@ -181,7 +181,7 @@ class StatsApp(object):
         measurements = _source_measurement_defs(self.index, self.sources)
 
         metadata_type = self.index.metadata_types.get_by_name(metadata_type)
-        for prod in self.output_products:
+        for prod in self.output_product_specs:
             output_products[prod['name']] = StatProduct(metadata_type=metadata_type,
                                                         input_measurements=measurements,
                                                         definition=prod,
@@ -195,6 +195,8 @@ def execute_task(task, output_driver, chunking):
     Load data, run the statistical operations and write results out to the filesystem.
 
     :param datacube_stats.models.StatsTask task:
+    :type output_driver: OutputDriver
+    :param chunking: dict of dimension sizes to chunk the computation by
     """
     with output_driver(task=task) as output_files:
 
@@ -302,7 +304,7 @@ def create_stats_app(config, index=None):
     stats_app.config_file = config
     stats_app.storage = config['storage']
     stats_app.sources = config['sources']
-    stats_app.output_products = config['output_products']
+    stats_app.output_product_specs = config['output_products']
     stats_app.location = config['location']
     stats_app.computation = config.get('computation', DEFAULT_TASK_CHUNKING)
 
@@ -378,11 +380,6 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
     :param index: Datacube Index
     :return:
     """
-    data_sources = [[
-        {'product': ''},
-        {'product': ''}
-    ], []]
-
     workflow = GridWorkflow(index, grid_spec=grid_spec)
     for time_period in date_ranges:
         _LOG.debug('Making output_products tasks for time period: %s', time_period)

@@ -24,7 +24,7 @@ def fixture_minimal_config():
     config['date_ranges']['end_date'] = '2015-04-01'
     config['storage'] = {'driver': 'NetCDF CF'}
     config['sources'] = [{'measurements': ''}]
-    config['output_products'] = []
+    config['output_product_specs'] = []
     config['location'] = []
     config['input_region'] = []
 
