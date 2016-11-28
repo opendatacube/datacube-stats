@@ -187,6 +187,8 @@ class StatsApp(object):
                                                         definition=prod,
                                                         storage=self.storage)
 
+        # TODO: Create the output product in the database
+
         return output_products
 
 
@@ -253,7 +255,7 @@ def _source_measurement_defs(index, sources):
 
     :return: list of measurement definitions
     """
-    source_defn = sources[0]  # Sources should have been checked to all have the same measureemnts
+    source_defn = sources[0]  # TODO: Check sources should have been checked to all have the same measureemnts
 
     source_measurements = index.products.get_by_name(source_defn['product']).measurements
 
@@ -323,15 +325,14 @@ def create_stats_app(config, index=None):
         raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
                                       'type=find_daily_data')
 
+    grid_spec = _make_grid_spec(config['storage'])
     try:
         if 'tile' in config['input_region']:  # Simple, single tile
-            grid_spec = _make_grid_spec(config['storage'])
             stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec,
                                                cell_index=config['input_region']['tile'])
         elif 'geometry' in config['input_region']:  # Larger spatial region
             # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
             _LOG.info('Found geojson `input region`, outputing tiles.')
-            grid_spec = _make_grid_spec(config['storage'])
             geopolygon = GeoPolygon.from_geojson(config['input_region']['geometry'], CRS('EPSG:4326'))
             stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
         else:
@@ -340,7 +341,6 @@ def create_stats_app(config, index=None):
                                                storage=stats_app.storage)
     except KeyError:
         _LOG.info('Default output, full available spatial region, gridded files.')
-        grid_spec = _make_grid_spec(config['storage'])
         stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec)
 
     try:
@@ -372,8 +372,7 @@ def _make_grid_spec(storage):
                     resolution=[storage['resolution'][dim] for dim in crs.dimensions])
 
 
-def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None,
-                            source_filter=None):
+def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None):
     """
     Generate the required tasks through time and across a spatial grid.
 
@@ -389,6 +388,7 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
         tasks = {}
         for source_spec in sources_spec:
             group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
+            source_filter = source_spec.get('source_filter', None)
             data = workflow.list_cells(product=source_spec['product'], time=time_period,
                                        group_by=group_by_name, geopolygon=geopolygon,
                                        cell_index=cell_index, source_filter=source_filter)
