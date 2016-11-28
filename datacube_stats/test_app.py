@@ -65,11 +65,14 @@ def test_create_trivial_stats_app():
         stats_app.validate()
 
 
-def test_can_create_output_products(simple_stats_app):
-    # GIVEN: A simply configured stats app
+def test_can_create_output_products(sample_stats_config, mock_index):
+    # GIVEN: A simple stats app
+    stats_app = create_stats_app(config=sample_stats_config)
+    stats_app.index = mock_index
+    stats_app.output_products = _SAMPLE_OUTPUTS_SPEC
 
     # WHEN: I call ensure_output_products()
-    output_prods = simple_stats_app.ensure_output_products()
+    output_prods = stats_app.ensure_output_products()
 
     # THEN: I should receive an appropriately configured output product
     assert len(output_prods) == 1
@@ -81,7 +84,7 @@ def test_can_create_output_products(simple_stats_app):
 
     # TODO: Check output product is created
     # Based on the source product's measurements
-    simple_stats_app.index.products.get_by_name.assert_called_with('fake_source_product')
+    stats_app.index.products.get_by_name.assert_called_with('fake_source_product')
 
 
 @pytest.fixture
