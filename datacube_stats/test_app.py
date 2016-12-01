@@ -135,7 +135,6 @@ def test_can_generate_tasks(sample_stats_config, mock_index, mock_grid_workflow)
     tasks = stats_app.generate_tasks(output_prods)
 
     # THEN: I should receive an iterable of StatsTasks
-
     tasks = list(tasks)
     assert len(tasks) == 1
     assert isinstance(tasks[0], StatsTask)
@@ -163,11 +162,16 @@ def test_gqa_filtering_passed_in_queries(sample_stats_config, mock_index, mock_g
     mock_grid_workflow.list_cells.assert_called_with(**_expected_filter_args)
 
 
-@pytest.mark.skip
+@pytest.mark.xfail
 def test_generate_gridded_tasks(sample_stats_config, mock_index, mock_grid_workflow):
     assert False
 
 
-@pytest.mark.skip
+@pytest.mark.xfail
 def test_generate_non_gridded_tasks():
+    assert False
+
+
+@pytest.mark.xfail
+def test_generate_single_cell_tasks():
     assert False

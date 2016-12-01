@@ -1,8 +1,11 @@
 ## Define inputs to perform statistics on
 sources:
-  - product: wofs_albers
-    name: wofs_dry
-    measurements: [water]
+#  - product: wofs_albers
+#    name: wofs_dry
+#    measurements: [water]
+#    group_by: solar_day
+  - product: ls8_nbar_albers
+    measurements: [blue]
     group_by: solar_day
 #    masks:
 #      - product: wofs_albers
@@ -26,12 +29,16 @@ sources:
 
 
 
+input_region:
+  from_file: /home/547/dra547/shared_home/mdbadata/mdb_floodplan/mdb_floodplain.shp
+#  tile: [12, -43]
+
 ## Define whether and how to chunk over time
 date_ranges:
-  start_date: 1970-01-01
-  end_date: 2070-01-01
-  stats_duration: 100y
-  step_size: 100y
+  start_date: 2015-07-01
+  end_date: 2016-07-01
+  stats_duration: 1y
+  step_size: 1y
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
@@ -56,8 +63,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 100
-    y: 100
+    x: 4000
+    y: 4000
 
 ## Define statistics to perform and how to store the data
 

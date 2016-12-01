@@ -335,6 +335,19 @@ def create_stats_app(config, index=None):
             _LOG.info('Found geojson `input region`, outputing tiles.')
             geopolygon = GeoPolygon.from_geojson(config['input_region']['geometry'], CRS('EPSG:4326'))
             stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
+        elif 'from_file' in config['input_region']:
+            import fiona
+            import shapely.ops
+            from shapely.geometry import shape, mapping
+            with fiona.open(config['input_region']['from_file']) as input_region:
+                joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
+                final = joined.convex_hull
+                crs = CRS(input_region.crs_wkt)
+                boundary_polygon = GeoPolygon.from_geojson(mapping(final), crs)
+
+            stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec,
+                                               geopolygon=boundary_polygon)
+
         else:
             _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
             stats_app.task_generator = partial(_generate_non_gridded_tasks, input_region=config['input_region'],
