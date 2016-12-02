@@ -10,11 +10,10 @@ setup(
     author_email='datacube@ga.gov.au',
     description='Perform statistics operations on a Data Cube',
     install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio'],
-
+    test_requires=['pytest', 'mock'],
     entry_points={
         'console_scripts': [
             'datacube-stats = datacube_stats.main:main'
         ]
     },
-
 )
