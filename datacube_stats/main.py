@@ -200,19 +200,27 @@ def execute_task(task, output_driver, chunking):
     :type output_driver: OutputDriver
     :param chunking: dict of dimension sizes to chunk the computation by
     """
+    from datacube_stats.timer import MultiTimer
+    timer = MultiTimer()
     with output_driver(task=task) as output_files:
-
         for sub_tile_slice in tile_iter(task.sample_tile, chunking):
+            timer.start('loading_data')
             data = _load_data(sub_tile_slice, task.sources)
+            timer.pause('loading_data')
 
             for prod_name, stat in task.output_products.items():
                 _LOG.info("Computing %s in tile %s", prod_name, sub_tile_slice)
                 assert stat.masked  # TODO: not masked
+                timer.start(prod_name)
                 stats_data = stat.compute(data)
+                timer.pause(prod_name)
 
                 # For each of the data variables, shove this chunk into the output results
+                timer.start('writing_data')
                 for var_name, var in stats_data.data_vars.items():
                     output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
+                timer.pause('writing_data')
+    _LOG.info('Task completed. Time spent processing: %s', timer.run_times)
 
 
 def _load_data(sub_tile_slice, sources):
@@ -336,6 +344,7 @@ def create_stats_app(config, index=None):
             geopolygon = GeoPolygon.from_geojson(config['input_region']['geometry'], CRS('EPSG:4326'))
             stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
         elif 'from_file' in config['input_region']:
+            _LOG.info('Input spatial region specified by file: %s', config['input_region']['from_file'])
             import fiona
             import shapely.ops
             from shapely.geometry import shape, mapping
