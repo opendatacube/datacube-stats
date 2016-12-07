@@ -1,4 +1,5 @@
 import time
+import psutil
 from collections import defaultdict
 
 
@@ -22,11 +23,20 @@ class MultiTimer(object):
     def __init__(self):
         self._start_times = {}
         self.run_times = defaultdict(int)
+        self.max_rss = defaultdict(int)
+        self._proc = psutil.Process()
 
     def start(self, name):
         self._start_times[name] = time.time()
+        return self
 
     def pause(self, name):
-        self.run_times[name] += self._start_times[name] - time.time()
+        self.run_times[name] += time.time() - self._start_times[name]
+        rss = self._proc.memory_info().rss
+        if rss > self.max_rss[name]:
+            self.max_rss[name] = rss
+
+    def __str__(self):
+        return 'Run times: {}, Max RSS: {}'.format(dict(self.run_times), dict(self.max_rss))
 
 

@@ -35,6 +35,9 @@ class StatsTask(object):
     def time_attributes(self):
         return self.sources[0]['data'].sources.time.attrs
 
+    def data_sources_length(self):
+        return sum(len(d['data'].sources) for d in self.sources)
+
     def keys(self):
         return self.__dict__.keys()
 

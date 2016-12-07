@@ -27,6 +27,7 @@ from datacube_stats.models import StatsTask, StatProduct, STATS
 from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver
 from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError
+from datacube_stats.timer import MultiTimer
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -47,17 +48,20 @@ OUTPUT_DRIVERS = {
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, executor):
+    timer = MultiTimer()
+    timer.start('main')
     _, config = next(read_documents(stats_config_file))
     app = create_stats_app(config, index)
     app.validate()
 
     app.run(executor)
+    timer.pause('main')
+    _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
 
 
 class StatsApp(object):
     """
     A StatsApp can produce a set of time based statistical products.
-
     """
 
     def __init__(self):
@@ -200,7 +204,6 @@ def execute_task(task, output_driver, chunking):
     :type output_driver: OutputDriver
     :param chunking: dict of dimension sizes to chunk the computation by
     """
-    from datacube_stats.timer import MultiTimer
     timer = MultiTimer()
     with output_driver(task=task) as output_files:
         for sub_tile_slice in tile_iter(task.sample_tile, chunking):
@@ -209,7 +212,7 @@ def execute_task(task, output_driver, chunking):
             timer.pause('loading_data')
 
             for prod_name, stat in task.output_products.items():
-                _LOG.info("Computing %s in tile %s", prod_name, sub_tile_slice)
+                _LOG.debug("Computing %s in tile %s", prod_name, sub_tile_slice)
                 assert stat.masked  # TODO: not masked
                 timer.start(prod_name)
                 stats_data = stat.compute(data)
@@ -220,8 +223,9 @@ def execute_task(task, output_driver, chunking):
                 for var_name, var in stats_data.data_vars.items():
                     output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
                 timer.pause('writing_data')
-    _LOG.info('Task completed. Time spent processing: %s', timer.run_times)
 
+    _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
+              [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
 
 def _load_data(sub_tile_slice, sources):
     """
@@ -402,8 +406,10 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
     :return:
     """
     workflow = GridWorkflow(index, grid_spec=grid_spec)
+    timer = MultiTimer()
     for time_period in date_ranges:
-        _LOG.debug('Making output_products tasks for time period: %s', time_period)
+        _LOG.debug('Making output product tasks for time period: %s', time_period)
+        timer = MultiTimer().start('creating_tasks')
 
         # Tasks are grouped by tile_index, and may contain sources from multiple places
         # Each source may be masked by multiple masks
@@ -427,8 +433,9 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
                     'spec': source_spec,
                 })
 
+        timer.pause('creating_tasks')
         if tasks:
-            _LOG.debug('Created tasks for time period: %s', time_period)
+            _LOG.debug('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
         for task in tasks.values():
             yield task
 
