@@ -5,7 +5,7 @@ The `NetcdfOutputDriver` will write multiple variables into a single file.
 
 The `RioOutputDriver` writes a single __band__ of data per file.
 """
-
+import abc
 from collections import OrderedDict
 import logging
 from functools import reduce as reduce_
@@ -47,6 +47,8 @@ class OutputDriver(object):
     :param storage: Dictionary structure describing the _storage format
     :param app_info:
     """
+    __metaclass__ = abc.ABCMeta
+
     # TODO: Add check for valid filename extensions in each driver
     def __init__(self, storage, task, output_path, app_info=None):
         self._task = task
@@ -63,10 +65,16 @@ class OutputDriver(object):
         for output_file in self._output_files.values():
             output_file.close()
 
+    @abc.abstractmethod
     def open_output_files(self):
         raise NotImplementedError
 
+    @abc.abstractmethod
     def write_data(self, prod_name, measurement_name, tile_index, values):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def write_global_attributes(self, attributes):
         raise NotImplementedError
 
     def _get_dtype(self, out_prod_name, measurement_name):
@@ -84,6 +92,7 @@ class NetcdfOutputDriver(OutputDriver):
     """
     Write data to Datacube compatible NetCDF files
     """
+
     valid_extensions = ['nc']
 
     def open_output_files(self):
@@ -96,7 +105,8 @@ class NetcdfOutputDriver(OutputDriver):
         geobox = self._geobox
         all_measurement_defns = list(stat.product.measurements.values())
 
-        datasets, sources = _find_source_datasets(self._task, stat, geobox, self._app_info, uri=output_filename.as_uri())
+        datasets, sources = _find_source_datasets(self._task, stat, geobox, self._app_info,
+                                                  uri=output_filename.as_uri())
 
         variable_params = self._create_netcdf_var_params(stat)
         nco = self._nco_from_sources(sources,
@@ -139,6 +149,11 @@ class NetcdfOutputDriver(OutputDriver):
         self._output_files[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(values)
         self._output_files[prod_name].sync()
         _LOG.debug("Updated %s %s", measurement_name, tile_index[1:])
+
+    def write_global_attributes(self, attributes):
+        for output_file in self._output_files.values():
+            for k, v in attributes.items():
+                output_file.attrs[k] = v
 
 
 class RioOutputDriver(OutputDriver):
@@ -188,11 +203,11 @@ class RioOutputDriver(OutputDriver):
 
                 _LOG.debug("Opening %s for writing.", output_filename)
 
-                src = rasterio.open(str(output_filename), mode='w', **profile)
-                # src.update_tags(created=self._app_info) # TODO record creation metadata
-                src.update_tags(1, platform=self._task.sources[0]['data'].product.name,
-                                date='{:%Y-%m-%d}'.format(self._task.time_period[0]))
-                self._output_files[output_name] = src
+                dest = rasterio.open(str(output_filename), mode='w', **profile)
+                # dest.update_tags(created=self._app_info) # TODO record creation metadata
+                dest.update_tags(1, platform=self._task.sources[0]['data'].product.name,
+                                 date='{:%Y-%m-%d}'.format(self._task.time_period[0]))
+                self._output_files[output_name] = dest
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
         output_name = prod_name + measurement_name
@@ -203,6 +218,10 @@ class RioOutputDriver(OutputDriver):
         dtype = self._get_dtype(prod_name, measurement_name)
 
         self._output_files[output_name].write(values.astype(dtype), indexes=1, window=window)
+
+    def write_global_attributes(self, attributes):
+        for dest in self._output_files.values():
+            dest.update_tags(**attributes)
 
 
 def _format_filename(path_template, **kwargs):

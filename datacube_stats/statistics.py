@@ -20,6 +20,7 @@ Classes:
 """
 from __future__ import absolute_import
 
+import abc
 import collections
 from collections import OrderedDict
 
@@ -222,7 +223,19 @@ def nan_percentile(arr, q, axis=0):
         return result
 
 
-class ValueStat(object):
+class Statistic(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def compute(self, data):
+        return
+
+    @abc.abstractmethod
+    def measurements(self, input_measurements):
+        return
+
+
+class ValueStat(Statistic):
     """
     Holder class describing the outputs of a statistic and how to calculate it
 
@@ -271,7 +284,7 @@ class SimpleXarrayStat(ValueStat):
         return func(data, dim='time')
 
 
-class WofsStats(object):
+class WofsStats(Statistic):
     """
     Example stats calculator for Wofs
 
@@ -317,7 +330,7 @@ class WofsStats(object):
         ]
 
 
-class NormalisedDifferenceStats(object):
+class NormalisedDifferenceStats(Statistic):
     """
     Simple NDVI/NDWI and other Normalised Difference stats
 
@@ -369,7 +382,7 @@ class IndexStat(ValueStat):
         return ValueStat.measurements(input_measurements)
 
 
-class StreamedStat(object):
+class StreamedStat(Statistic):
     def __init__(self, list_of_stats_classes):
         self.ops = list_of_stats_classes
 
@@ -381,11 +394,11 @@ class StreamedStat(object):
     def measurements(self, input_measurements):
         measurements = input_measurements
         for statclass in self.ops:
-            measurements = statclass.measurements(measurements)
+            measurements += statclass.measurements(measurements)
         return measurements
 
 
-class OneToManyStat(object):
+class OneToManyStat(Statistic):
     def __init__(self, ops):
         self.ops = ops
 
