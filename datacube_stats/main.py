@@ -238,8 +238,8 @@ def _load_data(sub_tile_slice, sources):
     datasets = [_load_masked_data(sub_tile_slice, source_prod) for source_prod in sources]
     for idx, dataset in enumerate(datasets):
         dataset.coords['source'] = ('time', numpy.repeat(idx, dataset.time.size))
-    data = xarray.concat(datasets, dim='time')
-    return data.isel(time=data.time.argsort())  # sort along time dim
+    datasets = xarray.concat(datasets, dim='time')  # Copies all the data
+    return datasets.isel(time=datasets.time.argsort())  # sort along time dim  # Copies all the data again
 
 
 def _load_masked_data(sub_tile_slice, source_prod):
