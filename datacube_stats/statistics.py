@@ -78,6 +78,10 @@ def combined_var_reduction(dataset, method, dim='time', keep_attrs=True):
     Apply a reduction to a dataset by combining data variables into a single ndarray, running `method`, then
     un-combining to separate data variables.
 
+    eg::
+
+        med = combined_var_reduction(data, nanmedoid)
+
     :param dataset: Input `xarray.Dataset`
     :param method: function to apply to DataArray
     :param bool keep_attrs: Should dataset attributes be retained, defaults to True.
@@ -375,37 +379,6 @@ class IndexStat(SimpleStatistic):
         return data_values
 
 
-class StreamedStat(Statistic):
-    def __init__(self, list_of_stats_classes):
-        self.ops = list_of_stats_classes
-
-    def compute(self, data):
-        for statclass in self.ops:
-            data = statclass.compute(data)
-        return data
-
-    def measurements(self, input_measurements):
-        measurements = input_measurements
-        for statclass in self.ops:
-            measurements += statclass.measurements(measurements)
-        return measurements
-
-
-class OneToManyStat(Statistic):
-    def __init__(self, ops):
-        self.ops = ops
-
-    def compute(self, data):
-        output_datasets = [op(data) for op in self.ops]
-        return xarray.merge(output_datasets)
-
-    def measurements(self, measurements):
-        output_measurements = []
-        for op in self.ops:
-            output_measurements.extend(op(measurements))
-        return output_measurements
-
-
 class PerBandIndexStat(SimpleStatistic):
     """
     Each output variable contains values that actually exist in the input data.
@@ -489,7 +462,7 @@ class PerPixelMetadata(object):
         return
 
     @abc.abstractmethod
-    def measurements(self):
+    def measurement(self):
         return
 
 
@@ -504,15 +477,13 @@ class ObservedDaysSince(PerPixelMetadata):
 
         return self._var_name, xarray.Variable(('y', 'x'), days_since)
 
-    def measurements(self):
-        return [
-            {
+    def measurement(self):
+        return {
                 'name': self._var_name,
                 'dtype': 'int16',
                 'nodata': 0,
                 'units': 'days since {:%Y-%m-%d %H:%M:%S}'.format(self._since)
             }
-        ]
 
 
 class ObservedDateInt(PerPixelMetadata):
@@ -521,37 +492,37 @@ class ObservedDateInt(PerPixelMetadata):
         observed_date = xarray.Variable(('y', 'x'), _datetime64_to_inttime(observed))
         return self._var_name, observed_date
 
-    def measurements(self):
-        return [{
+    def measurement(self):
+        return {
             'name': self._var_name,
             'dtype': 'int32',
             'nodata': 0,
             'units': 'Date as YYYYMMDD'
-        }]
+        }
 
 
 class SourceIndex(PerPixelMetadata):
     def compute(self, data, selected_indexes):
         return self._var_name, xarray.Variable(('y', 'x'), data.source.values[selected_indexes])
 
-    def measurements(self):
-        return [
-            {
-                'name': self._var_name,
-                'dtype': 'int8',
-                'nodata': -1,
-                'units': '1'
-            }
-        ]
+    def measurement(self):
+        return {
+            'name': self._var_name,
+            'dtype': 'int8',
+            'nodata': -1,
+            'units': '1'
+        }
 
 
 class PerStatIndexStat(SimpleStatistic):
     """
     :param stat_func: A function which takes an xarray.Dataset and returns an xarray.Dataset of indexes
+    :param list[PerPixelMetadata] extra_metadata_producers: collection of metadata generators
     """
 
-    def __init__(self, stat_func, masked=True):
+    def __init__(self, stat_func, masked=True, extra_metadata_producers=None):
         super(PerStatIndexStat, self).__init__(stat_func, masked)
+        self._metadata_producers = extra_metadata_producers or []
 
     def compute(self, data):
         index = super(PerStatIndexStat, self).compute(data)
@@ -561,10 +532,15 @@ class PerStatIndexStat(SimpleStatistic):
 
         data_values = data.reduce(index_dataset, dim='time')
 
+        for metadata_producer in self._metadata_producers:
+            var_name, var_data = metadata_producer.compute()
+            data_values[var_data] = var_data
+
         return data_values
 
     def measurements(self, input_measurements):
-        return super(PerStatIndexStat, self).measurements(input_measurements)
+        metadata_variables = [metadata_producer.measurement() for metadata_producer in self._metadata_producers]
+        return super(PerStatIndexStat, self).measurements(input_measurements) + metadata_variables
 
 
 def _compute_medoid(data, index_dtype='int16'):
@@ -579,18 +555,18 @@ def _compute_medoid(data, index_dtype='int16'):
 
 def percentile_stat(q):
     return PerBandIndexStat(  # pylint: disable=redundant-keyword-arg
-                            stat_func=partial(getattr(xarray.Dataset, 'reduce'),
-                                              dim='time',
-                                              func=argpercentile,
-                                              q=q))
+        stat_func=partial(getattr(xarray.Dataset, 'reduce'),
+                          dim='time',
+                          func=argpercentile,
+                          q=q))
 
 
 def percentile_stat_no_prov(q):
     return IndexStat(  # pylint: disable=redundant-keyword-arg
-                     stat_func=partial(getattr(xarray.Dataset, 'reduce'),
-                                       dim='time',
-                                       func=argpercentile,
-                                       q=q))
+        stat_func=partial(getattr(xarray.Dataset, 'reduce'),
+                          dim='time',
+                          func=argpercentile,
+                          q=q))
 
 
 def _datetime64_to_inttime(var):
@@ -607,3 +583,35 @@ def _datetime64_to_inttime(var):
     months = values.astype('datetime64[M]').astype('int32') % 12 + 1
     days = (values.astype('datetime64[D]') - values.astype('datetime64[M]') + 1).astype('int32')
     return years * 10000 + months * 100 + days
+
+
+STATS = {
+    'min': SimpleXarrayReduction('min'),
+    'max': SimpleXarrayReduction('max'),
+    'mean': SimpleXarrayReduction('mean'),
+    'percentile_10': percentile_stat(10),
+    'percentile_25': percentile_stat(25),
+    'percentile_50': percentile_stat(50),
+    'percentile_75': percentile_stat(75),
+    'percentile_90': percentile_stat(90),
+    'percentile_10_no_prov': percentile_stat_no_prov(10),
+    'percentile_25_no_prov': percentile_stat_no_prov(25),
+    'percentile_50_no_prov': percentile_stat_no_prov(50),
+    'percentile_75_no_prov': percentile_stat_no_prov(75),
+    'percentile_90_no_prov': percentile_stat_no_prov(90),
+    'medoid': PerStatIndexStat(stat_func=_compute_medoid, extra_metadata_producers=[ObservedDaysSince()]),
+    'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
+                                            stats=['min', 'mean', 'max']),
+    'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1',
+                                            stats=['min', 'mean', 'max']),
+    'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
+    'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
+    'wofs': WofsStats(),
+}
+
+try:
+    from hdmedians import nangeomedian
+    STATS['geomedian'] = SimpleStatistic(stat_func=partial(combined_var_reduction, method=nangeomedian))
+except ImportError:
+    def nangeomedian():
+        pass

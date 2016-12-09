@@ -1,6 +1,5 @@
 from datacube.model import DatasetType
-from datacube_stats.statistics import percentile_stat, percentile_stat_no_prov, PerStatIndexStat, \
-    _compute_medoid, NormalisedDifferenceStats, WofsStats, SimpleXarrayReduction
+from datacube_stats.statistics import STATS
 
 
 class StatsTask(object):
@@ -62,6 +61,8 @@ class StatProduct(object):
         #: The product name.
         self.name = definition['name']
 
+        self.file_path_template = definition['file_path_template']
+
         #: The name of the statistic. Eg, mean, max, medoid, percentile_10
         self.stat_name = definition['statistic']
 
@@ -95,28 +96,3 @@ class StatProduct(object):
         }
         DatasetType.validate(product_definition)
         return DatasetType(metadata_type, product_definition)
-
-
-STATS = {
-    'min': SimpleXarrayReduction('min'),
-    'max': SimpleXarrayReduction('max'),
-    'mean': SimpleXarrayReduction('mean'),
-    'percentile_10': percentile_stat(10),
-    'percentile_25': percentile_stat(25),
-    'percentile_50': percentile_stat(50),
-    'percentile_75': percentile_stat(75),
-    'percentile_90': percentile_stat(90),
-    'percentile_10_no_prov': percentile_stat_no_prov(10),
-    'percentile_25_no_prov': percentile_stat_no_prov(25),
-    'percentile_50_no_prov': percentile_stat_no_prov(50),
-    'percentile_75_no_prov': percentile_stat_no_prov(75),
-    'percentile_90_no_prov': percentile_stat_no_prov(90),
-    'medoid': PerStatIndexStat(masked=True, stat_func=_compute_medoid),
-    'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
-                                            stats=['min', 'mean', 'max']),
-    'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1',
-                                            stats=['min', 'mean', 'max']),
-    'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    'wofs': WofsStats(),
-}

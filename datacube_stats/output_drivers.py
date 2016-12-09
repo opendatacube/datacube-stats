@@ -22,12 +22,12 @@ from datacube.storage.storage import create_netcdf_storage_unit
 from datacube.utils import unsqueeze_data_array
 
 _LOG = logging.getLogger(__name__)
-STANDARD_VARIABLE_PARAM_NAMES = {'zlib',
-                                 'complevel',
-                                 'shuffle',
-                                 'fletcher32',
-                                 'contiguous',
-                                 'attrs'}
+NETCDF_VARIABLE_PARAMETER_NAMES = {'zlib',
+                                   'complevel',
+                                   'shuffle',
+                                   'fletcher32',
+                                   'contiguous',
+                                   'attrs'}
 
 
 class OutputDriver(object):
@@ -97,7 +97,7 @@ class NetcdfOutputDriver(OutputDriver):
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
-            filename_template = str(Path(self._output_path, stat.definition['file_path_template']))
+            filename_template = str(Path(self._output_path, stat.file_path_template))
             output_filename = _format_filename(filename_template, **self._task)
             self._output_files[prod_name] = self._create_storage_unit(stat, output_filename)
 
@@ -126,9 +126,9 @@ class NetcdfOutputDriver(OutputDriver):
         variable_params = {}
         for measurement in stat.data_measurements:
             name = measurement['name']
-            variable_params[name] = {k: v for k, v in stat.definition.items() if k in STANDARD_VARIABLE_PARAM_NAMES}
+            variable_params[name] = {k: v for k, v in stat._definition.items() if k in NETCDF_VARIABLE_PARAMETER_NAMES}
             variable_params[name]['chunksizes'] = chunking
-            variable_params[name].update({k: v for k, v in measurement.items() if k in STANDARD_VARIABLE_PARAM_NAMES})
+            variable_params[name].update({k: v for k, v in measurement.items() if k in NETCDF_VARIABLE_PARAMETER_NAMES})
         return variable_params
 
     @staticmethod
@@ -174,7 +174,7 @@ class RioOutputDriver(OutputDriver):
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
             for measurename, measure_def in stat.product.measurements.items():
-                filename_template = str(Path(self._output_path, stat.definition['file_path_template']))
+                filename_template = str(Path(self._output_path, stat.file_path_template))
 
                 output_filename = _format_filename(filename_template,
                                                    var_name=measurename,
@@ -236,7 +236,9 @@ class TestOutputDriver(OutputDriver):
 
 
 def _format_filename(path_template, **kwargs):
-    return Path(str(path_template).format(**kwargs))
+    x, y = kwargs['tile_index']
+    epoch_start, epoch_end = kwargs['time_period']
+    return Path(str(path_template).format(x=x, y=y, epoch_start=epoch_start, epoch_end=epoch_end))
 
 
 def _find_source_datasets(task, stat, geobox, app_info, uri=None):

@@ -26,7 +26,7 @@ from datacube.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, StatProduct, STATS
 from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver, TestOutputDriver
 from datacube_stats.runner import run_tasks
-from datacube_stats.statistics import StatsConfigurationError
+from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
 
 __all__ = ['StatsApp', 'main']
@@ -409,7 +409,7 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
     :return:
     """
     workflow = GridWorkflow(index, grid_spec=grid_spec)
-    timer = MultiTimer()
+
     for time_period in date_ranges:
         _LOG.debug('Making output product tasks for time period: %s', time_period)
         timer = MultiTimer().start('creating_tasks')
