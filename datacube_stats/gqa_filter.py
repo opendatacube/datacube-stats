@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, print_function
 
 import math
 
-from datacube.utils import check_intersect
+from datacube.utils import intersects
 from datacube.api.query import Query, query_group_by
 
 
@@ -20,8 +20,8 @@ def list_gqa_filtered_cells(index, gw, pix_th=1, cell_index=None, **indexers):
     # filter now with pixel threshold value
     datasets = {}
     for dataset in observations:
-        if check_intersect(geobox.extent, dataset.extent.to_crs(gw.grid_spec.crs)):
+        if intersects(geobox.extent, dataset.extent.to_crs(gw.grid_spec.crs)):
             if get_gqa(index, dataset.id) < pix_th:
                 datasets.setdefault(cell_index, {'datasets': [],
                                                  '_geobox': geobox})['datasets'].append(dataset)
-    return gw.cell_sources(datasets, query_group_by(**indexers))
+    return gw.group_into_cells(datasets, query_group_by(**indexers))

@@ -8,7 +8,7 @@ import logging
 from functools import partial
 
 import click
-import numpy
+import numpy as np
 import pandas as pd
 import xarray
 
@@ -24,7 +24,7 @@ from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, StatProduct, STATS
-from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver
+from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver, TestOutputDriver
 from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError
 from datacube_stats.timer import MultiTimer
@@ -36,7 +36,8 @@ DEFAULT_TASK_CHUNKING = {'chunking': {'x': 1000, 'y': 1000}}
 
 OUTPUT_DRIVERS = {
     'NetCDF CF': NetcdfOutputDriver,
-    'Geotiff': RioOutputDriver
+    'Geotiff': RioOutputDriver,
+    'Test': TestOutputDriver
 }
 
 
@@ -227,6 +228,7 @@ def execute_task(task, output_driver, chunking):
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
 
+
 def _load_data(sub_tile_slice, sources):
     """
     Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
@@ -235,11 +237,12 @@ def _load_data(sub_tile_slice, sources):
     :param sources: a dictionary containing `data`, `spec` and `masks`
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
     """
-    datasets = [_load_masked_data(sub_tile_slice, source_prod) for source_prod in sources]
+    datasets = [_load_masked_data(sub_tile_slice, source_prod) for source_prod in sources]  # list of datasets
     for idx, dataset in enumerate(datasets):
-        dataset.coords['source'] = ('time', numpy.repeat(idx, dataset.time.size))
+        dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
     return datasets.isel(time=datasets.time.argsort())  # sort along time dim  # Copies all the data again
+    # return inplace_isel(datasets, time=datasets.time.argsort())
 
 
 def _load_masked_data(sub_tile_slice, source_prod):
@@ -452,9 +455,9 @@ def _generate_non_gridded_tasks(index, sources_spec, date_ranges, input_region, 
     dc = Datacube(index=index)
 
     def make_tile(product, time, group_by):
-        datasets = dc.product_observations(product=product, time=time, **input_region)
+        datasets = dc.find_datasets(product=product, time=time, **input_region)
         group_by = query_group_by(group_by=group_by)
-        sources = dc.product_sources(datasets, group_by)
+        sources = dc.group_datasets(datasets, group_by)
 
         res = storage['resolution']
 

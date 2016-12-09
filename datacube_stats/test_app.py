@@ -9,7 +9,7 @@ import mock
 from datacube.model import MetadataType
 from datacube_stats.main import StatProduct
 from datacube_stats.models import StatsTask
-from datacube_stats.statistics import StatsConfigurationError, ValueStat
+from datacube_stats.statistics import StatsConfigurationError, SimpleStatistic
 
 from datacube_stats.main import create_stats_app
 from .main import StatsApp
@@ -80,7 +80,7 @@ def test_can_create_output_products(sample_stats_config, mock_index):
     assert isinstance(fake_output, StatProduct)
     assert fake_output.name == 'fake_output'
     assert fake_output.stat_name == 'mean'
-    assert isinstance(fake_output.statistic, ValueStat)
+    assert isinstance(fake_output.statistic, SimpleStatistic)
 
     # TODO: Check output product is created
     # Based on the source product's measurements

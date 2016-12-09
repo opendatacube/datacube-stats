@@ -22,9 +22,10 @@ from __future__ import absolute_import
 
 import abc
 import collections
+from datetime import datetime
 from collections import OrderedDict
 
-import numpy
+import numpy as np
 from functools import reduce as reduce_, partial
 from operator import mul as mul_op
 
@@ -33,10 +34,11 @@ import xarray
 try:
     from bottleneck import anynan, nansum
 except ImportError:
-    nansum = numpy.nansum
+    nansum = np.nansum
+
 
     def anynan(x, axis=None):
-        return numpy.isnan(x).any(axis=axis)
+        return np.isnan(x).any(axis=axis)
 
 
 class StatsConfigurationError(RuntimeError):
@@ -57,10 +59,10 @@ def argnanmedoid(x, axis=1):
     invalid = anynan(x, axis=0)
     band, time = x.shape
     diff = x.reshape(band, time, 1) - x.reshape(band, 1, time)
-    dist = numpy.sqrt(numpy.sum(diff * diff, axis=0))  # dist = numpy.linalg.norm(diff, axis=0) is slower somehow...
+    dist = np.sqrt(np.sum(diff * diff, axis=0))  # dist = np.linalg.norm(diff, axis=0) is slower somehow...
     dist_sum = nansum(dist, axis=0)
-    dist_sum[invalid] = numpy.inf
-    i = numpy.argmin(dist_sum)
+    dist_sum[invalid] = np.inf
+    i = np.argmin(dist_sum)
 
     return i
 
@@ -84,7 +86,7 @@ def combined_var_reduction(dataset, method, dim='time', keep_attrs=True):
     """
     flattened = dataset.to_array(dim='variable')
 
-    hdmedian_out = flattened.reduce(_array_hdmedian, dim=dim, keep_attrs=keep_attrs, method=method)
+    hdmedian_out = flattened.reduce(_reduce_across_variables, dim=dim, keep_attrs=keep_attrs, method=method)
 
     hdmedian_out = hdmedian_out.to_dataset(dim='variable')
 
@@ -95,31 +97,27 @@ def combined_var_reduction(dataset, method, dim='time', keep_attrs=True):
     return hdmedian_out
 
 
-def _array_hdmedian(inarray, method, axis=1, **kwargs):
+def _reduce_across_variables(inarray, method, axis=1, out_dtype='float32', **kwargs):
     """
-    Apply cross band reduction across time for each x/y coordinate in a 4-D nd-array
+    Apply cross variable reduction across time for each x/y coordinate in a 4-D nd-array
 
-    ND-Array is expected to have dimensions of (bands, time, y, x)
+    Helper function used when computing medoids of datasets.
 
-    :param inarray:
-    :param method:
-    :param axis:
-    :param kwargs:
-    :return:
+    :param np.ndarray inarray: is expected to have dimensions of (bands, time, y, x)
     """
     if len(inarray.shape) != 4:
         raise ValueError("Can only operate on 4-D arrays")
     if axis != 1:
-        raise ValueError("Reduction axis must be 1")
+        raise ValueError("Reduction axis must be 1. Expected axes are (bands, time, y, x)")
 
     variable, time, y, x = inarray.shape
-    output = numpy.empty((variable, y, x), dtype='float64')
+    output = np.empty((variable, y, x), dtype=out_dtype)
     for iy in range(y):
         for ix in range(x):
             try:
                 output[:, iy, ix] = method(inarray[:, :, iy, ix])
             except ValueError:
-                output[:, iy, ix] = numpy.nan
+                output[:, iy, ix] = np.nan
     return output
 
 
@@ -129,7 +127,7 @@ def prod(a):
 
 
 def _blah(shape, step=1, dtype=None):
-    return numpy.arange(0, prod(shape) * step, step, dtype=dtype).reshape(shape)
+    return np.arange(0, prod(shape) * step, step, dtype=dtype).reshape(shape)
 
 
 def axisindex(a, index, axis=0):
@@ -157,19 +155,19 @@ def argpercentile(a, q, axis=0):
     axis : int or sequence of int, optional
         Axis along which the percentiles are computed. The default is 0.
     """
-    q = numpy.array(q, dtype=numpy.float64, copy=True) / 100.0
-    nans = numpy.isnan(a).sum(axis=axis)
+    q = np.array(q, dtype=np.float64, copy=True) / 100.0
+    nans = np.isnan(a).sum(axis=axis)
     q = q.reshape(q.shape + (1,) * nans.ndim)
-    index = numpy.round(q * (a.shape[axis] - 1 - nans)).astype(numpy.int32)
+    index = np.round(q * (a.shape[axis] - 1 - nans)).astype(np.int32)
     # NOTE: assuming nans are gonna sort larger than everything else
-    return axisindex(numpy.argsort(a, axis=axis), index, axis=axis)
+    return axisindex(np.argsort(a, axis=axis), index, axis=axis)
 
 
 def nan_percentile(arr, q, axis=0):
     """
     Return requested percentile(s) of a 3D array, ignoring NaNs
 
-    For the case of 3D->2D reductions, this function is ~200x faster than numpy.nanpercentile()
+    For the case of 3D->2D reductions, this function is ~200x faster than np.nanpercentile()
 
     See http://krstn.eu/np.nanpercentile()-there-has-to-be-a-faster-way/ for further explanation
 
@@ -181,12 +179,12 @@ def nan_percentile(arr, q, axis=0):
         raise ValueError('This function only works with axis=0')
 
     # valid (non NaN) observations along the first axis
-    valid_obs = numpy.sum(numpy.isfinite(arr), axis=0)
+    valid_obs = np.sum(np.isfinite(arr), axis=0)
     # replace NaN with maximum
-    max_val = numpy.nanmax(arr)
-    arr[numpy.isnan(arr)] = max_val
+    max_val = np.nanmax(arr)
+    arr[np.isnan(arr)] = max_val
     # sort - former NaNs will move to the end
-    arr = numpy.sort(arr, axis=0)
+    arr = np.sort(arr, axis=0)
 
     # loop over requested quantiles
     if isinstance(q, collections.Sequence):
@@ -195,25 +193,25 @@ def nan_percentile(arr, q, axis=0):
     else:
         qs = [q]
     if len(qs) < 2:
-        quant_arr = numpy.zeros(shape=(arr.shape[1], arr.shape[2]))
+        quant_arr = np.zeros(shape=(arr.shape[1], arr.shape[2]))
     else:
-        quant_arr = numpy.zeros(shape=(len(qs), arr.shape[1], arr.shape[2]))
+        quant_arr = np.zeros(shape=(len(qs), arr.shape[1], arr.shape[2]))
 
     result = []
     for quant in qs:
         # desired position as well as floor and ceiling of it
         k_arr = (valid_obs - 1) * (quant / 100.0)
-        f_arr = numpy.floor(k_arr).astype(numpy.int32)
-        c_arr = numpy.ceil(k_arr).astype(numpy.int32)
+        f_arr = np.floor(k_arr).astype(np.int32)
+        c_arr = np.ceil(k_arr).astype(np.int32)
         fc_equal_k_mask = f_arr == c_arr
 
-        # linear interpolation (like numpy percentile) takes the fractional part of desired position
+        # linear interpolation (like np percentile) takes the fractional part of desired position
         floor_val = axisindex(a=arr, index=f_arr) * (c_arr - k_arr)
         ceil_val = axisindex(a=arr, index=c_arr) * (k_arr - f_arr)
 
         quant_arr = floor_val + ceil_val
         # if floor == ceiling take floor value
-        quant_arr[fc_equal_k_mask] = axisindex(a=arr, index=k_arr.astype(numpy.int32))[fc_equal_k_mask]
+        quant_arr[fc_equal_k_mask] = axisindex(a=arr, index=k_arr.astype(np.int32))[fc_equal_k_mask]
 
         result.append(quant_arr)
 
@@ -228,40 +226,20 @@ class Statistic(object):
 
     @abc.abstractmethod
     def compute(self, data):
-        return
-
-    @abc.abstractmethod
-    def measurements(self, input_measurements):
-        return
-
-
-class ValueStat(Statistic):
-    """
-    Holder class describing the outputs of a statistic and how to calculate it
-
-    :param stat_func: callable to compute statistics
-    :param bool masked: whether to apply masking to the input data
-    """
-
-    def __init__(self, stat_func, masked=True):
-        self.masked = masked
-        self.stat_func = stat_func
-
-    def compute(self, data):
         """
         Compute a statistic on the given Dataset.
 
         :param xarray.Dataset data:
         :return: xarray.Dataset
         """
-        return self.stat_func(data)
+        return
 
-    @staticmethod
-    def measurements(input_measurements):
+    def measurements(self, input_measurements):
         """
         Turn a list of input measurements into a list of output measurements.
 
-        :param input_measurements:
+        Base implementation simply copies input measurements to output_measurements.
+
         :rtype: list(dict)
         """
         return [
@@ -269,15 +247,35 @@ class ValueStat(Statistic):
             for measurement in input_measurements]
 
 
-class SimpleXarrayStat(ValueStat):
+class SimpleStatistic(Statistic):
     """
-    Compute statistics using a reduction function defined on `xarray.Dataset`.
+    Describes the outputs of a statistic and how to calculate it
 
-    :param stat_func_name: name of reduction function to use
+    :param stat_func:
+        callable to compute statistics. Should both accept and return a :class:`xarray.Dataset`.
+    :param bool masked:
+        whether to apply masking to the input data
     """
-    def __init__(self, stat_func_name, masked=True):
+
+    def __init__(self, stat_func, masked=True):
         self.masked = masked
-        self._stat_func_name = stat_func_name
+        self.stat_func = stat_func
+
+    def compute(self, data):
+        return self.stat_func(data)
+
+
+class SimpleXarrayReduction(Statistic):
+    """
+    Compute statistics using a reduction function defined on :class:`xarray.Dataset`.
+    """
+
+    def __init__(self, xarray_function_name, masked=True):
+        """
+        :param str xarray_function_name: name of an :class:`xarray.Dataset` reduction function
+        """
+        self.masked = masked
+        self._stat_func_name = xarray_function_name
 
     def compute(self, data):
         func = getattr(xarray.Dataset, self._stat_func_name)
@@ -290,11 +288,11 @@ class WofsStats(Statistic):
 
     It's very hard coded, but maybe that's a good thing.
     """
+
     def __init__(self):
         self.masked = True
 
-    @staticmethod
-    def compute(data):
+    def compute(self, data):
         wet = (data.water == 128).sum(dim='time')
         dry = (data.water == 0).sum(dim='time')
         clear = wet + dry
@@ -303,8 +301,7 @@ class WofsStats(Statistic):
                                'count_clear': clear,
                                'frequency': frequency}, attrs=dict(crs=data.crs))
 
-    @staticmethod
-    def measurements(input_measurements):
+    def measurements(self, input_measurements):
         measurement_names = set(m['name'] for m in input_measurements)
         assert 'water' in measurement_names
         return [
@@ -364,7 +361,7 @@ class NormalisedDifferenceStats(Statistic):
                 for stat in self.stats]
 
 
-class IndexStat(ValueStat):
+class IndexStat(SimpleStatistic):
     def __init__(self, stat_func, masked=True):
         super(IndexStat, self).__init__(stat_func, masked)
 
@@ -376,10 +373,6 @@ class IndexStat(ValueStat):
 
         data_values = index.apply(index_dataset)
         return data_values
-
-    @staticmethod
-    def measurements(input_measurements):
-        return ValueStat.measurements(input_measurements)
 
 
 class StreamedStat(Statistic):
@@ -413,7 +406,7 @@ class OneToManyStat(Statistic):
         return output_measurements
 
 
-class PerBandIndexStat(ValueStat):
+class PerBandIndexStat(SimpleStatistic):
     """
     Each output variable contains values that actually exist in the input data.
 
@@ -451,8 +444,7 @@ class PerBandIndexStat(ValueStat):
 
         return xarray.merge([data_values, time_values, text_values])
 
-    @staticmethod
-    def measurements(input_measurements):
+    def measurements(self, input_measurements):
         index_measurements = [
             {
                 'name': measurement['name'] + '_source',
@@ -481,10 +473,79 @@ class PerBandIndexStat(ValueStat):
             for measurement in input_measurements
             ]
 
-        return ValueStat.measurements(input_measurements) + date_measurements + index_measurements + text_measurements
+        return (super(PerBandIndexStat, self).measurements(input_measurements) + date_measurements +
+                index_measurements + text_measurements)
 
 
-class PerStatIndexStat(ValueStat):
+class PerPixelMetadata(object):
+    __metaclass__ = abc.ABCMeta
+
+    def __init__(self, var_name='observed'):
+        self._var_name = var_name
+
+    @abc.abstractmethod
+    def compute(self, data, selected_indexes):
+        """Return a variable name and :class:`xarray.Variable` to add in to the """
+        return
+
+    @abc.abstractmethod
+    def measurements(self):
+        return
+
+
+class ObservedDaysSince(PerPixelMetadata):
+    def __init__(self, since=datetime(1970, 1, 1), var_name='observed'):
+        super(ObservedDaysSince, self).__init__(var_name)
+        self._since = since
+
+    def compute(self, data, selected_indexes):
+        observed = data.time.values[selected_indexes] - np.datetime64(self._since)
+        days_since = observed.astype('timedelta64[D]').astype('int16')
+
+        return self._var_name, xarray.Variable(('y', 'x'), days_since)
+
+    def measurements(self):
+        return [
+            {
+                'name': self._var_name,
+                'dtype': 'int16',
+                'nodata': 0,
+                'units': 'days since {:%Y-%m-%d %H:%M:%S}'.format(self._since)
+            }
+        ]
+
+
+class ObservedDateInt(PerPixelMetadata):
+    def compute(self, data, selected_indexes):
+        observed = data.time.values[selected_indexes]
+        observed_date = xarray.Variable(('y', 'x'), _datetime64_to_inttime(observed))
+        return self._var_name, observed_date
+
+    def measurements(self):
+        return [{
+            'name': self._var_name,
+            'dtype': 'int32',
+            'nodata': 0,
+            'units': 'Date as YYYYMMDD'
+        }]
+
+
+class SourceIndex(PerPixelMetadata):
+    def compute(self, data, selected_indexes):
+        return self._var_name, xarray.Variable(('y', 'x'), data.source.values[selected_indexes])
+
+    def measurements(self):
+        return [
+            {
+                'name': self._var_name,
+                'dtype': 'int8',
+                'nodata': -1,
+                'units': '1'
+            }
+        ]
+
+
+class PerStatIndexStat(SimpleStatistic):
     """
     :param stat_func: A function which takes an xarray.Dataset and returns an xarray.Dataset of indexes
     """
@@ -499,47 +560,17 @@ class PerStatIndexStat(ValueStat):
             return axisindex(var, index, axis=axis)
 
         data_values = data.reduce(index_dataset, dim='time')
-        observed = data.time.values[index]
-        data_values['observed'] = (('y', 'x'), observed)
-        data_values['observed_date'] = (('y', 'x'), _datetime64_to_inttime(observed))
-        data_values['source'] = (('y', 'x'), data.source.values[index])
 
         return data_values
 
-    @staticmethod
-    def measurements(input_measurements):
-        index_measurements = [
-            {
-                'name': 'source',
-                'dtype': 'int8',
-                'nodata': -1,
-                'units': '1'
-            }
-        ]
-        date_measurements = [
-            {
-                'name': 'observed',
-                'dtype': 'float64',
-                'nodata': 0,
-                'units': 'seconds since 1970-01-01 00:00:00'
-            }
-        ]
-        text_measurements = [
-            {
-                'name': 'observed_date',
-                'dtype': 'int32',
-                'nodata': 0,
-                'units': 'Date as YYYYMMDD'
-            }
-        ]
-        return ValueStat.measurements(input_measurements) + date_measurements + index_measurements + text_measurements
+    def measurements(self, input_measurements):
+        return super(PerStatIndexStat, self).measurements(input_measurements)
 
 
-def compute_medoid(data):
+def _compute_medoid(data, index_dtype='int16'):
     flattened = data.to_array(dim='variable')
     variable, time, y, x = flattened.shape
-    index = numpy.empty((y, x), dtype='int64')
-    # TODO: nditer?
+    index = np.empty((y, x), dtype=index_dtype)
     for iy in range(y):
         for ix in range(x):
             index[iy, ix] = argnanmedoid(flattened.values[:, :, iy, ix])
@@ -547,8 +578,7 @@ def compute_medoid(data):
 
 
 def percentile_stat(q):
-    return PerBandIndexStat(masked=True,
-                            # pylint: disable=redundant-keyword-arg
+    return PerBandIndexStat(  # pylint: disable=redundant-keyword-arg
                             stat_func=partial(getattr(xarray.Dataset, 'reduce'),
                                               dim='time',
                                               func=argpercentile,
@@ -556,8 +586,7 @@ def percentile_stat(q):
 
 
 def percentile_stat_no_prov(q):
-    return IndexStat(masked=True,
-                     # pylint: disable=redundant-keyword-arg
+    return IndexStat(  # pylint: disable=redundant-keyword-arg
                      stat_func=partial(getattr(xarray.Dataset, 'reduce'),
                                        dim='time',
                                        func=argpercentile,
@@ -570,8 +599,8 @@ def _datetime64_to_inttime(var):
 
     For example, 2016-09-29 as an "inttime" would be 20160929
 
-    :param var: datetime64
-    :return: int representing the given time
+    :param var: ndarray of datetime64
+    :return: ndarray of ints, representing the given time to the nearest day
     """
     values = getattr(var, 'values', var)
     years = values.astype('datetime64[Y]').astype('int32') + 1970

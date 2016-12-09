@@ -82,7 +82,8 @@ date_ranges:
 location: '/g/data/u46/users/dra547/statstests'
 
 storage:
-  driver: NetCDF CF
+  driver: Test
+#  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -104,7 +105,7 @@ computation:
     y: 4000
 
 input_region:
-  tile: [15, -42]
+  tile: [16, -40]
 #  from_file: /g/data/u46/users/dra547/test_stats_region/test_stats_region.shp
 
 ## Define statistics to perform and how to store the data

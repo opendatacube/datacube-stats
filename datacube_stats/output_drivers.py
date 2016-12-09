@@ -224,6 +224,17 @@ class RioOutputDriver(OutputDriver):
             dest.update_tags(**attributes)
 
 
+class TestOutputDriver(OutputDriver):
+    def write_global_attributes(self, attributes):
+        pass
+
+    def write_data(self, prod_name, measurement_name, tile_index, values):
+        pass
+
+    def open_output_files(self):
+        pass
+
+
 def _format_filename(path_template, **kwargs):
     return Path(str(path_template).format(**kwargs))
 

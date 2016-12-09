@@ -127,9 +127,9 @@ def stack(index, date_from, date_to, x, y, nd_bands, filename):
 
 def _load_sources(dc, query, prods, name):
     group_by = query_group_by(group_by='solar_day')
-    observations = sum([dc.product_observations(product=prod, **query) for prod in prods], [])
+    observations = sum([dc.find_datasets(product=prod, **query) for prod in prods], [])
     _LOG.info("Loading %s observations. Found %s", name, len(observations))
-    sources = dc.product_sources(observations, group_by)
+    sources = dc.group_datasets(observations, group_by)
     sources.name = name
     _LOG.info("Grouped into %s days.", len(sources))
     return sources
@@ -160,10 +160,10 @@ def write_dataarray_geotiff(dc, filename, dataarray_sources, geobox, measurement
     with rasterio.open(filename, mode='w', **profile) as dst:
         for i in trange(len(dataarray_sources.time), desc='time slices written', unit='slice'):
             # Load data
-            data = dc.product_data(dataarray_sources.nbar[i:i + 1], geobox, measurements=measurements)
+            data = dc.load_data(dataarray_sources.nbar[i:i + 1], geobox, measurements=measurements)
             # Mask with PQ
-            pq = dc.product_data(dataarray_sources.pq[i:i + 1], geobox,
-                                 measurements=pq_measurements, fuse_func=ga_pq_fuser)['pixelquality']
+            pq = dc.load_data(dataarray_sources.pq[i:i + 1], geobox,
+                              measurements=pq_measurements, fuse_func=ga_pq_fuser)['pixelquality']
             mask = make_mask(pq, **MASK_FLAGS)
             del pq
 

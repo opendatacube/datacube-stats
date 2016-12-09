@@ -1,6 +1,6 @@
 from datacube.model import DatasetType
-from datacube_stats.statistics import ValueStat, percentile_stat, percentile_stat_no_prov, PerStatIndexStat, \
-    compute_medoid, NormalisedDifferenceStats, WofsStats, SimpleXarrayStat
+from datacube_stats.statistics import percentile_stat, percentile_stat_no_prov, PerStatIndexStat, \
+    _compute_medoid, NormalisedDifferenceStats, WofsStats, SimpleXarrayReduction
 
 
 class StatsTask(object):
@@ -56,15 +56,16 @@ class StatProduct(object):
     """
 
     def __init__(self, metadata_type, input_measurements, definition, storage):
-        self.definition = definition
+        #: JSON style dict of dicts product definition
+        self._definition = definition
 
         #: The product name.
         self.name = definition['name']
 
         #: The name of the statistic. Eg, mean, max, medoid, percentile_10
-        self.stat_name = self.definition['statistic']
+        self.stat_name = definition['statistic']
 
-        #: The implementation of a statistic. See :class:`ValueStat`.
+        #: The implementation of a statistic. See :class:`Statistic`.
         #: Will provide `compute` and `measurements` functions.
         self.statistic = STATS[self.stat_name]
 
@@ -97,9 +98,9 @@ class StatProduct(object):
 
 
 STATS = {
-    'min': SimpleXarrayStat('min'),
-    'max': SimpleXarrayStat('max'),
-    'mean': SimpleXarrayStat('mean'),
+    'min': SimpleXarrayReduction('min'),
+    'max': SimpleXarrayReduction('max'),
+    'mean': SimpleXarrayReduction('mean'),
     'percentile_10': percentile_stat(10),
     'percentile_25': percentile_stat(25),
     'percentile_50': percentile_stat(50),
@@ -110,7 +111,7 @@ STATS = {
     'percentile_50_no_prov': percentile_stat_no_prov(50),
     'percentile_75_no_prov': percentile_stat_no_prov(75),
     'percentile_90_no_prov': percentile_stat_no_prov(90),
-    'medoid': PerStatIndexStat(masked=True, stat_func=compute_medoid),
+    'medoid': PerStatIndexStat(masked=True, stat_func=_compute_medoid),
     'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
                                             stats=['min', 'mean', 'max']),
     'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1',
