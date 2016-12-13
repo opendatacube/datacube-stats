@@ -79,7 +79,7 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
         app_config=app_config
     ))
 
-    distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(bokeh)s %(app_cmd)s' % dict(
+    distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(app_cmd)s %(bokeh)s' % dict(
         distr=SCRIPT_DIR / 'distributed.sh',
         env_arg=env_arg,
         app_cmd=app_cmd,
