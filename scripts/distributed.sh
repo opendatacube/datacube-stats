@@ -32,7 +32,6 @@ do
         ;;
     --bokeh)
         bokeh_opt="--bokeh"
-        shift
         ;;
     *)
     break
