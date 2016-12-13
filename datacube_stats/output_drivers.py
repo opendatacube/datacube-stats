@@ -173,13 +173,27 @@ class RioOutputDriver(OutputDriver):
         'int8': 'uint8'
     }
 
+    def _get_dtype(self, prod_name, measurement_name):
+        dtype = super(RioOutputDriver, self)._get_dtype(prod_name, measurement_name)
+        return self.dtype_map.get(dtype, dtype)
+
+    def _get_nodata(self, prod_name, measurement_name):
+        dtype = self._get_dtype(prod_name, measurement_name)
+        nodata = self._output_products[prod_name].product.measurements[measurement_name]['nodata']
+        if dtype == 'uint8' and nodata < 0:
+            # Has been converted to uint8 for Geotiff
+            return 255
+        else:
+            return nodata
+
     def open_output_files(self):
+        # TODO: check
         for prod_name, stat in self._output_products.items():
-            for measurename, measure_def in stat.product.measurements.items():
+            for measurement_name, measure_def in stat.product.measurements.items():
                 filename_template = str(Path(self._output_path, stat.file_path_template))
 
                 output_filename = _format_filename(filename_template,
-                                                   var_name=measurename,
+                                                   var_name=measurement_name,
                                                    **self._task)
                 try:
                     output_filename.parent.mkdir(parents=True)
@@ -188,14 +202,15 @@ class RioOutputDriver(OutputDriver):
 
                 profile = self.default_profile.copy()
 
-                dtype = self.dtype_map.get(measure_def['dtype'], measure_def['dtype'])
+                dtype = self._get_dtype(prod_name, measurement_name)
+                nodata = self._get_nodata(prod_name, measurement_name)
 
                 profile.update({
                     'blockxsize': self._storage['chunking']['x'],
                     'blockysize': self._storage['chunking']['y'],
 
                     'dtype': dtype,
-                    'nodata': measure_def['nodata'],
+                    'nodata': nodata,
                     'width': self._geobox.width,
                     'height': self._geobox.height,
                     'affine': self._geobox.affine,
@@ -203,7 +218,7 @@ class RioOutputDriver(OutputDriver):
                     'count': 1
                 })
 
-                output_name = prod_name + measurename
+                output_name = prod_name + measurement_name
 
                 _LOG.debug("Opening %s for writing.", output_filename)
 
@@ -242,7 +257,8 @@ class TestOutputDriver(OutputDriver):
 def _format_filename(path_template, **kwargs):
     x, y = kwargs['tile_index']
     epoch_start, epoch_end = kwargs['time_period']
-    return Path(str(path_template).format(x=x, y=y, epoch_start=epoch_start, epoch_end=epoch_end))
+    return Path(str(path_template).format(x=x, y=y, epoch_start=epoch_start, epoch_end=epoch_end,
+                                          **kwargs))
 
 
 def _find_source_datasets(task, stat, geobox, app_info, uri=None):

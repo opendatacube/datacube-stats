@@ -60,6 +60,8 @@ computation:
   chunking:
     x: 400
     y: 800
+#    x: 2000
+#    y: 2000
 
 #input_region:
 #  tile: [10, -40]
@@ -67,10 +69,10 @@ computation:
 
 ## Define statistics to perform and how to store the data
 output_products:
- - name: fc_stats_annual_geomedian
-   statistic: medoid
+ - name: fc_medoid
+   statistic: medoid_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'LS8_2014_FC_MEDOID/{x}/LS_FC_MEDOID_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+   file_path_template: 'LS8_2014_FC_MEDOID/{x}/LS_FC_MEDOID_3577_{var_name}_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tiff'
    description: Landsat 8 Fractional Cover 25 metre, 100km tile, Australian Albers Equal Area projection (EPSG:3577)
    product_type: fractional_cover

@@ -545,7 +545,7 @@ class PerStatIndexStat(SimpleStatistic):
         data_values = data.reduce(index_dataset, dim='time')
 
         for metadata_producer in self._metadata_producers:
-            var_name, var_data = metadata_producer.compute()
+            var_name, var_data = metadata_producer.compute(data, index)
             data_values[var_data] = var_data
 
         return data_values
@@ -612,6 +612,7 @@ STATS = {
     'percentile_75_no_prov': percentile_stat_no_prov(75),
     'percentile_90_no_prov': percentile_stat_no_prov(90),
     'medoid': PerStatIndexStat(stat_func=_compute_medoid, extra_metadata_producers=[ObservedDaysSince()]),
+    'medoid_no_prov': PerStatIndexStat(stat_func=_compute_medoid),
     'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
                                             stats=['min', 'mean', 'max']),
     'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1',
