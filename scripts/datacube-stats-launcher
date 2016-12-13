@@ -41,7 +41,7 @@ def list():
               type=click.Path(exists=True, dir_okay=False))
 @click.option('--no-confirm', required=False, help="Don't ask for confirmation or perform file check",
               is_flag=True)
-@click.option('--web-ui', help='Launch the bokeh web interface', default=True,
+@click.option('--web-ui', help='Launch the bokeh web interface',
               is_flag=True)
 @click.argument('app_config')
 def qsub(app_config, queue, project, nodes, walltime, name, no_confirm, web_ui, config=None, env=None):
