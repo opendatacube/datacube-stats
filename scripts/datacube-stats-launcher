@@ -57,7 +57,7 @@ def qsub(app_config, queue, project, nodes, walltime, name, no_confirm, web_ui, 
 
     do_system_check(config_arg)
 
-    do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, confirm, web_ui)
+    do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_config, confirm, web_ui)
 
 
 def do_system_check(config_arg):
@@ -68,14 +68,15 @@ def do_system_check(config_arg):
     subprocess.check_call(check_cmd, shell=True)
 
 
-def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, confirm=True, web_ui=False):
+def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_config, confirm=True, web_ui=False):
     """Submits the job to qsub"""
     name = name
     app_cmd = ('datacube-stats -v -v {config_arg} '
                '--queue-size {queue_size} '
-               '--executor distributed DSCHEDULER'.format(
+               '--executor distributed DSCHEDULER {app_config}'.format(
         config_arg=config_arg,
         queue_size=nodes * 16 * 2,
+        app_config=app_config
     ))
 
     distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(bokeh)s %(app_cmd)s' % dict(
