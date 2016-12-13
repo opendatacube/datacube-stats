@@ -23,8 +23,8 @@ from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
-from datacube_stats.models import StatsTask, StatProduct, STATS
-from datacube_stats.output_drivers import NetcdfOutputDriver, RioOutputDriver, TestOutputDriver
+from datacube_stats.models import StatsTask, StatProduct
+from datacube_stats.output_drivers import OUTPUT_DRIVERS
 from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
@@ -33,12 +33,6 @@ __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
 DEFAULT_GROUP_BY = 'time'
 DEFAULT_TASK_CHUNKING = {'chunking': {'x': 1000, 'y': 1000}}
-
-OUTPUT_DRIVERS = {
-    'NetCDF CF': NetcdfOutputDriver,
-    'Geotiff': RioOutputDriver,
-    'Test': TestOutputDriver
-}
 
 
 @click.command(name='datacube-stats')
@@ -49,6 +43,7 @@ OUTPUT_DRIVERS = {
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, executor):
+    logging.getLogger('datacube.storage.storage').setLevel(logging.INFO)
     timer = MultiTimer()
     timer.start('main')
     _, config = next(read_documents(stats_config_file))
@@ -411,7 +406,7 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
     workflow = GridWorkflow(index, grid_spec=grid_spec)
 
     for time_period in date_ranges:
-        _LOG.debug('Making output product tasks for time period: %s', time_period)
+        _LOG.info('Making output product tasks for time period: %s', time_period)
         timer = MultiTimer().start('creating_tasks')
 
         # Tasks are grouped by tile_index, and may contain sources from multiple places
@@ -438,7 +433,7 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
 
         timer.pause('creating_tasks')
         if tasks:
-            _LOG.debug('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
+            _LOG.info('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
         for task in tasks.values():
             yield task
 

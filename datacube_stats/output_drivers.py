@@ -49,7 +49,6 @@ class OutputDriver(object):
     """
     __metaclass__ = abc.ABCMeta
 
-    # TODO: Add check for valid filename extensions in each driver
     def __init__(self, storage, task, output_path, app_info=None):
         self._task = task
         self._output_path = output_path
@@ -242,19 +241,19 @@ def _format_filename(path_template, **kwargs):
 
 
 def _find_source_datasets(task, stat, geobox, app_info, uri=None):
-    def _make_dataset(labels, sources):
+    def _make_dataset(labels, sources_):
         return make_dataset(product=stat.product,
-                            sources=sources,
+                            sources=sources_,
                             extent=geobox.extent,
                             center_time=labels['time'],
                             uri=uri,
                             app_info=app_info,
-                            valid_data=GeoPolygon.from_sources_extents(sources, geobox))
+                            valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
 
     def merge_sources(prod):
         if stat.masked:
             all_sources = xarray.align(prod['data'].sources, *[mask_tile.sources for mask_tile in prod['masks']])
-            return reduce_(operator.add, (sources.sum() for sources in all_sources))
+            return reduce_(operator.add, (sources_.sum() for sources_ in all_sources))
         else:
             return prod['data'].sources.sum()
 
@@ -266,3 +265,10 @@ def _find_source_datasets(task, stat, geobox, app_info, uri=None):
     datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
     datasets = datasets_to_doc(datasets)
     return datasets, sources
+
+
+OUTPUT_DRIVERS = {
+    'NetCDF CF': NetcdfOutputDriver,
+    'Geotiff': RioOutputDriver,
+    'Test': TestOutputDriver
+}

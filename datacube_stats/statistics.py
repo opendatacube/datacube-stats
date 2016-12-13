@@ -251,6 +251,18 @@ class Statistic(object):
             for measurement in input_measurements]
 
 
+class NoneStat(Statistic):
+    masked = True
+
+    def compute(self, data):
+        class Empty:
+            data_vars = {}
+        return Empty()
+
+    def measurements(self, input_measurements):
+        return input_measurements
+
+
 class SimpleStatistic(Statistic):
     """
     Describes the outputs of a statistic and how to calculate it
@@ -607,6 +619,7 @@ STATS = {
     'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'wofs': WofsStats(),
+    'none': NoneStat()
 }
 
 try:

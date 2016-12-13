@@ -37,6 +37,14 @@ class MultiTimer(object):
             self.max_rss[name] = rss
 
     def __str__(self):
-        return 'Run times: {}, Max RSS: {}'.format(dict(self.run_times), dict(self.max_rss))
+        formatted_sizes = {k: sizeof_fmt(v) for k, v in self.max_rss.items()}
+        formatted_times = {k: '{:.0f}m {:.0f}s'.format(*divmod(v, 60)) for k, v in self.run_times.items()}
+        return 'Run times: {}, Max RSS: {}'.format(formatted_times, formatted_sizes)
 
 
+def sizeof_fmt(num, suffix='B'):
+    for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Yi', suffix)

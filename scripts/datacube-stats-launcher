@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+
+import subprocess
+import click
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).absolute().parent.parent
+CONFIG_DIR = ROOT_DIR / 'configurations'
+SCRIPT_DIR = ROOT_DIR / 'scripts'
+
+
+@click.group(help='Datacube Stats Application Launcher')
+def cli():
+    pass
+
+
+@cli.command(help='List all installed app config files')
+def list():
+    for cfg in CONFIG_DIR.glob('*.yaml'):
+        print(cfg.name)
+
+
+@cli.command(short_help='Submit a job to qsub',
+             help='Submit a job to qsub for '
+                  'an app_config (from the list command).')
+@click.option('--queue', '-q', default='normal',
+              type=click.Choice(['normal', 'express']))
+@click.option('--project', '-P', default='v10')
+@click.option('--nodes', '-n', required=True,
+              help='Number of nodes to request',
+              type=click.IntRange(1, 100))
+@click.option('--walltime', '-t', default=10,
+              help='Number of hours to request',
+              type=click.IntRange(1, 48))
+@click.option('--name', help='Job name to use')
+@click.option('--config', help='Datacube config file',
+              type=click.Path(exists=True, dir_okay=False))
+@click.option('--env', help='Node environment setup script',
+              type=click.Path(exists=True, dir_okay=False))
+@click.option('--no-confirm', required=False, help="Don't ask for confirmation or perform file check",
+              is_flag=True)
+@click.option('--web-ui', help='Launch the bokeh web interface', default=True,
+              is_flag=True)
+@click.argument('app_config')
+def qsub(app_config, queue, project, nodes, walltime, name, no_confirm, web_ui, config=None, env=None):
+    confirm = not no_confirm
+    app_config = CONFIG_DIR / app_config
+
+    config_arg = '-C "%(config)s"' % dict(config=config) if config else ''
+    env_arg = '--env "%(env)s"' % dict(env=env) if env else ''
+
+    if not app_config.exists():
+        print('%s does not exist' % app_config)
+        return 1
+
+    do_system_check(config_arg)
+
+    do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, confirm, web_ui)
+
+
+def do_system_check(config_arg):
+    """Checks the connection to the database"""
+    check_cmd = 'datacube %(config_arg)s -v system check' % dict(
+        config_arg=config_arg,
+    )
+    subprocess.check_call(check_cmd, shell=True)
+
+
+def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, confirm=True, web_ui=False):
+    """Submits the job to qsub"""
+    name = name
+    app_cmd = ('datacube-stats -v -v {config_arg} '
+               '--queue-size {queue_size} '
+               '--executor distributed DSCHEDULER'.format(
+        config_arg=config_arg,
+        queue_size=nodes * 16 * 2,
+    ))
+
+    distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(bokeh)s %(app_cmd)s' % dict(
+        distr=SCRIPT_DIR / 'distributed.sh',
+        env_arg=env_arg,
+        app_cmd=app_cmd,
+        bokeh='--bokeh' if web_ui else ''
+    )
+
+    l_args = 'ncpus=%(ncpus)d,mem=%(mem)dgb,walltime=%(walltime)d:00:00,other=%(other)s' % dict(
+        ncpus=nodes * 16,
+        mem=nodes * 31,
+        walltime=walltime,
+        other='gdata2',
+    )
+
+    qsub = 'qsub -q %(queue)s -N %(name)s -P %(project)s -l %(l_args)s -- /bin/bash %(distr_cmd)s'
+    cmd = qsub % dict(queue=queue,
+                      name=name,
+                      project=project,
+                      l_args=l_args,
+                      distr_cmd=distr_cmd,
+                      )
+
+    if not confirm or click.confirm('\n' + cmd + '\nRUN?', default=True):
+        subprocess.check_call(cmd, shell=True)
+
+
+if __name__ == '__main__':
+    cli()
