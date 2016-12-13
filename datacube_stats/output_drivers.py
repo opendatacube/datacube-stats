@@ -169,6 +169,9 @@ class RioOutputDriver(OutputDriver):
         'interleave': 'band',
         'tiled': True
     }
+    dtype_map = {
+        'int8': 'uint8'
+    }
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
@@ -185,11 +188,13 @@ class RioOutputDriver(OutputDriver):
 
                 profile = self.default_profile.copy()
 
+                dtype = self.dtype_map.get(measure_def['dtype'], measure_def['dtype'])
+
                 profile.update({
                     'blockxsize': self._storage['chunking']['x'],
                     'blockysize': self._storage['chunking']['y'],
 
-                    'dtype': measure_def['dtype'],
+                    'dtype': dtype,
                     'nodata': measure_def['nodata'],
                     'width': self._geobox.width,
                     'height': self._geobox.height,
