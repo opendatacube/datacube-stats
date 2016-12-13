@@ -39,15 +39,18 @@ DEFAULT_TASK_CHUNKING = {'chunking': {'x': 1000, 'y': 1000}}
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
                 callback=to_pathlib)
+@click.option('--queue-size', type=click.IntRange(1, 100000), default=50,
+              help='Number of tasks to queue at the start')
 @ui.global_cli_options
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor):
+def main(index, stats_config_file, executor, queue_size):
     logging.getLogger('datacube.storage.storage').setLevel(logging.INFO)
     timer = MultiTimer()
     timer.start('main')
     _, config = next(read_documents(stats_config_file))
     app = create_stats_app(config, index)
+    app.queue_size = queue_size
     app.validate()
 
     app.run(executor)
@@ -100,6 +103,8 @@ class StatsApp(object):
         #: Takes a single argument of the task result
         self.process_completed = None
 
+        self.queue_size = 50
+
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
         # Check output product names are unique
@@ -141,7 +146,7 @@ class StatsApp(object):
         output_driver = partial(self.output_driver, output_path=self.location, app_info=app_info,
                                 storage=self.storage)
         task_runner = partial(execute_task, output_driver=output_driver, chunking=self.computation['chunking'])
-        run_tasks(tasks, executor, task_runner, self.process_completed)
+        run_tasks(tasks, executor, task_runner, self.process_completed, queue_size=self.queue_size)
 
     def generate_tasks(self, output_products):
         """
