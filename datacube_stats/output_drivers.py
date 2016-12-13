@@ -195,6 +195,9 @@ class RioOutputDriver(OutputDriver):
                 output_filename = _format_filename(filename_template,
                                                    var_name=measurement_name,
                                                    **self._task)
+
+                if output_filename.exists():
+                    raise RuntimeError('Output file already exists: %s' % output_filename)
                 try:
                     output_filename.parent.mkdir(parents=True)
                 except OSError:
