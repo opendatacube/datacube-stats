@@ -43,6 +43,12 @@ class StatsTask(object):
     def __getitem__(self, item):
         return getattr(self, item)
 
+    def __str__(self):
+        return "StatsTask(time_period={}, tile_index={})".format(self.time_period, self.tile_index)
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class StatProduct(object):
     """
@@ -96,3 +102,9 @@ class StatProduct(object):
         }
         DatasetType.validate(product_definition)
         return DatasetType(metadata_type, product_definition)
+
+    def __str__(self):
+        return "StatsProduct<name={}, stat_name={}>".format(self.name, self.stat_name)
+
+    def __repr__(self):
+        return self.__str__()
