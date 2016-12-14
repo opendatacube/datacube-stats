@@ -249,7 +249,7 @@ def _load_data(sub_tile_slice, sources):
     for idx, dataset in enumerate(datasets):
         dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
-    if not any(bool(data) for k, data in dataset.data_vars.items()):
+    if len(datasets.time) == 0:
         raise EmptyChunkException()
     return datasets.isel(time=datasets.time.argsort())  # sort along time dim  # Copies all the data again
     # return inplace_isel(datasets, time=datasets.time.argsort())
