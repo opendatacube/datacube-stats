@@ -228,7 +228,8 @@ class RioOutputDriver(OutputDriver):
                 dest = rasterio.open(str(output_filename), mode='w', **profile)
                 # dest.update_tags(created=self._app_info) # TODO record creation metadata
                 dest.update_tags(1, platform=self._task.sources[0]['data'].product.name,
-                                 date='{:%Y-%m-%d}'.format(self._task.time_period[0]))
+                                 date='{:%Y-%m-%d}'.format(self._task.time_period[0]),
+                                 name=measurement_name)
                 self._output_files[output_name] = dest
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
