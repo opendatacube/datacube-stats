@@ -208,25 +208,33 @@ def execute_task(task, output_driver, chunking):
     timer = MultiTimer()
     with output_driver(task=task) as output_files:
         for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-            timer.start('loading_data')
-            data = _load_data(sub_tile_slice, task.sources)
-            timer.pause('loading_data')
+            try:
+                timer.start('loading_data')
+                data = _load_data(sub_tile_slice, task.sources)
+                timer.pause('loading_data')
 
-            for prod_name, stat in task.output_products.items():
-                _LOG.debug("Computing %s in tile %s", prod_name, sub_tile_slice)
-                assert stat.masked  # TODO: not masked
-                timer.start(prod_name)
-                stats_data = stat.compute(data)
-                timer.pause(prod_name)
+                for prod_name, stat in task.output_products.items():
+                    _LOG.debug("Computing %s in tile %s", prod_name, sub_tile_slice)
+                    assert stat.masked  # TODO: not masked
+                    timer.start(prod_name)
+                    stats_data = stat.compute(data)
+                    timer.pause(prod_name)
 
-                # For each of the data variables, shove this chunk into the output results
-                timer.start('writing_data')
-                for var_name, var in stats_data.data_vars.items():
-                    output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
-                timer.pause('writing_data')
+                    # For each of the data variables, shove this chunk into the output results
+                    timer.start('writing_data')
+                    for var_name, var in stats_data.data_vars.items():
+                        output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
+                    timer.pause('writing_data')
+            except EmptyChunkException:
+                _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
+                           sub_tile_slice, task)
 
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
+
+
+class EmptyChunkException(Exception):
+    pass
 
 
 def _load_data(sub_tile_slice, sources):
@@ -241,6 +249,8 @@ def _load_data(sub_tile_slice, sources):
     for idx, dataset in enumerate(datasets):
         dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
+    if not any(bool(data) for k, data in dataset.data_vars.items()):
+        raise EmptyChunkException()
     return datasets.isel(time=datasets.time.argsort())  # sort along time dim  # Copies all the data again
     # return inplace_isel(datasets, time=datasets.time.argsort())
 
