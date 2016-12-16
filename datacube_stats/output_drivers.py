@@ -134,7 +134,7 @@ class NetcdfOutputDriver(OutputDriver):
     Write data to Datacube compatible NetCDF files
     """
 
-    valid_extensions = ['nc']
+    valid_extensions = ['.nc']
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
@@ -207,7 +207,7 @@ class RioOutputDriver(OutputDriver):
     Writes to a different file per statistic/measurement.
 
     """
-    valid_extensions = ['tif', 'tiff']
+    valid_extensions = ['.tif', '.tiff']
     default_profile = {
         'compress': 'lzw',
         'driver': 'GTiff',
