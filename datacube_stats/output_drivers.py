@@ -6,15 +6,16 @@ The `NetcdfOutputDriver` will write multiple variables into a single file.
 The `RioOutputDriver` writes a single __band__ of data per file.
 """
 import abc
-from collections import OrderedDict
 import logging
+import operator
+from collections import OrderedDict
 from functools import reduce as reduce_
 from pathlib import Path
-import operator
 
 import numpy
-import rasterio
 import xarray
+
+import rasterio
 from datacube.model import Coordinate, Variable, GeoPolygon
 from datacube.model.utils import make_dataset, xr_apply, datasets_to_doc
 from datacube.storage import netcdf_writer
@@ -22,12 +23,12 @@ from datacube.storage.storage import create_netcdf_storage_unit
 from datacube.utils import unsqueeze_data_array
 
 _LOG = logging.getLogger(__name__)
-NETCDF_VARIABLE_PARAMETER_NAMES = {'zlib',
-                                   'complevel',
-                                   'shuffle',
-                                   'fletcher32',
-                                   'contiguous',
-                                   'attrs'}
+_NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
+                                     'complevel',
+                                     'shuffle',
+                                     'fletcher32',
+                                     'contiguous',
+                                     'attrs'}
 
 
 class OutputDriver(object):
@@ -57,12 +58,24 @@ class OutputDriver(object):
         self._geobox = task.geobox
         self._output_products = task.output_products
 
-        self._output_files = {}
         self._app_info = app_info
 
+        self._output_file_handles = {}
+        self._output_paths = {}
+        self._written_some_data = set()
+
     def close_files(self):
-        for output_file in self._output_files.values():
-            output_file.close()
+        for output_name, output_fh in self._output_file_handles.items():
+            output_fh.close()
+
+            # Remove '.tmp' suffix
+            output_path = self._output_paths[output_name]
+            output_path.rename(output_path.with_suffix(''))
+
+            # self._output_paths[output_name].rename
+            if output_name not in self._written_some_data:
+                # TODO: No data written to file, should delete or log
+                pass
 
     @abc.abstractmethod
     def open_output_files(self):
@@ -70,7 +83,7 @@ class OutputDriver(object):
 
     @abc.abstractmethod
     def write_data(self, prod_name, measurement_name, tile_index, values):
-        raise NotImplementedError
+        pass
 
     @abc.abstractmethod
     def write_global_attributes(self, attributes):
@@ -86,6 +99,30 @@ class OutputDriver(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close_files()
 
+    def _prepare_output_file(self, stat, **kwargs):
+        x, y = self._task['tile_index']
+        epoch_start, epoch_end = self._task['time_period']
+
+        output_path = Path(self._output_path,
+                           stat.file_path_template.format(
+                               x=x, y=y,
+                               epoch_start=epoch_start,
+                               epoch_end=epoch_end,
+                               **kwargs))
+
+        if output_path.exists():
+            raise RuntimeError('Output file already exists: %s' % output_path)
+        try:
+            output_path.parent.mkdir(parents=True)
+        except OSError:
+            pass
+
+        tmp_path = output_path.with_suffix(output_path.suffix + '.tmp')
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+        return tmp_path
+
 
 class NetcdfOutputDriver(OutputDriver):
     """
@@ -96,20 +133,19 @@ class NetcdfOutputDriver(OutputDriver):
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
-            filename_template = str(Path(self._output_path, stat.file_path_template))
-            output_filename = _format_filename(filename_template, **self._task)
-            self._output_files[prod_name] = self._create_storage_unit(stat, output_filename)
+            output_filename = self._prepare_output_file(stat)
+            self._output_paths[prod_name] = output_filename
+            self._output_file_handles[prod_name] = self._create_storage_unit(stat, output_filename)
 
     def _create_storage_unit(self, stat, output_filename):
-        geobox = self._geobox
         all_measurement_defns = list(stat.product.measurements.values())
 
-        datasets, sources = _find_source_datasets(self._task, stat, geobox, self._app_info,
+        datasets, sources = _find_source_datasets(self._task, stat, self._geobox, self._app_info,
                                                   uri=output_filename.as_uri())
 
         variable_params = self._create_netcdf_var_params(stat)
         nco = self._nco_from_sources(sources,
-                                     geobox,
+                                     self._geobox,
                                      all_measurement_defns,
                                      variable_params,
                                      output_filename)
@@ -125,9 +161,11 @@ class NetcdfOutputDriver(OutputDriver):
         variable_params = {}
         for measurement in stat.data_measurements:
             name = measurement['name']
-            variable_params[name] = {k: v for k, v in stat._definition.items() if k in NETCDF_VARIABLE_PARAMETER_NAMES}
+            variable_params[name] = {k: v for k, v in stat._definition.items() if
+                                     k in _NETCDF_VARIABLE__PARAMETER_NAMES}
             variable_params[name]['chunksizes'] = chunking
-            variable_params[name].update({k: v for k, v in measurement.items() if k in NETCDF_VARIABLE_PARAMETER_NAMES})
+            variable_params[name].update(
+                {k: v for k, v in measurement.items() if k in _NETCDF_VARIABLE__PARAMETER_NAMES})
         return variable_params
 
     @staticmethod
@@ -145,12 +183,14 @@ class NetcdfOutputDriver(OutputDriver):
         return create_netcdf_storage_unit(filename, geobox.crs, coordinates, variables, variable_params)
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
-        self._output_files[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(values)
-        self._output_files[prod_name].sync()
+        self._output_file_handles[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(
+            values)
+        self._output_file_handles[prod_name].sync()
+        self._written_some_data.add(prod_name)
         _LOG.debug("Updated %s %s", measurement_name, tile_index[1:])
 
     def write_global_attributes(self, attributes):
-        for output_file in self._output_files.values():
+        for output_file in self._output_file_handles.values():
             for k, v in attributes.items():
                 output_file.attrs[k] = v
 
@@ -169,13 +209,13 @@ class RioOutputDriver(OutputDriver):
         'interleave': 'band',
         'tiled': True
     }
-    dtype_map = {
+    _dtype_map = {
         'int8': 'uint8'
     }
 
     def _get_dtype(self, prod_name, measurement_name):
         dtype = super(RioOutputDriver, self)._get_dtype(prod_name, measurement_name)
-        return self.dtype_map.get(dtype, dtype)
+        return self._dtype_map.get(dtype, dtype)
 
     def _get_nodata(self, prod_name, measurement_name):
         dtype = self._get_dtype(prod_name, measurement_name)
@@ -187,21 +227,10 @@ class RioOutputDriver(OutputDriver):
             return nodata
 
     def open_output_files(self):
-        # TODO: check
+        # TODO: check valid filenames
         for prod_name, stat in self._output_products.items():
             for measurement_name, measure_def in stat.product.measurements.items():
-                filename_template = str(Path(self._output_path, stat.file_path_template))
-
-                output_filename = _format_filename(filename_template,
-                                                   var_name=measurement_name,
-                                                   **self._task)
-
-                if output_filename.exists():
-                    raise RuntimeError('Output file already exists: %s' % output_filename)
-                try:
-                    output_filename.parent.mkdir(parents=True)
-                except OSError:
-                    pass
+                output_filename = self._prepare_output_file(stat, var_name=measurement_name)
 
                 profile = self.default_profile.copy()
 
@@ -230,9 +259,11 @@ class RioOutputDriver(OutputDriver):
                 dest.update_tags(1, platform=self._task.sources[0]['data'].product.name,
                                  date='{:%Y-%m-%d}'.format(self._task.time_period[0]),
                                  name=measurement_name)
-                self._output_files[output_name] = dest
+                self._output_paths[prod_name] = output_filename
+                self._output_file_handles[output_name] = dest
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
+        super(RioOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
         output_name = prod_name + measurement_name
         y, x = tile_index[1:]
         window = ((y.start, y.stop), (x.start, x.stop))
@@ -240,10 +271,11 @@ class RioOutputDriver(OutputDriver):
 
         dtype = self._get_dtype(prod_name, measurement_name)
 
-        self._output_files[output_name].write(values.astype(dtype), indexes=1, window=window)
+        self._output_file_handles[output_name].write(values.astype(dtype), indexes=1, window=window)
+        self._written_some_data.add(output_name)
 
     def write_global_attributes(self, attributes):
-        for dest in self._output_files.values():
+        for dest in self._output_file_handles.values():
             dest.update_tags(**attributes)
 
 
