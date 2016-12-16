@@ -49,6 +49,7 @@ class OutputDriver(object):
     :param app_info:
     """
     __metaclass__ = abc.ABCMeta
+    valid_extensions = []
 
     def __init__(self, storage, task, output_path, app_info=None):
         self._task = task
@@ -110,8 +111,12 @@ class OutputDriver(object):
                                epoch_end=epoch_end,
                                **kwargs))
 
+        if output_path.suffix not in self.valid_extensions:
+            raise RuntimeError('Invalid Filename: %s for this Output Driver: %s' % (output_path, self))
+
         if output_path.exists():
             raise RuntimeError('Output file already exists: %s' % output_path)
+
         try:
             output_path.parent.mkdir(parents=True)
         except OSError:
@@ -227,7 +232,6 @@ class RioOutputDriver(OutputDriver):
             return nodata
 
     def open_output_files(self):
-        # TODO: check valid filenames
         for prod_name, stat in self._output_products.items():
             for measurement_name, measure_def in stat.product.measurements.items():
                 output_filename = self._prepare_output_file(stat, var_name=measurement_name)
