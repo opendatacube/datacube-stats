@@ -3,7 +3,7 @@
 ## Define inputs to perform statistics on
 sources:
   - product: ls8_nbar_albers
-    measurements: [blue, green, red, nir, swir1, swir2]
+    measurements: [coastal_aerosol, blue, green, red, nir, swir1, swir2]
     group_by: solar_day
     source_filter:
       product: ls8_level1_scene
@@ -35,7 +35,7 @@ date_ranges:
   step_size: 12m
 
 ## Define output directory and file structure
-location: '/g/data/u46/users/dra547/statstests'
+location: '/g/data/u46/users/dra547/MDBA'
 
 storage:
   driver: Geotiff
@@ -56,8 +56,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 4000
-    y: 1200
+    x: 2000
+    y: 800
 
 input_region:
   tile: [12, -43]
@@ -70,14 +70,14 @@ output_products:
    statistic: percentile_25_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_25/SR_N_PCT_25_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tiff'
+   file_path_template: 'MDBA_PCT_25/SR_N_PCT_25_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
  - name: 16month_percentile_50
    statistic: percentile_50_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_50/SR_N_PCT_50_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tiff'
+   file_path_template: 'MDBA_PCT_50/SR_N_PCT_50_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
  - name: 16month_percentile_75
    statistic: percentile_75_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_75/SR_N_PCT_75_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tiff'
+   file_path_template: 'MDBA_PCT_75/SR_N_PCT_75_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
