@@ -52,6 +52,7 @@ class OutputDriver(object):
     valid_extensions = []
 
     def __init__(self, storage, task, output_path, app_info=None):
+        #: datacube_stats.models.StatsTask
         self._task = task
         self._output_path = output_path
         self._storage = storage
@@ -90,8 +91,15 @@ class OutputDriver(object):
     def write_global_attributes(self, attributes):
         raise NotImplementedError
 
-    def _get_dtype(self, out_prod_name, measurement_name):
-        return self._output_products[out_prod_name].product.measurements[measurement_name]['dtype']
+    def _get_dtype(self, out_prod_name, measurement_name=None):
+        if measurement_name:
+            return self._output_products[out_prod_name].product.measurements[measurement_name]['dtype']
+        else:
+            dtypes = set(m['dtype'] for m in self._output_products[out_prod_name].product.measurements.values())
+            if len(dtypes) == 1:
+                return dtypes.pop()
+            else:
+                raise RuntimeError('Not all measurements for %s have the same dtype.' % out_prod_name)
 
     def __enter__(self):
         self.open_output_files()
@@ -218,29 +226,43 @@ class RioOutputDriver(OutputDriver):
         'int8': 'uint8'
     }
 
-    def _get_dtype(self, prod_name, measurement_name):
+    def __init__(self, storage, task, output_path, app_info=None):
+        super(RioOutputDriver, self).__init__(storage, task, output_path, app_info)
+
+        self._measurement_bands = {}
+
+    def _get_dtype(self, prod_name, measurement_name=None):
         dtype = super(RioOutputDriver, self)._get_dtype(prod_name, measurement_name)
         return self._dtype_map.get(dtype, dtype)
 
-    def _get_nodata(self, prod_name, measurement_name):
+    def _get_nodata(self, prod_name, measurement_name=None):
         dtype = self._get_dtype(prod_name, measurement_name)
-        nodata = self._output_products[prod_name].product.measurements[measurement_name]['nodata']
+        if measurement_name:
+            nodata = self._output_products[prod_name].product.measurements[measurement_name]['nodata']
+        else:
+            nodatas = set(m['nodata'] for m in self._output_products[prod_name].product.measurements.values())
+            if len(nodatas) == 1:
+                nodata = nodatas.pop()
+            else:
+                raise RuntimeError('Not all nodata values for output product %s are the same.' % prod_name)
         if dtype == 'uint8' and nodata < 0:
-            # Has been converted to uint8 for Geotiff
+            # Convert to uint8 for Geotiff
             return 255
         else:
             return nodata
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
-            for measurement_name, measure_def in stat.product.measurements.items():
-                output_filename = self._prepare_output_file(stat, var_name=measurement_name)
-
+            num_measurements = len(stat.product.measurements)
+            if num_measurements > 1 and 'var_name' in stat.file_path_template:
+                # Multi_file output
+                for measurement_name, measure_def in stat.product.measurements.items():
+                    self._open_one_band_geotiff(prod_name, stat, measurement_name)
+            else:  # Single file output
+                output_filename = self._prepare_output_file(stat)
                 profile = self.default_profile.copy()
-
-                dtype = self._get_dtype(prod_name, measurement_name)
-                nodata = self._get_nodata(prod_name, measurement_name)
-
+                dtype = self._get_dtype(prod_name)
+                nodata = self._get_nodata(prod_name)
                 profile.update({
                     'blockxsize': self._storage['chunking']['x'],
                     'blockysize': self._storage['chunking']['y'],
@@ -251,20 +273,47 @@ class RioOutputDriver(OutputDriver):
                     'height': self._geobox.height,
                     'affine': self._geobox.affine,
                     'crs': self._geobox.crs.crs_str,
-                    'count': 1
+                    'count': num_measurements
                 })
-
-                output_name = prod_name + measurement_name
-
+                output_name = prod_name
                 _LOG.debug("Opening %s for writing.", output_filename)
-
                 dest = rasterio.open(str(output_filename), mode='w', **profile)
                 # dest.update_tags(created=self._app_info) # TODO record creation metadata
-                dest.update_tags(1, platform=self._task.sources[0]['data'].product.name,
-                                 date='{:%Y-%m-%d}'.format(self._task.time_period[0]),
-                                 name=measurement_name)
+                for band, (measurement_name, measure_def) in enumerate(stat.product.measurements.items(), start=1):
+                    dest.update_tags(band,
+                                     source_product=self._task.sources[0]['data'].product.name,
+                                     date='{:%Y-%m-%d}'.format(self._task.time_period[0]),
+                                     name=measurement_name)
                 self._output_paths[output_name] = output_filename
                 self._output_file_handles[output_name] = dest
+
+    def _open_one_band_geotiff(self, prod_name, stat, num_bands=1, measurement_name=None):
+        output_filename = self._prepare_output_file(stat, var_name=measurement_name)
+        profile = self.default_profile.copy()
+        dtype = self._get_dtype(prod_name, measurement_name)
+        nodata = self._get_nodata(prod_name, measurement_name)
+        profile.update({
+            'blockxsize': self._storage['chunking']['x'],
+            'blockysize': self._storage['chunking']['y'],
+
+            'dtype': dtype,
+            'nodata': nodata,
+            'width': self._geobox.width,
+            'height': self._geobox.height,
+            'affine': self._geobox.affine,
+            'crs': self._geobox.crs.crs_str,
+            'count': num_bands
+        })
+        output_name = prod_name + measurement_name
+        _LOG.debug("Opening %s for writing.", output_filename)
+        dest = rasterio.open(str(output_filename), mode='w', **profile)
+        # dest.update_tags(created=self._app_info) # TODO record creation metadata
+        dest.update_tags(1,
+                         source_product=self._task.sources[0]['data'].product.name,
+                         date='{:%Y-%m-%d}'.format(self._task.time_period[0]),
+                         name=measurement_name)
+        self._output_paths[output_name] = output_filename
+        self._output_file_handles[output_name] = dest
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
         super(RioOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
@@ -275,6 +324,7 @@ class RioOutputDriver(OutputDriver):
 
         dtype = self._get_dtype(prod_name, measurement_name)
 
+        # TODO Lookup indexes based on measurement_name
         self._output_file_handles[output_name].write(values.astype(dtype), indexes=1, window=window)
         self._written_some_data.add(output_name)
 

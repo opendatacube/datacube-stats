@@ -7,7 +7,7 @@ import pytest
 import mock
 
 from datacube.model import MetadataType
-from datacube_stats.main import StatProduct
+from datacube_stats.main import OutputProduct
 from datacube_stats.models import StatsTask
 from datacube_stats.statistics import StatsConfigurationError, SimpleStatistic
 
@@ -77,7 +77,7 @@ def test_can_create_output_products(sample_stats_config, mock_index):
     # THEN: I should receive an appropriately configured output product
     assert len(output_prods) == 1
     fake_output = output_prods['fake_output']
-    assert isinstance(fake_output, StatProduct)
+    assert isinstance(fake_output, OutputProduct)
     assert fake_output.name == 'fake_output'
     assert fake_output.stat_name == 'mean'
     assert isinstance(fake_output.statistic, SimpleStatistic)

@@ -22,13 +22,12 @@ from __future__ import absolute_import
 
 import abc
 import collections
-from datetime import datetime
 from collections import OrderedDict
-
-import numpy as np
+from datetime import datetime
 from functools import reduce as reduce_, partial
 from operator import mul as mul_op
 
+import numpy as np
 import xarray
 
 try:

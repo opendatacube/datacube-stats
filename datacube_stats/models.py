@@ -20,6 +20,7 @@ class StatsTask(object):
         self.sources = sources if sources is not None else []
 
         #: Defines which files will be output, and what operations are done
+        #: list[StatProduct]
         self.output_products = output_products if output_products is not None else []
 
     @property
@@ -50,7 +51,7 @@ class StatsTask(object):
         return self.__str__()
 
 
-class StatProduct(object):
+class OutputProduct(object):
     """
     Defines an 'output_product' statistical product.
     Including:

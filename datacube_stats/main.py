@@ -23,7 +23,7 @@ from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
-from datacube_stats.models import StatsTask, StatProduct
+from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS
 from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
@@ -187,10 +187,10 @@ class StatsApp(object):
 
         metadata_type = self.index.metadata_types.get_by_name(metadata_type)
         for prod in self.output_product_specs:
-            output_products[prod['name']] = StatProduct(metadata_type=metadata_type,
-                                                        input_measurements=measurements,
-                                                        definition=prod,
-                                                        storage=self.storage)
+            output_products[prod['name']] = OutputProduct(metadata_type=metadata_type,
+                                                          input_measurements=measurements,
+                                                          definition=prod,
+                                                          storage=self.storage)
 
         # TODO: Create the output product in the database
 
