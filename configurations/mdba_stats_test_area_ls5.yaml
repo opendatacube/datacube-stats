@@ -56,12 +56,12 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 4000
-    y: 1000
+    x: 1200
+    y: 800
 
 input_region:
 #  tile: [12, -43]
-  from_file: /g/data/u46/users/dra547/test_stats_region/test_stats_region.shp
+  from_file: /g/data/u46/users/dra547/MDBA/config/mdba_simplified.shp
 
 
 ## Define statistics to perform and how to store the data
@@ -70,14 +70,14 @@ output_products:
    statistic: percentile_25_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_25/SR_N_PCT_25_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_25/{x}/SR_LS5_N_PCT_25_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
  - name: 16month_percentile_50
    statistic: percentile_50_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_50/SR_N_PCT_50_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_50/{x}/SR_LS5_N_PCT_50_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
  - name: 16month_percentile_75
    statistic: percentile_75_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_75/SR_N_PCT_75_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_75/{x}/SR_LS5_N_PCT_75_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
