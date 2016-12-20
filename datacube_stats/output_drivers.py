@@ -321,7 +321,7 @@ class RioOutputDriver(OutputDriver):
         })
         _LOG.debug("Opening %s for writing.", output_filename)
         dest_fh = rasterio.open(str(output_filename), mode='w', **profile)
-        dest_fh.update_tags(created=self._app_info)  # TODO: record creation metadata
+        dest_fh.update_tags(created=self._app_info)
         return dest_fh, output_filename
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
@@ -330,11 +330,11 @@ class RioOutputDriver(OutputDriver):
         prod = self._output_file_handles[prod_name]
         if isinstance(prod, dict):
             output_fh = prod[measurement_name]
-            stat = self._output_products[prod_name]
-            band_num = list(stat.product.measurements).index(measurement_name) + 1
+            band_num = 1
         else:
             output_fh = prod
-            band_num = 1
+            stat = self._output_products[prod_name]
+            band_num = list(stat.product.measurements).index(measurement_name) + 1
 
         t, y, x = tile_index
         window = ((y.start, y.stop), (x.start, x.stop))
