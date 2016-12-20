@@ -14,6 +14,9 @@ setup(
     entry_points={
         'console_scripts': [
             'datacube-stats = datacube_stats.main:main'
+        ],
+        'datacube.stats': [
+            'wofs-summary = datacube_stats.statistics:WofsStats'
         ]
     },
 )

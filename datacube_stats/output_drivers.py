@@ -13,9 +13,9 @@ from functools import reduce as reduce_
 from pathlib import Path
 
 import numpy
+import rasterio
 import xarray
 
-import rasterio
 from datacube.model import Coordinate, Variable, GeoPolygon
 from datacube.model.utils import make_dataset, xr_apply, datasets_to_doc
 from datacube.storage import netcdf_writer
@@ -37,47 +37,63 @@ class OutputDriver(object):
 
     Depending on the implementation, may create one or more files per instance.
 
-    To use, instantiate the class, then use as a context manager, eg.
+    To use, instantiate the class, using it as a context manager, eg.
 
-        output_driver = MyOutputDriver(storage, task, output_path)
-        with output_driver:
+        with MyOutputDriver(task, storage, output_path):
             output_driver.write_data(prod_name, measure_name, tile_index, values)
 
     :param StatsTask task: A StatsTask that will be producing data
-    :param output_path: Directory name to output file/s into
-    :param storage: Dictionary structure describing the _storage format
+        A task will contain 1 or more output products, with each output product containing 1 or more measurements
+    :param Union(Path, str) output_path: Base directory name to output file/s into
+    :param storage: Dictionary describing the _storage format. eg.
+        {
+          'driver': 'NetCDF CF'
+          'crs': 'EPSG:3577'
+          'tile_size': {
+                  'x': 100000.0
+                  'y': 100000.0}
+          'resolution': {
+                  'x': 25
+                  'y': -25}
+          'chunking': {
+              'x': 200
+              'y': 200
+              'time': 1}
+          'dimension_order': ['time', 'y', 'x']}
     :param app_info:
     """
     __metaclass__ = abc.ABCMeta
     valid_extensions = []
 
-    def __init__(self, storage, task, output_path, app_info=None):
-        #: datacube_stats.models.StatsTask
-        self._task = task
-        self._output_path = output_path
+    def __init__(self, task, storage, output_path, app_info=None):
         self._storage = storage
 
-        self._geobox = task.geobox
-        self._output_products = task.output_products
+        self._output_path = output_path
 
         self._app_info = app_info
 
         self._output_file_handles = {}
         self._output_paths = {}
-        self._written_some_data = set()
+
+        #: datacube_stats.models.StatsTask
+        self._task = task
+
+        self._geobox = task.geobox
+        self._output_products = task.output_products
 
     def close_files(self):
-        for output_name, output_fh in self._output_file_handles.items():
-            output_fh.close()
+        self.__close_files_helper(self._output_file_handles)
 
-            # Remove '.tmp' suffix
-            output_path = self._output_paths[output_name]
-            output_path.rename(output_path.with_suffix(''))
+    def __close_files_helper(self, handles_dict):
+        for output_name, output_fh in handles_dict.items():
+            if isinstance(output_fh, dict):
+                self.__close_files_helper(output_fh)
+            else:
+                output_fh.close()
 
-            # self._output_paths[output_name].rename
-            if output_name not in self._written_some_data:
-                # TODO: No data written to file, should delete or log
-                pass
+                # Remove '.tmp' suffix
+                output_path = self._output_paths[output_fh]
+                output_path.rename(output_path.with_suffix(''))
 
     @abc.abstractmethod
     def open_output_files(self):
@@ -85,7 +101,8 @@ class OutputDriver(object):
 
     @abc.abstractmethod
     def write_data(self, prod_name, measurement_name, tile_index, values):
-        pass
+        if len(self._output_file_handles) <= 0:
+            raise RuntimeError('No files opened for writing.')
 
     @abc.abstractmethod
     def write_global_attributes(self, attributes):
@@ -109,8 +126,8 @@ class OutputDriver(object):
         self.close_files()
 
     def _prepare_output_file(self, stat, **kwargs):
-        x, y = self._task['tile_index']
-        epoch_start, epoch_end = self._task['time_period']
+        x, y = self._task.tile_index
+        epoch_start, epoch_end = self._task.time_period
 
         output_path = Path(self._output_path,
                            stat.file_path_template.format(
@@ -140,6 +157,8 @@ class OutputDriver(object):
 class NetcdfOutputDriver(OutputDriver):
     """
     Write data to Datacube compatible NetCDF files
+
+    The variables in the file will be 3 dimensional, with a single time dimension + y,x.
     """
 
     valid_extensions = ['.nc']
@@ -199,7 +218,6 @@ class NetcdfOutputDriver(OutputDriver):
         self._output_file_handles[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(
             values)
         self._output_file_handles[prod_name].sync()
-        self._written_some_data.add(prod_name)
         _LOG.debug("Updated %s %s", measurement_name, tile_index[1:])
 
     def write_global_attributes(self, attributes):
@@ -226,8 +244,8 @@ class RioOutputDriver(OutputDriver):
         'int8': 'uint8'
     }
 
-    def __init__(self, storage, task, output_path, app_info=None):
-        super(RioOutputDriver, self).__init__(storage, task, output_path, app_info)
+    def __init__(self, *args, **kwargs):
+        super(RioOutputDriver, self).__init__(*args, **kwargs)
 
         self._measurement_bands = {}
 
@@ -244,7 +262,8 @@ class RioOutputDriver(OutputDriver):
             if len(nodatas) == 1:
                 nodata = nodatas.pop()
             else:
-                raise RuntimeError('Not all nodata values for output product %s are the same.' % prod_name)
+                raise RuntimeError('Not all nodata values for output product "%s" are the same. '
+                                   'Must all match for geotiff output' % prod_name)
         if dtype == 'uint8' and nodata < 0:
             # Convert to uint8 for Geotiff
             return 255
@@ -254,40 +273,36 @@ class RioOutputDriver(OutputDriver):
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
             num_measurements = len(stat.product.measurements)
-            if num_measurements > 1 and 'var_name' in stat.file_path_template:
-                # Multi_file output
+            if num_measurements == 0:
+                raise ValueError('No measurements to record for {}.'.format(prod_name))
+            elif num_measurements > 1 and 'var_name' in stat.file_path_template:
+                # Multiple files, each a single band geotiff
                 for measurement_name, measure_def in stat.product.measurements.items():
-                    self._open_one_band_geotiff(prod_name, stat, measurement_name)
-            else:  # Single file output
-                output_filename = self._prepare_output_file(stat)
-                profile = self.default_profile.copy()
-                dtype = self._get_dtype(prod_name)
-                nodata = self._get_nodata(prod_name)
-                profile.update({
-                    'blockxsize': self._storage['chunking']['x'],
-                    'blockysize': self._storage['chunking']['y'],
+                    self._open_single_band_geotiff(prod_name, stat, measurement_name)
+            else:
+                # One file only, either a single or a multi-band geotiff
+                dest_fh, output_filename = self._open_geotiff(prod_name, None, stat, num_measurements)
 
-                    'dtype': dtype,
-                    'nodata': nodata,
-                    'width': self._geobox.width,
-                    'height': self._geobox.height,
-                    'affine': self._geobox.affine,
-                    'crs': self._geobox.crs.crs_str,
-                    'count': num_measurements
-                })
-                output_name = prod_name
-                _LOG.debug("Opening %s for writing.", output_filename)
-                dest = rasterio.open(str(output_filename), mode='w', **profile)
-                # dest.update_tags(created=self._app_info) # TODO record creation metadata
                 for band, (measurement_name, measure_def) in enumerate(stat.product.measurements.items(), start=1):
-                    dest.update_tags(band,
-                                     source_product=self._task.sources[0]['data'].product.name,
-                                     date='{:%Y-%m-%d}'.format(self._task.time_period[0]),
-                                     name=measurement_name)
-                self._output_paths[output_name] = output_filename
-                self._output_file_handles[output_name] = dest
+                    self._set_band_metadata(dest_fh, measurement_name, band=band)
+                self._output_paths[dest_fh] = output_filename
+                self._output_file_handles[prod_name] = dest_fh
 
-    def _open_one_band_geotiff(self, prod_name, stat, num_bands=1, measurement_name=None):
+    def _open_single_band_geotiff(self, prod_name, stat, measurement_name=None):
+        dest_fh, output_filename = self._open_geotiff(prod_name, measurement_name, stat)
+        self._set_band_metadata(dest_fh, measurement_name)
+        self._output_paths.setdefault(prod_name, {})[dest_fh] = output_filename
+        self._output_file_handles.setdefault(prod_name, {})[measurement_name] = dest_fh
+
+    def _set_band_metadata(self, dest_fh, measurement_name, band=1):
+        start_date, end_date = self._task.time_period
+        dest_fh.update_tags(band,
+                            source_product=self._task.source_product_names(),
+                            start_date='{:%Y-%m-%d}'.format(start_date),
+                            end_date='{:%Y-%m-%d}'.format(end_date),
+                            name=measurement_name)
+
+    def _open_geotiff(self, prod_name, measurement_name, stat, num_bands=1):
         output_filename = self._prepare_output_file(stat, var_name=measurement_name)
         profile = self.default_profile.copy()
         dtype = self._get_dtype(prod_name, measurement_name)
@@ -304,29 +319,30 @@ class RioOutputDriver(OutputDriver):
             'crs': self._geobox.crs.crs_str,
             'count': num_bands
         })
-        output_name = prod_name + measurement_name
         _LOG.debug("Opening %s for writing.", output_filename)
-        dest = rasterio.open(str(output_filename), mode='w', **profile)
-        # dest.update_tags(created=self._app_info) # TODO record creation metadata
-        dest.update_tags(1,
-                         source_product=self._task.sources[0]['data'].product.name,
-                         date='{:%Y-%m-%d}'.format(self._task.time_period[0]),
-                         name=measurement_name)
-        self._output_paths[output_name] = output_filename
-        self._output_file_handles[output_name] = dest
+        dest_fh = rasterio.open(str(output_filename), mode='w', **profile)
+        dest_fh.update_tags(created=self._app_info)  # TODO: record creation metadata
+        return dest_fh, output_filename
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
         super(RioOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
-        output_name = prod_name + measurement_name
-        y, x = tile_index[1:]
+
+        prod = self._output_file_handles[prod_name]
+        if isinstance(prod, dict):
+            output_fh = prod[measurement_name]
+            stat = self._output_products[prod_name]
+            band_num = list(stat.product.measurements).index(measurement_name) + 1
+        else:
+            output_fh = prod
+            band_num = 1
+
+        t, y, x = tile_index
         window = ((y.start, y.stop), (x.start, x.stop))
         _LOG.debug("Updating %s.%s %s", prod_name, measurement_name, window)
 
         dtype = self._get_dtype(prod_name, measurement_name)
 
-        # TODO Lookup indexes based on measurement_name
-        self._output_file_handles[output_name].write(values.astype(dtype), indexes=1, window=window)
-        self._written_some_data.add(output_name)
+        output_fh.write(values.astype(dtype), indexes=band_num, window=window)
 
     def write_global_attributes(self, attributes):
         for dest in self._output_file_handles.values():
@@ -376,6 +392,17 @@ def _find_source_datasets(task, stat, geobox, app_info, uri=None):
     datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
     datasets = datasets_to_doc(datasets)
     return datasets, sources
+
+
+class XarrayOutputDriver(OutputDriver):
+    def write_data(self, prod_name, measurement_name, tile_index, values):
+        pass
+
+    def write_global_attributes(self, attributes):
+        pass
+
+    def open_output_files(self):
+        pass
 
 
 OUTPUT_DRIVERS = {

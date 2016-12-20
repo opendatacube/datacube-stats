@@ -32,7 +32,7 @@ from datacube_stats.timer import MultiTimer
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
 DEFAULT_GROUP_BY = 'time'
-DEFAULT_TASK_CHUNKING = {'chunking': {'x': 1000, 'y': 1000}}
+DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
 
 
 @click.command(name='datacube-stats')
@@ -175,7 +175,7 @@ class StatsApp(object):
 
     def ensure_output_products(self, metadata_type='eo'):
         """
-        Return a dict mapping Output Product Name to StatProduct
+        Return a dict mapping Output Product Name to OutputProduct
 
         StatProduct describes the structure and how to compute the output product.
         """
@@ -186,11 +186,12 @@ class StatsApp(object):
         measurements = _source_measurement_defs(self.index, self.sources)
 
         metadata_type = self.index.metadata_types.get_by_name(metadata_type)
-        for prod in self.output_product_specs:
-            output_products[prod['name']] = OutputProduct(metadata_type=metadata_type,
-                                                          input_measurements=measurements,
-                                                          definition=prod,
-                                                          storage=self.storage)
+        for product_def in self.output_product_specs:
+            output_products[product_def['name']] = OutputProduct.from_json_definition(
+                metadata_type=metadata_type,
+                input_measurements=measurements,
+                storage=self.storage,
+                definition=product_def)
 
         # TODO: Create the output product in the database
 
@@ -333,7 +334,7 @@ def create_stats_app(config, index=None):
     stats_app.sources = config['sources']
     stats_app.output_product_specs = config['output_products']
     stats_app.location = config['location']
-    stats_app.computation = config.get('computation', DEFAULT_TASK_CHUNKING)
+    stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
 
     date_ranges = config['date_ranges']
     if 'type' not in date_ranges or date_ranges['type'] == 'simple':

@@ -29,6 +29,7 @@ from operator import mul as mul_op
 
 import numpy as np
 import xarray
+from pkg_resources import iter_entry_points
 
 try:
     from bottleneck import anynan, nansum
@@ -256,6 +257,7 @@ class NoneStat(Statistic):
     def compute(self, data):
         class Empty:
             data_vars = {}
+
         return Empty()
 
     def measurements(self, input_measurements):
@@ -490,11 +492,11 @@ class ObservedDaysSince(PerPixelMetadata):
 
     def measurement(self):
         return {
-                'name': self._var_name,
-                'dtype': 'int16',
-                'nodata': 0,
-                'units': 'days since {:%Y-%m-%d %H:%M:%S}'.format(self._since)
-            }
+            'name': self._var_name,
+            'dtype': 'int16',
+            'nodata': 0,
+            'units': 'days since {:%Y-%m-%d %H:%M:%S}'.format(self._since)
+        }
 
 
 class ObservedDateInt(PerPixelMetadata):
@@ -618,12 +620,17 @@ STATS = {
                                             stats=['min', 'mean', 'max']),
     'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    'wofs': WofsStats(),
     'none': NoneStat()
 }
 
+# Dynamically look for and load statistics from other packages
+
+for entry_point in iter_entry_points(group='datacube.stats', name=None):
+    STATS[entry_point.name] = entry_point.load()
+
 try:
     from hdmedians import nangeomedian
+
     STATS['geomedian'] = SimpleStatistic(stat_func=partial(combined_var_reduction, method=nangeomedian))
 except ImportError:
     def nangeomedian():

@@ -11,16 +11,16 @@ class StatsTask(object):
     """
 
     def __init__(self, time_period, tile_index=None, sources=None, output_products=None):
-        self.tile_index = tile_index  # Only used for file naming... I think
-
         #: Start date - End date as a datetime tuple
         self.time_period = time_period
+
+        self.tile_index = tile_index  # Only used for file naming... I think
 
         #: List of source datasets, required masking datasets, and details on applying them
         self.sources = sources if sources is not None else []
 
         #: Defines which files will be output, and what operations are done
-        #: list[StatProduct]
+        #: dict(product_name: OutputProduct)
         self.output_products = output_products if output_products is not None else []
 
     @property
@@ -37,6 +37,9 @@ class StatsTask(object):
 
     def data_sources_length(self):
         return sum(len(d['data'].sources) for d in self.sources)
+
+    def source_product_names(self):
+        return ', '.join(source['data'].product.name for source in self.sources)
 
     def keys(self):
         return self.__dict__.keys()
@@ -61,25 +64,31 @@ class OutputProduct(object):
       - Input measurements
     """
 
-    def __init__(self, metadata_type, input_measurements, definition, storage):
-        #: JSON style dict of dicts product definition
-        self._definition = definition
-
+    def __init__(self, metadata_type, input_measurements, storage, name, file_path_template,
+                 stat_name, statistic):
         #: The product name.
-        self.name = definition['name']
+        self.name = name
 
-        self.file_path_template = definition['file_path_template']
+        self.file_path_template = file_path_template
 
         #: The name of the statistic. Eg, mean, max, medoid, percentile_10
-        self.stat_name = definition['statistic']
+        self.stat_name = stat_name
 
         #: The implementation of a statistic. See :class:`Statistic`.
         #: Will provide `compute` and `measurements` functions.
-        self.statistic = STATS[self.stat_name]
+        self.statistic = statistic
 
-        self.data_measurements = self.statistic.measurements(input_measurements)
+        self.data_measurements = statistic.measurements(input_measurements)
 
         self.product = self._create_product(metadata_type, self.data_measurements, storage)
+
+    @classmethod
+    def from_json_definition(cls, metadata_type, input_measurements, storage, definition):
+        return cls(metadata_type, input_measurements, storage,
+                   name=definition['name'],
+                   file_path_template=definition['file_path_template'],
+                   stat_name=definition['statistic'],
+                   statistic=STATS[definition['statistic']])
 
     @property
     def masked(self):
