@@ -56,8 +56,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 1200
-    y: 800
+    x: 400
+    y: 400
 
 input_region:
 #  tile: [12, -43]
