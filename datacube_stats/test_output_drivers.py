@@ -9,6 +9,7 @@ from datacube_stats.statistics import NoneStat
 from datacube_stats.main import StatsTask
 from datetime import datetime
 
+
 def test_rio(tmpdir):
     m = MetadataType({}, {})
     storage = {'chunking': {'x': 256, 'y': 256}}
@@ -39,3 +40,5 @@ def test_rio(tmpdir):
         # Why isn't get_dtype being called when opening the file? ... It is
         output_driver.write_data(prod_name='sample_prod', measurement_name='sample_input_measurement',
                                  tile_index=tile_index, values=values)
+
+    print('foo')

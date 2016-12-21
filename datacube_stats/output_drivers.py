@@ -81,19 +81,20 @@ class OutputDriver(object):
         self._geobox = task.geobox
         self._output_products = task.output_products
 
-    def close_files(self):
-        self.__close_files_helper(self._output_file_handles)
+    def close_files(self, completed_successfully):
+        self.__close_files_helper(self._output_file_handles, completed_successfully)
 
-    def __close_files_helper(self, handles_dict):
+    def __close_files_helper(self, handles_dict, completed_successfully):
         for output_name, output_fh in handles_dict.items():
             if isinstance(output_fh, dict):
-                self.__close_files_helper(output_fh)
+                self.__close_files_helper(output_fh, completed_successfully)
             else:
                 output_fh.close()
 
                 # Remove '.tmp' suffix
-                output_path = self._output_paths[output_fh]
-                output_path.rename(output_path.with_suffix(''))
+                if completed_successfully:
+                    output_path = self._output_paths[output_fh]
+                    output_path.rename(output_path.with_suffix(''))
 
     @abc.abstractmethod
     def open_output_files(self):
@@ -123,7 +124,8 @@ class OutputDriver(object):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close_files()
+        completed_successfully = exc_type is None
+        self.close_files(completed_successfully)
 
     def _prepare_output_file(self, stat, **kwargs):
         x, y = self._task.tile_index
