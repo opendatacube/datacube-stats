@@ -416,11 +416,14 @@ class PerBandIndexStat(SimpleStatistic):
         def index_time(var):
             return data.time.values[var.values]
 
-        time_values = index.apply(index_time).rename(OrderedDict((name, name + '_observed')
-                                                                 for name in index.data_vars))
+        time_values = index.apply(
+            index_time).rename(
+            OrderedDict((name, name + '_observed')
+                        for name in index.data_vars))
 
-        text_values = time_values.apply(_datetime64_to_inttime).rename(OrderedDict((name, name + '_date')
-                                                                                   for name in time_values.data_vars))
+        text_values = time_values.apply(_datetime64_to_inttime).rename(
+            OrderedDict((name, name + '_date')
+                        for name in time_values.data_vars))
 
         def index_source(var):
             return data.source.values[var.values]
@@ -428,7 +431,10 @@ class PerBandIndexStat(SimpleStatistic):
         time_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
                                                                    for name in index.data_vars))
 
-        return xarray.merge([data_values, time_values, text_values])
+        count_values = index.count().rename(OrderedDict((name, name + '_clear_obs')
+                                                        for name in index.data_vars))
+
+        return xarray.merge([data_values, time_values, text_values, count_values])
 
     def measurements(self, input_measurements):
         index_measurements = [
@@ -458,9 +464,18 @@ class PerBandIndexStat(SimpleStatistic):
             }
             for measurement in input_measurements
             ]
+        clear_measurements = [
+            {
+                'name': measurement['name'] + '_clear_obs',
+                'dtype': 'int16',
+                'nodata': -1,
+                'units': '1'
+            }
+            for measurement in input_measurements
+            ]
 
         return (super(PerBandIndexStat, self).measurements(input_measurements) + date_measurements +
-                index_measurements + text_measurements)
+                index_measurements + text_measurements + clear_measurements)
 
 
 class PerPixelMetadata(object):
