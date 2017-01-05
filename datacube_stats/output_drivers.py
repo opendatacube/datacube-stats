@@ -31,6 +31,21 @@ _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
                                      'attrs'}
 
 
+class StatsOutputError(Exception):
+    pass
+
+
+class OutputFileAlreadyExists(Exception):
+    def __init__(self, output_file=None):
+        self._output_file = output_file
+
+    def __str__(self):
+        return 'Output file already exists: {}'.format(self._output_file)
+
+    def __repr__(self):
+        return "OutputFileAlreadyExists({})".format(self._output_file)
+
+
 class OutputDriver(object):
     """
     Handles the creation of output data files for a StatsTask.
@@ -103,7 +118,7 @@ class OutputDriver(object):
     @abc.abstractmethod
     def write_data(self, prod_name, measurement_name, tile_index, values):
         if len(self._output_file_handles) <= 0:
-            raise RuntimeError('No files opened for writing.')
+            raise StatsOutputError('No files opened for writing.')
 
     @abc.abstractmethod
     def write_global_attributes(self, attributes):
@@ -117,7 +132,7 @@ class OutputDriver(object):
             if len(dtypes) == 1:
                 return dtypes.pop()
             else:
-                raise RuntimeError('Not all measurements for %s have the same dtype.' % out_prod_name)
+                raise StatsOutputError('Not all measurements for %s have the same dtype.' % out_prod_name)
 
     def __enter__(self):
         self.open_output_files()
@@ -139,10 +154,10 @@ class OutputDriver(object):
                                **kwargs))
 
         if output_path.suffix not in self.valid_extensions:
-            raise RuntimeError('Invalid Filename: %s for this Output Driver: %s' % (output_path, self))
+            raise StatsOutputError('Invalid Filename: %s for this Output Driver: %s' % (output_path, self))
 
         if output_path.exists():
-            raise RuntimeError('Output file already exists: %s' % output_path)
+            raise OutputFileAlreadyExists(output_path)
 
         try:
             output_path.parent.mkdir(parents=True)
@@ -264,8 +279,8 @@ class RioOutputDriver(OutputDriver):
             if len(nodatas) == 1:
                 nodata = nodatas.pop()
             else:
-                raise RuntimeError('Not all nodata values for output product "%s" are the same. '
-                                   'Must all match for geotiff output' % prod_name)
+                raise StatsOutputError('Not all nodata values for output product "%s" are the same. '
+                                       'Must all match for geotiff output' % prod_name)
         if dtype == 'uint8' and nodata < 0:
             # Convert to uint8 for Geotiff
             return 255

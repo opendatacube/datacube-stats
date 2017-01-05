@@ -45,7 +45,7 @@ DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, executor, queue_size):
-    logging.getLogger('datacube.storage.storage').setLevel(logging.INFO)
+    # logging.getLogger('datacube.storage.storage').setLevel(logging.INFO)
     timer = MultiTimer()
     timer.start('main')
     _, config = next(read_documents(stats_config_file))
