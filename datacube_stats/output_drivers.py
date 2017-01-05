@@ -88,7 +88,6 @@ class OutputDriver(object):
         self._app_info = app_info
 
         self._output_file_handles = {}
-        self._output_paths = {}
 
         #: datacube_stats.models.StatsTask
         self._task = task
@@ -104,11 +103,11 @@ class OutputDriver(object):
             if isinstance(output_fh, dict):
                 self.__close_files_helper(output_fh, completed_successfully)
             else:
+                output_path = Path(output_fh.name)
                 output_fh.close()
 
                 # Remove '.tmp' suffix
                 if completed_successfully:
-                    output_path = self._output_paths[output_fh]
                     output_path.rename(output_path.with_suffix(''))
 
     @abc.abstractmethod
@@ -183,7 +182,6 @@ class NetcdfOutputDriver(OutputDriver):
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
             output_filename = self._prepare_output_file(stat)
-            self._output_paths[prod_name] = output_filename
             self._output_file_handles[prod_name] = self._create_storage_unit(stat, output_filename)
 
     def _create_storage_unit(self, stat, output_filename):
@@ -302,13 +300,11 @@ class RioOutputDriver(OutputDriver):
 
                 for band, (measurement_name, measure_def) in enumerate(stat.product.measurements.items(), start=1):
                     self._set_band_metadata(dest_fh, measurement_name, band=band)
-                self._output_paths[dest_fh] = output_filename
                 self._output_file_handles[prod_name] = dest_fh
 
     def _open_single_band_geotiff(self, prod_name, stat, measurement_name=None):
         dest_fh, output_filename = self._open_geotiff(prod_name, measurement_name, stat)
         self._set_band_metadata(dest_fh, measurement_name)
-        self._output_paths.setdefault(prod_name, {})[dest_fh] = output_filename
         self._output_file_handles.setdefault(prod_name, {})[measurement_name] = dest_fh
 
     def _set_band_metadata(self, dest_fh, measurement_name, band=1):
