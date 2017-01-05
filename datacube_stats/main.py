@@ -258,7 +258,8 @@ def _load_data(sub_tile_slice, sources):
 
 def _load_masked_data(sub_tile_slice, source_prod):
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
-                             measurements=source_prod['spec']['measurements'])
+                             measurements=source_prod['spec']['measurements'],
+                             skip_broken_datasets=True)
     crs = data.crs
     data = mask_invalid_data(data)
 
@@ -267,7 +268,8 @@ def _load_masked_data(sub_tile_slice, source_prod):
             fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
             mask = GridWorkflow.load(mask_tile[sub_tile_slice],
                                      measurements=[mask_spec['measurement']],
-                                     fuse_func=fuse_func)[mask_spec['measurement']]
+                                     fuse_func=fuse_func,
+                                     skip_broken_datasets=True)[mask_spec['measurement']]
             mask = make_mask(mask, **mask_spec['flags'])
             data = data.where(mask)
             del mask
