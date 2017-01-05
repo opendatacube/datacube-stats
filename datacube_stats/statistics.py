@@ -431,8 +431,9 @@ class PerBandIndexStat(SimpleStatistic):
         time_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
                                                                    for name in index.data_vars))
 
-        count_values = index.count().rename(OrderedDict((name, name + '_clear_obs')
-                                                        for name in index.data_vars))
+        # TODO Fix Hardcoded 'time' and pulling out first data var
+        _, sample_data_var = next(data.data_vars.items())
+        count_values = sample_data_var.count(dim='time').rename('clear_observations')
 
         return xarray.merge([data_values, time_values, text_values, count_values])
 
@@ -464,18 +465,15 @@ class PerBandIndexStat(SimpleStatistic):
             }
             for measurement in input_measurements
             ]
-        clear_measurements = [
-            {
-                'name': measurement['name'] + '_clear_obs',
+        clear_observations = [{
+                'name': 'clear_observations',
                 'dtype': 'int16',
                 'nodata': -1,
                 'units': '1'
-            }
-            for measurement in input_measurements
-            ]
+            }]
 
         return (super(PerBandIndexStat, self).measurements(input_measurements) + date_measurements +
-                index_measurements + text_measurements + clear_measurements)
+                index_measurements + text_measurements + clear_observations)
 
 
 class PerPixelMetadata(object):
