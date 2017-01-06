@@ -251,6 +251,26 @@ class Statistic(object):
             for measurement in input_measurements]
 
 
+class ClearCount(Statistic):
+    """Count the number of clear data points through time"""
+
+    def compute(self, data):
+        # TODO Fix Hardcoded 'time' and pulling out first data var
+        _, sample_data_var = next(data.data_vars.items())
+        count_values = sample_data_var.count(dim='time').rename('clear_observations')
+        return count_values
+
+    def measurements(self, input_measurements):
+        return [
+            {
+                'name': 'count_observations',
+                'dtype': 'int16',
+                'nodata': -1,
+                'units': '1'
+            }
+        ]
+
+
 class NoneStat(Statistic):
     masked = True
 
@@ -431,10 +451,6 @@ class PerBandIndexStat(SimpleStatistic):
         time_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
                                                                    for name in index.data_vars))
 
-        # TODO Fix Hardcoded 'time' and pulling out first data var
-        _, sample_data_var = next(data.data_vars.items())
-        count_values = sample_data_var.count(dim='time').rename('clear_observations')
-
         return xarray.merge([data_values, time_values, text_values, count_values])
 
     def measurements(self, input_measurements):
@@ -465,15 +481,9 @@ class PerBandIndexStat(SimpleStatistic):
             }
             for measurement in input_measurements
             ]
-        clear_observations = [{
-                'name': 'clear_observations',
-                'dtype': 'int16',
-                'nodata': -1,
-                'units': '1'
-            }]
 
         return (super(PerBandIndexStat, self).measurements(input_measurements) + date_measurements +
-                index_measurements + text_measurements + clear_observations)
+                index_measurements + text_measurements)
 
 
 class PerPixelMetadata(object):
@@ -633,7 +643,8 @@ STATS = {
                                             stats=['min', 'mean', 'max']),
     'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    'none': NoneStat()
+    'none': NoneStat(),
+    'clear_count': ClearCount()
 }
 
 # Dynamically look for and load statistics from other packages
