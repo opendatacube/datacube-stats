@@ -24,7 +24,7 @@ from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, OutputProduct
-from datacube_stats.output_drivers import OUTPUT_DRIVERS
+from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
 from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
@@ -207,28 +207,30 @@ def execute_task(task, output_driver, chunking):
     :param chunking: dict of dimension sizes to chunk the computation by
     """
     timer = MultiTimer()
-    with output_driver(task=task) as output_files:
-        for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-            try:
-                timer.start('loading_data')
-                data = _load_data(sub_tile_slice, task.sources)
-                timer.pause('loading_data')
+    try:
+        with output_driver(task=task) as output_files:
+            for sub_tile_slice in tile_iter(task.sample_tile, chunking):
+                try:
+                    timer.start('loading_data')
+                    data = _load_data(sub_tile_slice, task.sources)
+                    timer.pause('loading_data')
 
-                for prod_name, stat in task.output_products.items():
-                    _LOG.debug("Computing %s in tile %s", prod_name, sub_tile_slice)
-                    assert stat.masked  # TODO: not masked
-                    timer.start(prod_name)
-                    stats_data = stat.compute(data)
-                    timer.pause(prod_name)
+                    for prod_name, stat in task.output_products.items():
+                        _LOG.debug("Computing %s in tile %s. Current timing: %s", prod_name, sub_tile_slice, timer)
+                        timer.start(prod_name)
+                        stats_data = stat.compute(data)
+                        timer.pause(prod_name)
 
-                    # For each of the data variables, shove this chunk into the output results
-                    timer.start('writing_data')
-                    for var_name, var in stats_data.data_vars.items():
-                        output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
-                    timer.pause('writing_data')
-            except EmptyChunkException:
-                _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
-                           sub_tile_slice, task)
+                        # For each of the data variables, shove this chunk into the output results
+                        timer.start('writing_data')
+                        for var_name, var in stats_data.data_vars.items():
+                            output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
+                        timer.pause('writing_data')
+                except EmptyChunkException:
+                    _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
+                               sub_tile_slice, task)
+    except OutputFileAlreadyExists as e:
+        _LOG.warning(e)
 
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
@@ -261,6 +263,7 @@ def _load_masked_data(sub_tile_slice, source_prod):
                              measurements=source_prod['spec']['measurements'],
                              skip_broken_datasets=True)
     crs = data.crs
+    data = _convert_dataset_to_float(data)
     data = mask_invalid_data(data)
 
     if 'masks' in source_prod and 'masks' in source_prod['spec']:
@@ -275,6 +278,15 @@ def _load_masked_data(sub_tile_slice, source_prod):
             del mask
     data.attrs['crs'] = crs  # Reattach crs, it gets lost when masking
     return data
+
+
+def _convert_dataset_to_float(data):
+    # Use float32 instead of float64 if input dtype is int16
+    assert isinstance(data, xarray.Dataset)
+    for name, dataarray in data.data_vars.items():
+        if dataarray.dtype != np.int16:
+            return data
+    return data.apply(lambda d: d.astype(np.float32), keep_attrs=True)
 
 
 def _source_measurement_defs(index, sources):

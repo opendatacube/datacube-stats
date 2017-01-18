@@ -272,8 +272,6 @@ class ClearCount(Statistic):
 
 
 class NoneStat(Statistic):
-    masked = True
-
     def compute(self, data):
         class Empty:
             data_vars = {}
@@ -290,12 +288,9 @@ class SimpleStatistic(Statistic):
 
     :param stat_func:
         callable to compute statistics. Should both accept and return a :class:`xarray.Dataset`.
-    :param bool masked:
-        whether to apply masking to the input data
     """
 
-    def __init__(self, stat_func, masked=True):
-        self.masked = masked
+    def __init__(self, stat_func):
         self.stat_func = stat_func
 
     def compute(self, data):
@@ -307,11 +302,10 @@ class SimpleXarrayReduction(Statistic):
     Compute statistics using a reduction function defined on :class:`xarray.Dataset`.
     """
 
-    def __init__(self, xarray_function_name, masked=True):
+    def __init__(self, xarray_function_name):
         """
         :param str xarray_function_name: name of an :class:`xarray.Dataset` reduction function
         """
-        self.masked = masked
         self._stat_func_name = xarray_function_name
 
     def compute(self, data):
@@ -325,10 +319,6 @@ class WofsStats(Statistic):
 
     It's very hard coded, but maybe that's a good thing.
     """
-
-    def __init__(self):
-        self.masked = True
-
     def compute(self, data):
         wet = (data.water == 128).sum(dim='time')
         dry = (data.water == 0).sum(dim='time')
@@ -372,12 +362,11 @@ class NormalisedDifferenceStats(Statistic):
     separate output variables.
     """
 
-    def __init__(self, band1, band2, name, stats=None, masked=True):
+    def __init__(self, band1, band2, name, stats=None):
         self.stats = stats if stats else ['min', 'max', 'mean']
         self.band1 = band1
         self.band2 = band2
         self.name = name
-        self.masked = masked
 
     def compute(self, data):
         nd = (data[self.band1] - data[self.band2]) / (data[self.band1] + data[self.band2])
@@ -399,8 +388,8 @@ class NormalisedDifferenceStats(Statistic):
 
 
 class IndexStat(SimpleStatistic):
-    def __init__(self, stat_func, masked=True):
-        super(IndexStat, self).__init__(stat_func, masked)
+    def __init__(self, stat_func):
+        super(IndexStat, self).__init__(stat_func)
 
     def compute(self, data):
         index = super(IndexStat, self).compute(data)
@@ -422,8 +411,8 @@ class PerBandIndexStat(SimpleStatistic):
     :param stat_func: A function which takes an xarray.Dataset and returns an xarray.Dataset of indexes
     """
 
-    def __init__(self, stat_func, masked=True):
-        super(PerBandIndexStat, self).__init__(stat_func, masked)
+    def __init__(self, stat_func):
+        super(PerBandIndexStat, self).__init__(stat_func)
 
     def compute(self, data):
         index = super(PerBandIndexStat, self).compute(data)
@@ -556,8 +545,8 @@ class PerStatIndexStat(SimpleStatistic):
     :param list[PerPixelMetadata] extra_metadata_producers: collection of metadata generators
     """
 
-    def __init__(self, stat_func, masked=True, extra_metadata_producers=None):
-        super(PerStatIndexStat, self).__init__(stat_func, masked)
+    def __init__(self, stat_func, extra_metadata_producers=None):
+        super(PerStatIndexStat, self).__init__(stat_func)
         self._metadata_producers = extra_metadata_producers or []
 
     def compute(self, data):
@@ -644,6 +633,7 @@ STATS = {
     'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'none': NoneStat(),
+    'wofs_summary': WofsStats(),
     'clear_count': ClearCount()
 }
 
@@ -655,7 +645,38 @@ for entry_point in iter_entry_points(group='datacube.stats', name=None):
 try:
     from hdmedians import nangeomedian
 
-    STATS['geomedian'] = SimpleStatistic(stat_func=partial(combined_var_reduction, method=nangeomedian))
+    def apply_geomedian(inarray, f, axis=3, eps=1e-3, **kwargs):
+        assert len(inarray.shape) == 4
+        assert axis == 3
+
+        xs, ys, bands, times = inarray.shape
+        output = np.ndarray((xs, ys, bands), dtype=inarray.dtype)
+        for ix in range(xs):
+            for iy in range(ys):
+                try:
+                    output[ix, iy, :] = f(inarray[ix, iy, :, :], eps=eps, axis=1)
+                except ValueError:
+                    output[ix, iy, :] = np.nan
+        return output
+
+    class GeoMedian(Statistic):
+        def __init__(self, eps=1e-3):
+            super(GeoMedian, self).__init__()
+            self.eps = eps
+
+        def compute(self, data):
+            """
+            :param xarray.Dataset data:
+            :return: xarray.Dataset
+            """
+            # Assert data shape/dims
+            inarray = data.to_array(dim='variable').transpose('x', 'y', 'variable', 'time').copy()
+
+            output = inarray.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
+
+            return output.transpose('variable', 'y', 'x').to_dataset(dim='variable')
+
+
+    STATS['geomedian'] = GeoMedian()
 except ImportError:
-    def nangeomedian():
-        pass
+    pass

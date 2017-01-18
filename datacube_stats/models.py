@@ -65,7 +65,7 @@ class OutputProduct(object):
     """
 
     def __init__(self, metadata_type, input_measurements, storage, name, file_path_template,
-                 stat_name, statistic):
+                 stat_name, statistic, output_params=None):
         #: The product name.
         self.name = name
 
@@ -81,6 +81,7 @@ class OutputProduct(object):
         self.data_measurements = statistic.measurements(input_measurements)
 
         self.product = self._create_product(metadata_type, self.data_measurements, storage)
+        self.output_params = output_params
 
     @classmethod
     def from_json_definition(cls, metadata_type, input_measurements, storage, definition):
@@ -88,11 +89,8 @@ class OutputProduct(object):
                    name=definition['name'],
                    file_path_template=definition['file_path_template'],
                    stat_name=definition['statistic'],
-                   statistic=STATS[definition['statistic']])
-
-    @property
-    def masked(self):
-        return self.statistic.masked
+                   statistic=STATS[definition['statistic']],
+                   output_params=definition['output_params'])
 
     @property
     def compute(self):

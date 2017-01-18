@@ -103,7 +103,10 @@ class OutputDriver(object):
             if isinstance(output_fh, dict):
                 self.__close_files_helper(output_fh, completed_successfully)
             else:
-                output_path = Path(output_fh.name)
+                try:  # Try for a rasterio style fh
+                    output_path = Path(output_fh.name)
+                except KeyError:  # How about a NetCDF one
+                    output_path = Path(output_fh.filepath())
                 output_fh.close()
 
                 # Remove '.tmp' suffix
@@ -208,8 +211,7 @@ class NetcdfOutputDriver(OutputDriver):
         variable_params = {}
         for measurement in stat.data_measurements:
             name = measurement['name']
-            variable_params[name] = {k: v for k, v in stat._definition.items() if
-                                     k in _NETCDF_VARIABLE__PARAMETER_NAMES}
+            variable_params[name] = stat.output_params.copy()
             variable_params[name]['chunksizes'] = chunking
             variable_params[name].update(
                 {k: v for k, v in measurement.items() if k in _NETCDF_VARIABLE__PARAMETER_NAMES})
@@ -381,6 +383,8 @@ def _format_filename(path_template, **kwargs):
 
 
 def _find_source_datasets(task, stat, geobox, app_info, uri=None):
+    # Find all the source datasets for a task
+    # Put them in order so that they can be assigned to a stacked output, against it's time dimension
     def _make_dataset(labels, sources_):
         return make_dataset(product=stat.product,
                             sources=sources_,
@@ -391,11 +395,12 @@ def _find_source_datasets(task, stat, geobox, app_info, uri=None):
                             valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
 
     def merge_sources(prod):
-        if stat.masked:
+        # if stat.masked:
             all_sources = xarray.align(prod['data'].sources, *[mask_tile.sources for mask_tile in prod['masks']])
             return reduce_(operator.add, (sources_.sum() for sources_ in all_sources))
-        else:
-            return prod['data'].sources.sum()
+
+        # else:
+        #     return prod['data'].sources.sum()
 
     start_time, _ = task.time_period
     sources = reduce_(operator.add, (merge_sources(prod) for prod in task.sources))
