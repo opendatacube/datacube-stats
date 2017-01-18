@@ -6,6 +6,7 @@ from __future__ import absolute_import
 
 from .statistics import nan_percentile, argpercentile, axisindex
 import numpy as np
+import xarray as xr
 
 
 def test_nan_percentile():
@@ -46,3 +47,17 @@ def test_argpercentile():
     np_result = np.nanpercentile(test_arr, q=25, axis=0, interpolation='nearest')
     argpercentile_result = axisindex(test_arr, argpercentile(test_arr, q=25, axis=0), axis=0)
     assert np.isclose(np_result, argpercentile_result).all()
+
+
+def test_xarray_reduce():
+    arr = np.random.random((100, 100, 5))
+    dataarray = xr.DataArray(arr, dims=('x', 'y', 'time'))
+
+    def reduction(in_arr, axis):
+        assert axis == 2
+        output = np.average(in_arr, axis)
+        return output
+
+    dataarray = dataarray.reduce(reduction, dim='time')
+
+    assert dataarray.dims == ('x', 'y')
