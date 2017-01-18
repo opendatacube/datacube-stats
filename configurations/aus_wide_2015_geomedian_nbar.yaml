@@ -81,8 +81,8 @@ computation:
     y: 200
 
 input_region:
-  tile: [16, -39]
-#  from_file: /g/data/u46/users/dra547/test_stats_region/test_stats_region.shp
+#  tile: [16, -39]
+  from_file: /g/data/u46/users/dra547/mdbadata/mdb_floodplan/mdb_floodplain.shp
 #input_region:
 #
 #    crs: EPSG:4326

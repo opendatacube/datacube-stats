@@ -17,12 +17,13 @@ from datacube import Datacube
 from datacube.api import make_mask
 from datacube.api.grid_workflow import GridWorkflow, Tile
 from datacube.api.query import query_group_by, query_geopolygon, Query
-from datacube.model import GridSpec, CRS, GeoBox, GeoPolygon
+from datacube.model import GridSpec, CRS, GeoBox
 from datacube.storage.masking import mask_valid_data as mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
+from datacube.utils.geometry import Geometry
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
 from datacube_stats.runner import run_tasks
@@ -373,7 +374,7 @@ def create_stats_app(config, index=None):
         elif 'geometry' in config['input_region']:  # Larger spatial region
             # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
             _LOG.info('Found geojson `input region`, outputing tiles.')
-            geopolygon = GeoPolygon.from_geojson(config['input_region']['geometry'], CRS('EPSG:4326'))
+            geopolygon = Geometry(config['input_region']['geometry'], CRS('EPSG:4326'))
             stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
         elif 'from_file' in config['input_region']:
             _LOG.info('Input spatial region specified by file: %s', config['input_region']['from_file'])
@@ -384,7 +385,7 @@ def create_stats_app(config, index=None):
                 joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
                 final = joined.convex_hull
                 crs = CRS(input_region.crs_wkt)
-                boundary_polygon = GeoPolygon.from_geojson(mapping(final), crs)
+                boundary_polygon = Geometry(mapping(final), crs)
 
             stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec,
                                                geopolygon=boundary_polygon)
