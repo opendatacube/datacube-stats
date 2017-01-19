@@ -56,8 +56,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 1200
-    y: 800
+    x: 800
+    y: 400
 
 input_region:
 #  tile: [12, -43]
@@ -70,14 +70,14 @@ output_products:
    statistic: percentile_25_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_25/{x}/SR_LS5_N_PCT_25_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_25/{x}/SR_LS5_N_PCT_25_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
  - name: 16month_percentile_50
    statistic: percentile_50_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_50/{x}/SR_LS5_N_PCT_50_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_50/{x}/SR_LS5_N_PCT_50_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
  - name: 16month_percentile_75
    statistic: percentile_75_no_prov
    zlib: True
    fletcher32: True
-   file_path_template: 'MDBA_PCT_75/{x}/SR_LS5_N_PCT_75_3577_{x}_{y}_{var_name}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_75/{x}/SR_LS5_N_PCT_75_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
