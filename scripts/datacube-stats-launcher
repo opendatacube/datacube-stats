@@ -3,8 +3,9 @@
 from __future__ import print_function
 
 import subprocess
-import click
 from pathlib import Path
+
+import click
 
 ROOT_DIR = Path(__file__).absolute().parent.parent
 CONFIG_DIR = ROOT_DIR / 'configurations'
@@ -46,17 +47,18 @@ def list():
               is_flag=True)
 @click.option('--web-ui', help='Launch the bokeh web interface',
               is_flag=True)
-@click.argument('app_config')
+@click.argument('app_config', type=click.Path(exists=True, dir_okay=False))
 def qsub(app_config, queue, project, nodes, walltime, name, no_confirm, web_ui, config=None, env=None):
     confirm = not no_confirm
-    app_config = CONFIG_DIR / app_config
+    # app_config = CONFIG_DIR / app_config
+    app_config = Path(app_config).absolute()
 
-    config_arg = '-C "%(config)s"' % dict(config=config) if config else ''
-    env_arg = '--env "%(env)s"' % dict(env=env) if env else ''
+    config_arg = '-C "%s"' % config if config else ''
+    env_arg = '--env "%s"' % env if env else ''
 
-    if not app_config.exists():
-        print('%s does not exist' % app_config)
-        return 1
+    # if not app_config.exists():
+    #     print('%s does not exist' % app_config)
+    #     return 1
 
     do_system_check(config_arg)
 
