@@ -5,9 +5,9 @@ sources:
   - product: ls8_nbar_albers
     measurements: [coastal_aerosol, blue, green, red, nir, swir1, swir2]
     group_by: solar_day
-    source_filter:
-      product: ls8_level1_scene
-      gqa: [-1, 1]
+#    source_filter:
+#      product: ls8_level1_scene
+#      gqa: [-1, 1]
     masks:
       - product: ls8_pq_albers
         measurement: pixelquality
@@ -56,8 +56,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 400
-    y: 400
+    x: 2000
+    y: 2000
 
 input_region:
 #  tile: [12, -43]
@@ -68,16 +68,19 @@ input_region:
 output_products:
  - name: 16month_percentile_25
    statistic: percentile_25_no_prov
-   zlib: True
-   fletcher32: True
+   output_params:
+     zlib: True
+     fletcher32: True
    file_path_template: 'MDBA_PCT_25/{x}/SR_LS8_N_PCT_25_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
  - name: 16month_percentile_50
    statistic: percentile_50_no_prov
-   zlib: True
-   fletcher32: True
+   output_params:
+     zlib: True
+     fletcher32: True
    file_path_template: 'MDBA_PCT_50/{x}/SR_LS8_N_PCT_50_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
  - name: 16month_percentile_75
    statistic: percentile_75_no_prov
-   zlib: True
-   fletcher32: True
+   output_params:
+     zlib: True
+     fletcher32: True
    file_path_template: 'MDBA_PCT_75/{x}/SR_LS8_N_PCT_75_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'

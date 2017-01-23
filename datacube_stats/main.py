@@ -217,14 +217,14 @@ def execute_task(task, output_driver, chunking):
                     timer.pause('loading_data')
 
                     for prod_name, stat in task.output_products.items():
-                        _LOG.debug("Computing %s in tile %s. Current timing: %s", prod_name, sub_tile_slice, timer)
+                        _LOG.info("Computing %s in tile %s. Current timing: %s", prod_name, sub_tile_slice, timer)
                         timer.start(prod_name)
                         stats_data = stat.compute(data)
                         timer.pause(prod_name)
 
                         # For each of the data variables, shove this chunk into the output results
                         timer.start('writing_data')
-                        for var_name, var in stats_data.data_vars.items():
+                        for var_name, var in stats_data.data_vars.items(): # TODO: Move this loop into output_files
                             output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
                         timer.pause('writing_data')
                 except EmptyChunkException:
@@ -264,6 +264,7 @@ def _load_masked_data(sub_tile_slice, source_prod):
                              measurements=source_prod['spec']['measurements'],
                              skip_broken_datasets=True)
     crs = data.crs
+    # TODO: Check memory usage in here, I suspect it's blowing up
     data = _convert_dataset_to_float(data)
     data = mask_invalid_data(data)
 
@@ -350,56 +351,17 @@ def create_stats_app(config, index=None):
     stats_app.output_product_specs = config['output_products']
     stats_app.location = config['location']
     stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
+    stats_app.date_ranges = _configure_date_ranges(index, config['date_ranges'], config['sources'])
+    stats_app.task_generator = _create_task_generator(config.get('input_region'), stats_app.storage)
+    stats_app.output_driver = _prepare_output_driver(config)
+    stats_app.process_completed = do_nothing  # TODO: Save dataset to database
 
-    date_ranges = config['date_ranges']
-    if 'type' not in date_ranges or date_ranges['type'] == 'simple':
-        stats_app.date_ranges = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
-                                                   end=pd.to_datetime(date_ranges['end_date']),
-                                                   stats_duration=date_ranges['stats_duration'],
-                                                   step_size=date_ranges['step_size']))
-    elif date_ranges['type'] == 'find_daily_data':
-        product_names = [source['product'] for source in config['sources']]
-        stats_app.date_ranges = list(_find_periods_with_data(index, product_names=product_names,
-                                                             start_date=date_ranges['start_date'],
-                                                             end_date=date_ranges['end_date']))
-    else:
-        raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
-                                      'type=find_daily_data')
+    return stats_app
 
-    grid_spec = _make_grid_spec(config['storage'])
+
+def _prepare_output_driver(config):
     try:
-        if 'tile' in config['input_region']:  # Simple, single tile
-            stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec,
-                                               cell_index=config['input_region']['tile'])
-        elif 'geometry' in config['input_region']:  # Larger spatial region
-            # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
-            _LOG.info('Found geojson `input region`, outputing tiles.')
-            geopolygon = Geometry(config['input_region']['geometry'], CRS('EPSG:4326'))
-            stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
-        elif 'from_file' in config['input_region']:
-            _LOG.info('Input spatial region specified by file: %s', config['input_region']['from_file'])
-            import fiona
-            import shapely.ops
-            from shapely.geometry import shape, mapping
-            with fiona.open(config['input_region']['from_file']) as input_region:
-                joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
-                final = joined.convex_hull
-                crs = CRS(input_region.crs_wkt)
-                boundary_polygon = Geometry(mapping(final), crs)
-
-            stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec,
-                                               geopolygon=boundary_polygon)
-
-        else:
-            _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
-            stats_app.task_generator = partial(_generate_non_gridded_tasks, input_region=config['input_region'],
-                                               storage=stats_app.storage)
-    except KeyError:
-        _LOG.info('Default output, full available spatial region, gridded files.')
-        stats_app.task_generator = partial(_generate_gridded_tasks, grid_spec=grid_spec)
-
-    try:
-        stats_app.output_driver = OUTPUT_DRIVERS[config['storage']['driver']]
+        return OUTPUT_DRIVERS[config['storage']['driver']]
     except KeyError:
         specified_driver = config.get('storage', {}).get('driver')
         if specified_driver is None:
@@ -408,9 +370,55 @@ def create_stats_app(config, index=None):
             msg = 'Invalid output driver "{}" specified.'
         raise StatsConfigurationError('{} Specify one of {} in storage->driver in the '
                                       'configuration file.'.format(msg, OUTPUT_DRIVERS.keys()))
-    stats_app.process_completed = do_nothing  # TODO: Save dataset to database
 
-    return stats_app
+
+def _configure_date_ranges(index, date_ranges, sources):
+    if date_ranges.get('type', 'simple') == 'simple':
+        return list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
+                                  end=pd.to_datetime(date_ranges['end_date']),
+                                  stats_duration=date_ranges['stats_duration'],
+                                  step_size=date_ranges['step_size']))
+    elif date_ranges['type'] == 'find_daily_data':
+        product_names = [source['product'] for source in sources]
+        return list(_find_periods_with_data(index, product_names=product_names,
+                                            start_date=date_ranges['start_date'],
+                                            end_date=date_ranges['end_date']))
+    else:
+        raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
+                                      'type=find_daily_data')
+
+
+def _create_task_generator(input_region, storage):
+    grid_spec = _make_grid_spec(storage)
+    if input_region is None:
+        _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
+        return partial(_generate_gridded_tasks, grid_spec=grid_spec)
+
+    if 'tile' in input_region:  # Simple, single tile
+        return partial(_generate_gridded_tasks, grid_spec=grid_spec, cell_index=input_region['tile'])
+
+    elif 'geometry' in input_region:  # Larger spatial region
+        # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
+        _LOG.info('Found geojson `input_region`, outputing tiles.')
+        geopolygon = Geometry(input_region['geometry'], CRS('EPSG:4326'))
+        return partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
+
+    elif 'from_file' in input_region:
+        _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])
+        import fiona
+        import shapely.ops
+        from shapely.geometry import shape, mapping
+        with fiona.open(input_region['from_file']) as input_region:
+            joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
+            final = joined.convex_hull
+            crs = CRS(input_region.crs_wkt)
+            boundary_polygon = Geometry(mapping(final), crs)
+
+        return partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=boundary_polygon)
+
+    else:
+        _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
+        return partial(_generate_non_gridded_tasks, input_region=input_region, storage=storage)
 
 
 def do_nothing(task):

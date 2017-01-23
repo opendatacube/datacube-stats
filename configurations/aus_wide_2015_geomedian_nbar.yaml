@@ -77,7 +77,7 @@ storage:
 ## Computational
 computation:
   chunking: # Should keep memory usage under 4gb
-    x: 2000
+    x: 1000
     y: 200
 
 input_region:

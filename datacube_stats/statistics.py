@@ -670,11 +670,11 @@ try:
             :return: xarray.Dataset
             """
             # Assert data shape/dims
-            inarray = data.to_array(dim='variable').transpose('x', 'y', 'variable', 'time').copy()
+            data = data.to_array(dim='variable').transpose('x', 'y', 'variable', 'time').copy()
 
-            output = inarray.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
+            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
 
-            return output.transpose('variable', 'y', 'x').to_dataset(dim='variable')
+            return data.transpose('variable', 'y', 'x').to_dataset(dim='variable')
 
 
     STATS['geomedian'] = GeoMedian()
