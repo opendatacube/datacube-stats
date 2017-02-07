@@ -13,6 +13,7 @@ import pandas as pd
 import xarray
 
 import datacube_stats
+import datacube
 from datacube import Datacube
 from datacube.api import make_mask
 from datacube.api.grid_workflow import GridWorkflow, Tile
@@ -46,7 +47,6 @@ DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, executor, queue_size):
-    # logging.getLogger('datacube.storage.storage').setLevel(logging.INFO)
     timer = MultiTimer()
     timer.start('main')
     _, config = next(read_documents(stats_config_file))
@@ -215,6 +215,7 @@ def execute_task(task, output_driver, chunking):
     :param chunking: dict of dimension sizes to chunk the computation by
     """
     timer = MultiTimer()
+    datacube.set_options(reproject_threads=1)
     try:
         with output_driver(task=task) as output_files:
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
