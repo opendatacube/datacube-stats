@@ -108,22 +108,18 @@ class StatsApp(object):
 
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
-        # Check output product names are unique
-        output_names = [prod['name'] for prod in self.output_product_specs]
-        duplicate_names = [x for x in output_names if output_names.count(x) > 1]
-        if duplicate_names:
-            raise StatsConfigurationError('Output products must all have different names. '
-                                          'Duplicates found: %s' % duplicate_names)
+        self._ensure_unique_output_product_names()
+        self._ensure_stats_available()
+        self._check_consistent_measurements()
 
-        # Check statistics are available
-        requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
-        available_statistics = set(STATS.keys())
-        if not requested_statistics.issubset(available_statistics):
-            raise StatsConfigurationError(
-                'Requested Statistic(s) %s are not valid statistics. Available statistics are: %s'
-                % (requested_statistics - available_statistics, available_statistics))
+        assert callable(self.task_generator)
+        assert callable(self.output_driver)
+        assert hasattr(self.output_driver, 'open_output_files')
+        assert hasattr(self.output_driver, 'write_data')
+        assert callable(self.process_completed)
 
-        # Check consistent measurements
+    def _check_consistent_measurements(self):
+        """Part of configuration validation"""
         try:
             first_source = self.sources[0]
         except IndexError:
@@ -132,14 +128,25 @@ class StatsApp(object):
             raise StatsConfigurationError("Configuration Error: listed measurements of source products "
                                           "are not all the same.")
 
-        assert callable(self.task_generator)
-        assert callable(self.output_driver)
-        assert hasattr(self.output_driver, 'open_output_files')
-        assert hasattr(self.output_driver, 'write_data')
-        assert callable(self.process_completed)
+    def _ensure_stats_available(self):
+        """Part of configuration validation"""
+        requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
+        available_statistics = set(STATS.keys())
+        if not requested_statistics.issubset(available_statistics):
+            raise StatsConfigurationError(
+                'Requested Statistic(s) %s are not valid statistics. Available statistics are: %s'
+                % (requested_statistics - available_statistics, available_statistics))
+
+    def _ensure_unique_output_product_names(self):
+        """Part of configuration validation"""
+        output_names = [prod['name'] for prod in self.output_product_specs]
+        duplicate_names = [x for x in output_names if output_names.count(x) > 1]
+        if duplicate_names:
+            raise StatsConfigurationError('Output products must all have different names. '
+                                          'Duplicates found: %s' % duplicate_names)
 
     def run(self, executor):
-        output_products = self.ensure_output_products()
+        output_products = self.configure_outputs()
 
         tasks = self.generate_tasks(output_products)
 
@@ -174,9 +181,9 @@ class StatsApp(object):
             task.output_products = output_products
             yield task
 
-    def ensure_output_products(self, metadata_type='eo'):
+    def configure_outputs(self, metadata_type='eo'):
         """
-        Return a dict mapping Output Product Name to OutputProduct
+        Return dict mapping Output Product Name<->Output Product
 
         StatProduct describes the structure and how to compute the output product.
         """
@@ -187,12 +194,12 @@ class StatsApp(object):
         measurements = _source_measurement_defs(self.index, self.sources)
 
         metadata_type = self.index.metadata_types.get_by_name(metadata_type)
-        for product_def in self.output_product_specs:
-            output_products[product_def['name']] = OutputProduct.from_json_definition(
+        for output_spec in self.output_product_specs:
+            output_products[output_spec['name']] = OutputProduct.from_json_definition(
                 metadata_type=metadata_type,
                 input_measurements=measurements,
                 storage=self.storage,
-                definition=product_def)
+                definition=output_spec)
 
         # TODO: Create the output product in the database
 
