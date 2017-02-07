@@ -118,18 +118,23 @@ input_region:
 output_products:
  - name: landsat_seasonal_mean
    statistic: mean
-   zlib: True
-   fletcher32: True
-   file_path_template: 'SR_N_MEAN/SR_N_MEAN_3577_{tile_index[0]:02d}_{tile_index[1]:02d}_{time_period[0]:%Y%m%d}.nc'
+   output_params:
+     zlib: True
+     fletcher32: True
+   file_path_template: 'SR_N_MEAN/SR_N_MEAN_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
 
  - name: landsat_seasonal_medoid
    statistic: medoid
-   zlib: True
-   fletcher32: True
-   file_path_template: 'SR_N_MEDOID/SR_N_MEDOID_3577_{tile_index[0]:02d}_{tile_index[1]:02d}_{time_period[0]:%Y%m%d}.nc'
+   output_params:
+     zlib: True
+     fletcher32: True
+   file_path_template: 'SR_N_MEDOID/SR_N_MEDOID_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
 
  - name: landsat_seasonal_percentile_10
    statistic: percentile_10
-   zlib: True
-   fletcher32: True
-   file_path_template: 'SR_N_PCT_10/SR_N_PCT_10_3577_{tile_index[0]:02d}_{tile_index[1]:02d}_{time_period[0]:%Y%m%d}.nc'
+   statistic_args:
+     q: 10
+   output_params:
+     zlib: True
+     fletcher32: True
+   file_path_template: 'SR_N_PCT_10/SR_N_PCT_10_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'

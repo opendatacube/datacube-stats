@@ -1,6 +1,6 @@
 ## Define inputs to perform statistics on
 sources:
-  - product: wofs_albers
+  - product: old_wofs
     name: wofs_dry
     measurements: [water]
     group_by: solar_day
@@ -8,36 +8,39 @@ sources:
 
 ## Define whether and how to chunk over time
 date_ranges:
-  start_date: 1970-01-01
-  end_date: 2070-01-01
-  stats_duration: 100y
-  step_size: 100y
+  start_date: 1985-07-01
+  end_date: 2017-07-01
+  stats_duration: 1y
+  step_size: 1y
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
-location: '/g/data/u46/users/dra547/wofs/'
+location: '/g/data/u46/users/dra547/oldwofs/'
+
+input_region:
+  tile: [138, -32]
 
 storage:
   driver: NetCDF CF
 
-  crs: EPSG:3577
+  crs: EPSG:4326
   tile_size:
-          x: 100000.0
-          y: 100000.0
+          longitude: 1.0
+          latitude: 1.0
   resolution:
-          x: 25
-          y: -25
+          longitude: 0.00025
+          latitude: -0.00025
   chunking:
-      x: 200
-      y: 200
+      longitude: 200
+      latitude: 200
       time: 1
-  dimension_order: [time, y, x]
+  dimension_order: [time, latitude, longitude]
 
 ## Computational
 computation:
   chunking:
-    x: 400
-    y: 400
+    longitude: 4000
+    latitude: 4000
 
 ## Define statistics to perform and how to store the data
 
@@ -47,4 +50,4 @@ output_products:
    output_params:
      zlib: True
      fletcher32: True
-   file_path_template: 'WOFS_3577_{x}_{y}_{epoch_start:%Y%m%d}.nc'
+   file_path_template: 'WOFS_4326_{x}_{y}_{epoch_start:%Y%m%d}.nc'
