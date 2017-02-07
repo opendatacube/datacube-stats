@@ -322,9 +322,11 @@ class RioOutputDriver(OutputDriver):
         profile = self.default_profile.copy()
         dtype = self._get_dtype(prod_name, measurement_name)
         nodata = self._get_nodata(prod_name, measurement_name)
+        x_block_size = self._storage['chunking']['x'] if 'x' in self._storage['chunking'] else self._storage['chunking']['longitude']
+        y_block_size = self._storage['chunking']['y'] if 'y' in self._storage['chunking'] else self._storage['chunking']['latitude']
         profile.update({
-            'blockxsize': self._storage['chunking']['x'],
-            'blockysize': self._storage['chunking']['y'],
+            'blockxsize': x_block_size,
+            'blockysize': y_block_size,
 
             'dtype': dtype,
             'nodata': nodata,
