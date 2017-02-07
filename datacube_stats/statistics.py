@@ -594,6 +594,38 @@ def percentile_stat_no_prov(q):
                           q=q))
 
 
+class Medoid(PerStatIndexStat):
+    def __init__(self):
+        super(Medoid, self).__init__(stat_func=_compute_medoid, extra_metadata_producers=[ObservedDaysSince()])
+
+
+class MedoidNoProv(PerStatIndexStat):
+    def __init__(self):
+        super(MedoidNoProv, self).__init__(stat_func=_compute_medoid)
+
+# Dict of Classes
+STATS = {
+    'simple': SimpleXarrayReduction,
+    # 'min': SimpleXarrayReduction('min'),
+    # 'max': SimpleXarrayReduction('max'),
+    # 'mean': SimpleXarrayReduction('mean'),
+    'percentile': percentile_stat,
+    'percentile_no_prov': percentile_stat_no_prov,
+    'medoid': Medoid,
+    'medoid_no_prov': MedoidNoProv,
+    'simple_normalised_difference': NormalisedDifferenceStats,
+    # 'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
+    #                                         stats=['min', 'mean', 'max']),
+    # 'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1',
+    #                                         stats=['min', 'mean', 'max']),
+    # 'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
+    # 'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
+    'none': NoneStat,
+    'wofs_summary': WofsStats,
+    'clear_count': ClearCount
+}
+
+
 def _datetime64_to_inttime(var):
     """
     Return an "inttime" representing a datetime64.
@@ -609,33 +641,6 @@ def _datetime64_to_inttime(var):
     days = (values.astype('datetime64[D]') - values.astype('datetime64[M]') + 1).astype('int32')
     return years * 10000 + months * 100 + days
 
-
-STATS = {
-    'min': SimpleXarrayReduction('min'),
-    'max': SimpleXarrayReduction('max'),
-    'mean': SimpleXarrayReduction('mean'),
-    'percentile_10': percentile_stat(10),
-    'percentile_25': percentile_stat(25),
-    'percentile_50': percentile_stat(50),
-    'percentile_75': percentile_stat(75),
-    'percentile_90': percentile_stat(90),
-    'percentile_10_no_prov': percentile_stat_no_prov(10),
-    'percentile_25_no_prov': percentile_stat_no_prov(25),
-    'percentile_50_no_prov': percentile_stat_no_prov(50),
-    'percentile_75_no_prov': percentile_stat_no_prov(75),
-    'percentile_90_no_prov': percentile_stat_no_prov(90),
-    'medoid': PerStatIndexStat(stat_func=_compute_medoid, extra_metadata_producers=[ObservedDaysSince()]),
-    'medoid_no_prov': PerStatIndexStat(stat_func=_compute_medoid),
-    'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
-                                            stats=['min', 'mean', 'max']),
-    'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1',
-                                            stats=['min', 'mean', 'max']),
-    'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    'none': NoneStat(),
-    'wofs_summary': WofsStats(),
-    'clear_count': ClearCount()
-}
 
 # Dynamically look for and load statistics from other packages
 
@@ -677,6 +682,6 @@ try:
             return data.transpose('variable', 'y', 'x').to_dataset(dim='variable')
 
 
-    STATS['geomedian'] = GeoMedian()
+    STATS['geomedian'] = GeoMedian
 except ImportError:
     pass

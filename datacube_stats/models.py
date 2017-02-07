@@ -89,7 +89,7 @@ class OutputProduct(object):
                    name=definition['name'],
                    file_path_template=definition['file_path_template'],
                    stat_name=definition['statistic'],
-                   statistic=STATS[definition['statistic']],
+                   statistic=STATS[definition['statistic']](**definition.get('statistic_args', {})),
                    output_params=definition['output_params'])
 
     @property

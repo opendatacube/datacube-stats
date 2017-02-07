@@ -71,8 +71,8 @@ def test_can_create_output_products(sample_stats_config, mock_index):
     stats_app.index = mock_index
     stats_app.output_products = _SAMPLE_OUTPUTS_SPEC
 
-    # WHEN: I call ensure_output_products()
-    output_prods = stats_app.ensure_output_products()
+    # WHEN: I call configure_outputs()
+    output_prods = stats_app.configure_outputs()
 
     # THEN: I should receive an appropriately configured output product
     assert len(output_prods) == 1
@@ -123,7 +123,7 @@ def create_app_with_products(sample_stats_config, mock_index):
     stats_app = create_stats_app(config=sample_stats_config)
     stats_app.index = mock_index
     stats_app.output_products = _SAMPLE_OUTPUTS_SPEC
-    output_prods = stats_app.ensure_output_products()
+    output_prods = stats_app.configure_outputs()
     return stats_app, output_prods
 
 
