@@ -18,7 +18,8 @@ from datacube import Datacube
 from datacube.api import make_mask
 from datacube.api.grid_workflow import GridWorkflow, Tile
 from datacube.api.query import query_group_by, query_geopolygon, Query
-from datacube.model import GridSpec, CRS, GeoBox
+from datacube.model import GridSpec
+from datacube.utils.geometry import CRS, GeoBox
 from datacube.storage.masking import mask_valid_data as mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
