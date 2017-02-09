@@ -15,13 +15,27 @@ date_ranges:
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
-location: '/g/data/u46/users/dra547/oldwofs/'
+location: '/g/data/u46/users/dra547/radwaste/'
+
+#The area to look at is called Hookina Creek.
+#
+#Lat: -31.624,
+#Lon: 138.075
+
 
 input_region:
-  tile: [138, -32]
+  geometry:
+          type: Polygon
+          coordinates: [ [
+              [ 137, -33 ],
+              [ 137, -30 ],
+              [ 140, -30 ],
+              [ 140, -33 ],
+              [ 137, -33 ]
+            ] ]
 
 storage:
-  driver: NetCDF CF
+  driver: Geotiff
 
   crs: EPSG:4326
   tile_size:
@@ -31,23 +45,25 @@ storage:
           longitude: 0.00025
           latitude: -0.00025
   chunking:
-      longitude: 200
-      latitude: 200
+      longitude: 400
+      latitude: 400
       time: 1
   dimension_order: [time, latitude, longitude]
 
 ## Computational
 computation:
   chunking:
-    longitude: 4000
-    latitude: 4000
+    longitude: 2000
+    latitude: 2000
 
 ## Define statistics to perform and how to store the data
 
 output_products:
  - name: wofs_summary
    statistic: wofs_summary
+   statistic_args:
+     freq_only: True
    output_params:
      zlib: True
      fletcher32: True
-   file_path_template: 'WOFS_4326_{x}_{y}_{epoch_start:%Y%m%d}.nc'
+   file_path_template: 'WOFS_4326_{x}_{y}_{epoch_start:%Y%m%d}.tif'

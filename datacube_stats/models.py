@@ -87,10 +87,10 @@ class OutputProduct(object):
     def from_json_definition(cls, metadata_type, input_measurements, storage, definition):
         return cls(metadata_type, input_measurements, storage,
                    name=definition['name'],
-                   file_path_template=definition['file_path_template'],
+                   file_path_template=definition.get('file_path_template'),
                    stat_name=definition['statistic'],
                    statistic=STATS[definition['statistic']](**definition.get('statistic_args', {})),
-                   output_params=definition['output_params'])
+                   output_params=definition.get('output_params'))
 
     @property
     def compute(self):

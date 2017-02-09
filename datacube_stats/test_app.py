@@ -9,7 +9,7 @@ import mock
 from datacube.model import MetadataType
 from datacube_stats.main import OutputProduct
 from datacube_stats.models import StatsTask
-from datacube_stats.statistics import StatsConfigurationError, SimpleStatistic
+from datacube_stats.statistics import StatsConfigurationError, SimpleStatistic, ReducingXarrayStatistic
 
 from datacube_stats.main import create_stats_app
 from .main import StatsApp
@@ -32,7 +32,9 @@ def sample_stats_config():
         'resolution': {'x': 100, 'y': 100},
         'crs': 'EPSG:3577'
     }
-    config['output_products'] = [{'name': 'fake_output', 'statistic': 'mean'}]
+    config['output_products'] = [{'name': 'fake_output',
+                                  'statistic': 'simple',
+                                  'statistic_args': {'reduction_function':'mean'}}]
 
     return config
 
@@ -79,8 +81,8 @@ def test_can_create_output_products(sample_stats_config, mock_index):
     fake_output = output_prods['fake_output']
     assert isinstance(fake_output, OutputProduct)
     assert fake_output.name == 'fake_output'
-    assert fake_output.stat_name == 'mean'
-    assert isinstance(fake_output.statistic, SimpleStatistic)
+    assert fake_output.stat_name == 'simple'
+    assert isinstance(fake_output.statistic, ReducingXarrayStatistic)
 
     # TODO: Check output product is created
     # Based on the source product's measurements

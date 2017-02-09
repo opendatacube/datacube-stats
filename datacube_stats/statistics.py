@@ -297,16 +297,16 @@ class SimpleStatistic(Statistic):
         return self.stat_func(data)
 
 
-class SimpleXarrayReduction(Statistic):
+class ReducingXarrayStatistic(Statistic):
     """
     Compute statistics using a reduction function defined on :class:`xarray.Dataset`.
     """
 
-    def __init__(self, xarray_function_name):
+    def __init__(self, reduction_function):
         """
-        :param str xarray_function_name: name of an :class:`xarray.Dataset` reduction function
+        :param str reduction_function: name of an :class:`xarray.Dataset` reduction function
         """
-        self._stat_func_name = xarray_function_name
+        self._stat_func_name = reduction_function
 
     def compute(self, data):
         func = getattr(xarray.Dataset, self._stat_func_name)
@@ -319,39 +319,44 @@ class WofsStats(Statistic):
 
     It's very hard coded, but maybe that's a good thing.
     """
+
+    def __init__(self, freq_only=False):
+        self.freq_only = freq_only
+
     def compute(self, data):
-        wet = (data.water == 128).sum(dim='time')
+        # 128 == clear and wet, 132 == clear and wet and masked for sea
+        # The PQ sea mask that we use is dodgy and should be ignored. It excludes lots of useful data
+        wet = ((data.water == 128) + (data.water == 132)).sum(dim='time')
         dry = (data.water == 0).sum(dim='time')
         clear = wet + dry
         frequency = wet / clear
-        return xarray.Dataset({'count_wet': wet,
-                               'count_clear': clear,
-                               'frequency': frequency}, attrs=dict(crs=data.crs))
+        if self.freq_only:
+            return xarray.Dataset({'frequency': frequency}, attrs=dict(crs=data.crs))
+        else:
+            return xarray.Dataset({'count_wet': wet,
+                                   'count_clear': clear,
+                                   'frequency': frequency}, attrs=dict(crs=data.crs))
 
     def measurements(self, input_measurements):
         measurement_names = set(m['name'] for m in input_measurements)
         assert 'water' in measurement_names
-        return [
-            {
-                'name': 'count_wet',
-                'dtype': 'int16',
-                'nodata': -1,
-                'units': '1'
-            },
-            {
-                'name': 'count_clear',
-                'dtype': 'int16',
-                'nodata': -1,
-                'units': '1'
-            },
-            {
-                'name': 'frequency',
-                'dtype': 'float32',
-                'nodata': -1,
-                'units': '1'
-            },
 
-        ]
+        wet = {'name': 'count_wet',
+               'dtype': 'int16',
+               'nodata': -1,
+               'units': '1'}
+        dry = {'name': 'count_clear',
+               'dtype': 'int16',
+               'nodata': -1,
+               'units': '1'}
+        frequency = {'name': 'frequency',
+                     'dtype': 'float32',
+                     'nodata': -1,
+                     'units': '1'}
+        if self.freq_only:
+            return [frequency]
+        else:
+            return [wet, dry, frequency]
 
 
 class NormalisedDifferenceStats(Statistic):
@@ -603,9 +608,11 @@ class MedoidNoProv(PerStatIndexStat):
     def __init__(self):
         super(MedoidNoProv, self).__init__(stat_func=_compute_medoid)
 
-# Dict of Classes
+    # Dict of Classes
+
+
 STATS = {
-    'simple': SimpleXarrayReduction,
+    'simple': ReducingXarrayStatistic,
     # 'min': SimpleXarrayReduction('min'),
     # 'max': SimpleXarrayReduction('max'),
     # 'mean': SimpleXarrayReduction('mean'),
@@ -650,6 +657,7 @@ for entry_point in iter_entry_points(group='datacube.stats', name=None):
 try:
     from hdmedians import nangeomedian
 
+
     def apply_geomedian(inarray, f, axis=3, eps=1e-3, **kwargs):
         assert len(inarray.shape) == 4
         assert axis == 3
@@ -663,6 +671,7 @@ try:
                 except ValueError:
                     output[ix, iy, :] = np.nan
         return output
+
 
     class GeoMedian(Statistic):
         def __init__(self, eps=1e-3):

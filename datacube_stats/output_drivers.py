@@ -11,6 +11,7 @@ import operator
 from collections import OrderedDict
 from functools import reduce as reduce_
 from pathlib import Path
+import subprocess
 
 import numpy
 import rasterio
@@ -113,6 +114,8 @@ class OutputDriver(object):
                 if completed_successfully:
                     output_path.rename(output_path.with_suffix(''))
 
+                self.post_process_output(output_path)
+
     @abc.abstractmethod
     def open_output_files(self):
         raise NotImplementedError
@@ -126,16 +129,6 @@ class OutputDriver(object):
     def write_global_attributes(self, attributes):
         raise NotImplementedError
 
-    def _get_dtype(self, out_prod_name, measurement_name=None):
-        if measurement_name:
-            return self._output_products[out_prod_name].product.measurements[measurement_name]['dtype']
-        else:
-            dtypes = set(m['dtype'] for m in self._output_products[out_prod_name].product.measurements.values())
-            if len(dtypes) == 1:
-                return dtypes.pop()
-            else:
-                raise StatsOutputError('Not all measurements for %s have the same dtype.' % out_prod_name)
-
     def __enter__(self):
         self.open_output_files()
         return self
@@ -145,15 +138,13 @@ class OutputDriver(object):
         self.close_files(completed_successfully)
 
     def _prepare_output_file(self, stat, **kwargs):
-        x, y = self._task.tile_index
-        epoch_start, epoch_end = self._task.time_period
-
-        output_path = Path(self._output_path,
-                           stat.file_path_template.format(
-                               x=x, y=y,
-                               epoch_start=epoch_start,
-                               epoch_end=epoch_end,
-                               **kwargs))
+        """
+        Format the output filename for the current task,
+        make sure it is valid and doesn't already exist
+        Make sure parent directories exist
+        Switch it around for a temporary filename.
+        """
+        output_path = self._generate_output_filename(kwargs, stat)
 
         if output_path.suffix not in self.valid_extensions:
             raise StatsOutputError('Invalid Filename: %s for this Output Driver: %s' % (output_path, self))
@@ -171,6 +162,22 @@ class OutputDriver(object):
             tmp_path.unlink()
 
         return tmp_path
+
+    def _generate_output_filename(self, kwargs, stat):
+        # Fill parameters from config file filename specification
+        x, y = self._task.tile_index
+        epoch_start, epoch_end = self._task.time_period
+        output_path = Path(self._output_path,
+                           stat.file_path_template.format(
+                               x=x, y=y,
+                               epoch_start=epoch_start,
+                               epoch_end=epoch_end,
+                               **kwargs))
+        return output_path
+
+    def post_process_output(self, filename):
+        """Perform an operation on an output file after it has been completely written."""
+        pass
 
 
 class NetcdfOutputDriver(OutputDriver):
@@ -266,9 +273,16 @@ class RioOutputDriver(OutputDriver):
 
         self._measurement_bands = {}
 
-    def _get_dtype(self, prod_name, measurement_name=None):
-        dtype = super(RioOutputDriver, self)._get_dtype(prod_name, measurement_name)
-        return self._dtype_map.get(dtype, dtype)
+    def _get_dtype(self, out_prod_name, measurement_name=None):
+        if measurement_name:
+            return self._output_products[out_prod_name].product.measurements[measurement_name]['dtype']
+        else:
+            dtypes = set(m['dtype'] for m in self._output_products[out_prod_name].product.measurements.values())
+            if len(dtypes) == 1:
+                return dtypes.pop()
+            else:
+                raise StatsOutputError('Not all measurements for %s have the same dtype.'
+                                       'For GeoTiff output they must '% out_prod_name)
 
     def _get_nodata(self, prod_name, measurement_name=None):
         dtype = self._get_dtype(prod_name, measurement_name)
@@ -298,14 +312,14 @@ class RioOutputDriver(OutputDriver):
                     self._open_single_band_geotiff(prod_name, stat, measurement_name)
             else:
                 # One file only, either a single or a multi-band geotiff
-                dest_fh, output_filename = self._open_geotiff(prod_name, None, stat, num_measurements)
+                dest_fh = self._open_geotiff(prod_name, None, stat, num_measurements)
 
                 for band, (measurement_name, measure_def) in enumerate(stat.product.measurements.items(), start=1):
                     self._set_band_metadata(dest_fh, measurement_name, band=band)
                 self._output_file_handles[prod_name] = dest_fh
 
     def _open_single_band_geotiff(self, prod_name, stat, measurement_name=None):
-        dest_fh, output_filename = self._open_geotiff(prod_name, measurement_name, stat)
+        dest_fh = self._open_geotiff(prod_name, measurement_name, stat)
         self._set_band_metadata(dest_fh, measurement_name)
         self._output_file_handles.setdefault(prod_name, {})[measurement_name] = dest_fh
 
@@ -339,7 +353,7 @@ class RioOutputDriver(OutputDriver):
         _LOG.debug("Opening %s for writing.", output_filename)
         dest_fh = rasterio.open(str(output_filename), mode='w', **profile)
         dest_fh.update_tags(created=self._app_info)
-        return dest_fh, output_filename
+        return dest_fh
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
         super(RioOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
@@ -364,6 +378,26 @@ class RioOutputDriver(OutputDriver):
     def write_global_attributes(self, attributes):
         for dest in self._output_file_handles.values():
             dest.update_tags(**attributes)
+
+
+class ENVIBILOutputDriver(RioOutputDriver):
+    """
+    Writes out a tif file (with an incorrect extension), then converts it to another GDAL format.
+    """
+    valid_extensions = ['.bil']
+
+    def post_process_output(self, filename):
+        # Rename to a tiff file (which is what it actually is)
+        tif_file = filename.rename(filename.with_suffix('.tif'))
+
+        bil_file = tif_file.with_suffix('.bil')
+        # Convert to an ENVI BIL
+        # call gdal_translate -of ENVI {filename} {output.bil}
+        subprocess.check_call(['gdal_translate', '-of', 'ENVI', str(tif_file), str(bil_file)])
+
+        # Remove temporary tiff file
+        if bil_file.exists():
+            tif_file.unlink()
 
 
 class TestOutputDriver(OutputDriver):
@@ -428,5 +462,6 @@ class XarrayOutputDriver(OutputDriver):
 OUTPUT_DRIVERS = {
     'NetCDF CF': NetcdfOutputDriver,
     'Geotiff': RioOutputDriver,
-    'Test': TestOutputDriver
+    'Test': TestOutputDriver,
+    'ENVIBIL': ENVIBILOutputDriver
 }
