@@ -112,7 +112,7 @@ class OutputDriver(object):
 
                 # Remove '.tmp' suffix
                 if completed_successfully:
-                    output_path.rename(output_path.with_suffix(''))
+                    output_path.rename(str(output_path)[:-4])
 
                 self.post_process_output(output_path)
 
