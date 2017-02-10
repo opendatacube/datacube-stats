@@ -9,7 +9,7 @@ setup(
     author='Geosience Australia',
     author_email='datacube@ga.gov.au',
     description='Perform statistics operations on a Data Cube',
-    install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio'],
+    install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio', 'fiona', 'shapely'],
     setup_requires=['pytest-runner'],
     test_requires=['pytest', 'mock'],
     entry_points={
