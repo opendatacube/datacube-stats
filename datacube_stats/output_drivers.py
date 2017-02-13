@@ -395,7 +395,7 @@ class ENVIBILOutputDriver(GeotiffOutputDriver):
     """
     Writes out a tif file (with an incorrect extension), then converts it to another GDAL format.
     """
-    valid_extensions = ['.bil']
+    valid_extensions = ['.bil', '.tif']
 
     def post_process_output(self, filename):
         # Rename to a tiff file (which is what it actually is)

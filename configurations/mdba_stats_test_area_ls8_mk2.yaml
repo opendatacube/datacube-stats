@@ -37,10 +37,10 @@ date_ranges:
   step_size: 12m
 
 ## Define output directory and file structure
-location: '/g/data/u46/users/dra547/MDBA/mk2'
+location: '/g/data/u46/users/dra547/MDBA_mk2'
 
 storage:
-  driver: Geotiff
+  driver: ENVIBIL
 
   crs: EPSG:4326
   tile_size:
@@ -76,7 +76,7 @@ output_products:
    output_params:
      zlib: True
      fletcher32: True
-   file_path_template: 'MDBA_PCT_25/{x}/SR_LS8_N_PCT_25_4326_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_25/{x}/SR_LS8_N_PCT_25_4326_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.bil'
  - name: 16month_percentile_50
    statistic: percentile_no_prov
    statistic_args:
@@ -84,7 +84,7 @@ output_products:
    output_params:
      zlib: True
      fletcher32: True
-   file_path_template: 'MDBA_PCT_50/{x}/SR_LS8_N_PCT_50_4326_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_50/{x}/SR_LS8_N_PCT_50_4326_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.bil'
  - name: 16month_percentile_75
    statistic: percentile_no_prov
    statistic_args:
@@ -92,4 +92,4 @@ output_products:
    output_params:
      zlib: True
      fletcher32: True
-   file_path_template: 'MDBA_PCT_75/{x}/SR_LS8_N_PCT_75_4326_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.tif'
+   file_path_template: 'MDBA_PCT_75/{x}/SR_LS8_N_PCT_75_4326_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.bil'
