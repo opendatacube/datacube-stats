@@ -10,6 +10,7 @@ import logging
 import operator
 from collections import OrderedDict
 from functools import reduce as reduce_
+from future.utils import with_metaclass
 from pathlib import Path
 import subprocess
 
@@ -31,6 +32,17 @@ _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
                                      'contiguous',
                                      'attrs'}
 
+OUTPUT_DRIVERS = {}
+
+
+class RegisterDriver(abc.ABCMeta):
+    def __new__(mcs, name, bases, class_dict):
+        cls = type.__new__(mcs, name, bases, class_dict)
+        name = cls.__name__.replace('OutputDriver', '')
+        if name:
+            OUTPUT_DRIVERS[name] = cls
+        return cls
+
 
 class StatsOutputError(Exception):
     pass
@@ -47,7 +59,7 @@ class OutputFileAlreadyExists(Exception):
         return "OutputFileAlreadyExists({})".format(self._output_file)
 
 
-class OutputDriver(object):
+class OutputDriver(with_metaclass(RegisterDriver)):
     """
     Handles the creation of output data files for a StatsTask.
 
@@ -78,7 +90,6 @@ class OutputDriver(object):
           'dimension_order': ['time', 'y', 'x']}
     :param app_info:
     """
-    __metaclass__ = abc.ABCMeta
     valid_extensions = []
 
     def __init__(self, task, storage, output_path, app_info=None):
@@ -180,7 +191,7 @@ class OutputDriver(object):
         pass
 
 
-class NetcdfOutputDriver(OutputDriver):
+class NetCDFCFOutputDriver(OutputDriver):
     """
     Write data to Datacube compatible NetCDF files
 
@@ -250,7 +261,7 @@ class NetcdfOutputDriver(OutputDriver):
                 output_file.attrs[k] = v
 
 
-class RioOutputDriver(OutputDriver):
+class GeotiffOutputDriver(OutputDriver):
     """
     Save data to file/s using rasterio. Eg. GeoTiff
 
@@ -269,7 +280,7 @@ class RioOutputDriver(OutputDriver):
     }
 
     def __init__(self, *args, **kwargs):
-        super(RioOutputDriver, self).__init__(*args, **kwargs)
+        super(GeotiffOutputDriver, self).__init__(*args, **kwargs)
 
         self._measurement_bands = {}
 
@@ -356,7 +367,7 @@ class RioOutputDriver(OutputDriver):
         return dest_fh
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
-        super(RioOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
+        super(GeotiffOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
 
         prod = self._output_file_handles[prod_name]
         if isinstance(prod, dict):
@@ -380,7 +391,7 @@ class RioOutputDriver(OutputDriver):
             dest.update_tags(**attributes)
 
 
-class ENVIBILOutputDriver(RioOutputDriver):
+class ENVIBILOutputDriver(GeotiffOutputDriver):
     """
     Writes out a tif file (with an incorrect extension), then converts it to another GDAL format.
     """
@@ -458,10 +469,10 @@ class XarrayOutputDriver(OutputDriver):
     def open_output_files(self):
         pass
 
-
-OUTPUT_DRIVERS = {
-    'NetCDF CF': NetcdfOutputDriver,
-    'Geotiff': RioOutputDriver,
-    'Test': TestOutputDriver,
-    'ENVIBIL': ENVIBILOutputDriver
-}
+#
+# OUTPUT_DRIVERS = {
+#     'NetCDF CF': NetCDFCFOutputDriver,
+#     'Geotiff': GeotiffOutputDriver,
+#     'Test': TestOutputDriver,
+#     'ENVIBIL': ENVIBILOutputDriver
+# }

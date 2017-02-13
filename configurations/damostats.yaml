@@ -48,7 +48,7 @@ step_size: 3m
 location: '/g/data/u46/users/dra547/data/damostats'
 
 storage:
-  driver: NetCDF CF
+  driver: NetCDFCF
 
   crs: EPSG:3577
   tile_size:

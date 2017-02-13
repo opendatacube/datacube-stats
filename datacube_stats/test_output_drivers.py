@@ -4,7 +4,7 @@ import numpy as np
 from affine import Affine
 from datacube.model import MetadataType, GeoBox, CRS
 from datacube_stats.models import OutputProduct
-from datacube_stats.output_drivers import RioOutputDriver
+from datacube_stats.output_drivers import GeotiffOutputDriver
 from datacube_stats.statistics import NoneStat
 from datacube_stats.main import StatsTask
 from datetime import datetime
@@ -36,7 +36,7 @@ def test_rio(tmpdir):
     output_path = str(tmpdir)
     tile_index = (None, slice(0, 2000, None), slice(0, 2000, None))
     values = np.full((2000, 2000), fill_value=7, dtype=np.int16)
-    with RioOutputDriver(task=task, storage=storage, output_path=output_path) as output_driver:
+    with GeotiffOutputDriver(task=task, storage=storage, output_path=output_path) as output_driver:
         # Why isn't get_dtype being called when opening the file? ... It is
         output_driver.write_data(prod_name='sample_prod', measurement_name='sample_input_measurement',
                                  tile_index=tile_index, values=values)
