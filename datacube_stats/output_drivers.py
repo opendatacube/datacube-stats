@@ -10,7 +10,7 @@ import logging
 import operator
 from collections import OrderedDict
 from functools import reduce as reduce_
-from future.utils import with_metaclass
+from six import with_metaclass
 from pathlib import Path
 import subprocess
 
@@ -57,6 +57,23 @@ class OutputFileAlreadyExists(Exception):
 
     def __repr__(self):
         return "OutputFileAlreadyExists({})".format(self._output_file)
+
+
+def _walk_dict(file_handles, func):
+    """
+
+    :param file_handles:
+    :param func: returns iterable
+    :return:
+    """
+    for _, output_fh in file_handles.items():
+        if isinstance(output_fh, dict):
+            _walk_dict(output_fh, func)
+        else:
+            try:
+                yield func(output_fh)
+            except TypeError as te:
+                _LOG.debug('Error running %s: %s', func, te)
 
 
 class OutputDriver(with_metaclass(RegisterDriver)):
@@ -107,25 +124,20 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         self._geobox = task.geobox
         self._output_products = task.output_products
 
-    def close_files(self, completed_successfully):
-        self.__close_files_helper(self._output_file_handles, completed_successfully)
+    def close_files(self, completed_successfully, rename_tmps=True):
+        # Turn file_handles into paths
+        paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
 
-    def __close_files_helper(self, handles_dict, completed_successfully):
-        for output_name, output_fh in handles_dict.items():
-            if isinstance(output_fh, dict):
-                self.__close_files_helper(output_fh, completed_successfully)
-            else:
-                try:  # Try for a rasterio style fh
-                    output_path = Path(output_fh.name)
-                except KeyError:  # How about a NetCDF one
-                    output_path = Path(output_fh.filepath())
-                output_fh.close()
+        # Close Files, need to iterate through generator so as not to be lazy
+        closed = list(_walk_dict(self._output_file_handles, lambda fh: fh.close()))
 
-                # Remove '.tmp' suffix
-                if completed_successfully:
-                    output_path.rename(str(output_path)[:-4])
+        # Remove '.tmp' suffix
+        if completed_successfully and rename_tmps:
+            paths = [path.rename(str(path)[:-4]) for path in paths]
+        return paths
 
-                self.post_process_output(output_path)
+    def _handle_to_path(self, file_handle):
+        return Path(file_handle.name)
 
     @abc.abstractmethod
     def open_output_files(self):
@@ -204,6 +216,9 @@ class NetCDFCFOutputDriver(OutputDriver):
         for prod_name, stat in self._output_products.items():
             output_filename = self._prepare_output_file(stat)
             self._output_file_handles[prod_name] = self._create_storage_unit(stat, output_filename)
+
+    def _handle_to_path(self, file_handle):
+        return Path(file_handle.filepath())
 
     def _create_storage_unit(self, stat, output_filename):
         all_measurement_defns = list(stat.product.measurements.values())
@@ -395,20 +410,32 @@ class ENVIBILOutputDriver(GeotiffOutputDriver):
     """
     Writes out a tif file (with an incorrect extension), then converts it to another GDAL format.
     """
-    valid_extensions = ['.bil', '.tif']
+    valid_extensions = ['.bil']
 
-    def post_process_output(self, filename):
-        # Rename to a tiff file (which is what it actually is)
-        tif_file = filename.rename(filename.with_suffix('.tif'))
+    def close_files(self, completed_successfully):
+        paths = super(ENVIBILOutputDriver, self).close_files(completed_successfully, rename_tmps=False)
 
-        bil_file = tif_file.with_suffix('.bil')
-        # Convert to an ENVI BIL
-        # call gdal_translate -of ENVI {filename} {output.bil}
-        subprocess.check_call(['gdal_translate', '-of', 'ENVI', str(tif_file), str(bil_file)])
+        if completed_successfully:
+            for filename in paths:
+                self._tif_to_envi(filename)
 
-        # Remove temporary tiff file
-        if bil_file.exists():
-            tif_file.unlink()
+    @staticmethod
+    def _tif_to_envi(source_file):
+        dest_file = source_file.with_name(source_file.stem)
+        tmp_tif = source_file.with_suffix('.tif')
+        source_file.replace(tmp_tif)
+        gdal_translate_command = ['gdal_translate', '--debug', 'ON', '-of', 'ENVI', str(tmp_tif), str(dest_file)]
+
+        _LOG.debug('Executing: ' + ' '.join(gdal_translate_command))
+
+        try:
+            subprocess.check_output(gdal_translate_command, stderr=subprocess.STDOUT)
+
+            tmp_tif.unlink()
+        except subprocess.CalledProcessError as cpe:
+            _LOG.error('Error running gdal_translate: %s', cpe.output)
+
+
 
 
 class TestOutputDriver(OutputDriver):
