@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-
+#
+# Use PBSDSH to start a dask-scheduler and a bunch of dask-workers, then
+# run the desired script to connect to them to run a job.
+#
 env_script=${module_dest}/scripts/environment.sh
 ppn=1
 tpp=1
@@ -69,4 +72,5 @@ sleep 5s
 echo "*** APPLICATION ***"
 echo "${@/DSCHEDULER/${SCHEDULER_ADDR}}"
 
+# Execute $@, replacing instances of 'DSCHDULER' with the scheduler address
 "${@/DSCHEDULER/${SCHEDULER_ADDR}}"
