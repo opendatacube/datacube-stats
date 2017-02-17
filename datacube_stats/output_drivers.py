@@ -436,8 +436,6 @@ class ENVIBILOutputDriver(GeotiffOutputDriver):
             _LOG.error('Error running gdal_translate: %s', cpe.output)
 
 
-
-
 class TestOutputDriver(OutputDriver):
     def write_global_attributes(self, attributes):
         pass

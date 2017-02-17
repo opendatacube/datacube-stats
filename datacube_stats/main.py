@@ -216,6 +216,7 @@ def execute_task(task, output_driver, chunking):
     :param chunking: dict of dimension sizes to chunk the computation by
     """
     timer = MultiTimer()
+    timer.start('total')
     datacube.set_options(reproject_threads=1)
     try:
         with output_driver(task=task) as output_files:
@@ -233,7 +234,7 @@ def execute_task(task, output_driver, chunking):
 
                         # For each of the data variables, shove this chunk into the output results
                         timer.start('writing_data')
-                        for var_name, var in stats_data.data_vars.items(): # TODO: Move this loop into output_files
+                        for var_name, var in stats_data.data_vars.items():  # TODO: Move this loop into output_files
                             output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
                         timer.pause('writing_data')
                 except EmptyChunkException:
@@ -242,6 +243,7 @@ def execute_task(task, output_driver, chunking):
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
 
+    timer.pause('total')
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
 
