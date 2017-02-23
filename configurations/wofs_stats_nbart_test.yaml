@@ -1,0 +1,64 @@
+## Define inputs to perform statistics on
+sources:
+  - product: wofs_albers
+    name: wofs_dry
+    measurements: [water]
+    group_by: solar_day
+    source_filter:
+      product: ls8_nbart_albers
+  - product: wofs_albers
+    name: wofs_dry
+    measurements: [water]
+    group_by: solar_day
+    source_filter:
+      product: ls7_nbart_albers
+  - product: wofs_albers
+    name: wofs_dry
+    measurements: [water]
+    group_by: solar_day
+    source_filter:
+      product: ls5_nbart_albers
+
+
+## Define whether and how to chunk over time
+date_ranges:
+  start_date: 1970-01-01
+  end_date: 2070-01-01
+  stats_duration: 100y
+  step_size: 100y
+
+## Define output directory and file structure
+#location: '/short/v10/datacube/wofs-summary'
+location: '/g/data/u46/users/dra547/wofs/'
+
+storage:
+  driver: NetCDFCF
+
+  crs: EPSG:3577
+  tile_size:
+          x: 100000.0
+          y: 100000.0
+  resolution:
+          x: 25
+          y: -25
+  chunking:
+      x: 200
+      y: 200
+      time: 1
+  dimension_order: [time, y, x]
+
+## Computational
+computation:
+  chunking:
+    x: 1000
+    y: 1000
+
+## Define statistics to perform and how to store the data
+
+output_products:
+ - name: wofs_summary
+   statistic: wofs_summary
+   output_params:
+     zlib: True
+     fletcher32: True
+   file_path_template: 'WOFS_NBART_3577_{x}_{y}_{epoch_start:%Y%m%d}.nc'
