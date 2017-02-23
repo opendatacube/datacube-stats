@@ -18,11 +18,11 @@ import numpy
 import rasterio
 import xarray
 
-from datacube.model import Coordinate, Variable, GeoPolygon
+from datacube.model import Variable, GeoPolygon
 from datacube.model.utils import make_dataset, xr_apply, datasets_to_doc
 from datacube.storage import netcdf_writer
 from datacube.storage.storage import create_netcdf_storage_unit
-from datacube.utils import unsqueeze_data_array
+from datacube.utils import unsqueeze_data_array, geometry
 
 _LOG = logging.getLogger(__name__)
 _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
@@ -166,6 +166,8 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         make sure it is valid and doesn't already exist
         Make sure parent directories exist
         Switch it around for a temporary filename.
+        
+        :return: Path to write output to
         """
         output_path = self._generate_output_filename(kwargs, stat)
 
@@ -198,9 +200,38 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                                **kwargs))
         return output_path
 
-    def post_process_output(self, filename):
-        """Perform an operation on an output file after it has been completely written."""
-        pass
+    def _find_source_datasets(self, stat, uri=None):
+        """
+        Find all the source datasets for a task
+
+        Put them in order so that they can be assigned to a stacked output aligned against it's time dimension
+        :return: (datasets, sources)
+        """
+        task = self._task
+        geobox = self._geobox
+        app_info = self._app_info
+
+        def _make_dataset(labels, sources_):
+            return make_dataset(product=stat.product,
+                                sources=sources_,
+                                extent=geobox.extent,
+                                center_time=labels['time'],
+                                uri=uri,
+                                app_info=app_info,
+                                valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
+
+        def merge_sources(prod):
+            all_sources = xarray.align(prod['data'].sources, *[mask_tile.sources for mask_tile in prod['masks']])
+            return reduce_(operator.add, (sources_.sum() for sources_ in all_sources))
+
+        start_time, _ = task.time_period
+        sources = reduce_(operator.add, (merge_sources(prod) for prod in task.sources))
+        sources = unsqueeze_data_array(sources, dim='time', pos=0, coord=start_time,
+                                       attrs=task.time_attributes)
+
+        datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
+        datasets = datasets_to_doc(datasets)
+        return datasets, sources
 
 
 class NetCDFCFOutputDriver(OutputDriver):
@@ -223,8 +254,7 @@ class NetCDFCFOutputDriver(OutputDriver):
     def _create_storage_unit(self, stat, output_filename):
         all_measurement_defns = list(stat.product.measurements.values())
 
-        datasets, sources = _find_source_datasets(self._task, stat, self._geobox, self._app_info,
-                                                  uri=output_filename.as_uri())
+        datasets, sources = self._find_source_datasets(stat, uri=output_filename.as_uri())
 
         variable_params = self._create_netcdf_var_params(stat)
         nco = self._nco_from_sources(sources,
@@ -252,7 +282,7 @@ class NetCDFCFOutputDriver(OutputDriver):
 
     @staticmethod
     def _nco_from_sources(sources, geobox, measurements, variable_params, filename):
-        coordinates = OrderedDict((name, Coordinate(coord.values, coord.units))
+        coordinates = OrderedDict((name, geometry.Coordinate(coord.values, coord.units))
                                   for name, coord in sources.coords.items())
         coordinates.update(geobox.coordinates)
 
@@ -281,7 +311,6 @@ class GeotiffOutputDriver(OutputDriver):
     Save data to file/s using rasterio. Eg. GeoTiff
 
     Writes to a different file per statistic/measurement.
-
     """
     valid_extensions = ['.tif', '.tiff']
     default_profile = {
@@ -308,7 +337,7 @@ class GeotiffOutputDriver(OutputDriver):
                 return dtypes.pop()
             else:
                 raise StatsOutputError('Not all measurements for %s have the same dtype.'
-                                       'For GeoTiff output they must '% out_prod_name)
+                                       'For GeoTiff output they must ' % out_prod_name)
 
     def _get_nodata(self, prod_name, measurement_name=None):
         dtype = self._get_dtype(prod_name, measurement_name)
@@ -329,23 +358,30 @@ class GeotiffOutputDriver(OutputDriver):
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
+
+            # TODO: Save Dataset Metadata
+            datasets, sources = self._find_source_datasets(stat, uri=output_filename.as_uri())
+
             num_measurements = len(stat.product.measurements)
             if num_measurements == 0:
                 raise ValueError('No measurements to record for {}.'.format(prod_name))
             elif num_measurements > 1 and 'var_name' in stat.file_path_template:
-                # Multiple files, each a single band geotiff
+                # Output each statistic product into a separate single band geotiff file
                 for measurement_name, measure_def in stat.product.measurements.items():
                     self._open_single_band_geotiff(prod_name, stat, measurement_name)
             else:
-                # One file only, either a single or a multi-band geotiff
-                dest_fh = self._open_geotiff(prod_name, None, stat, num_measurements)
+                # Output all statistics into a single geotiff file, with as many bands
+                # as there are output statistic products
+                output_filename = self._prepare_output_file(stat, var_name=measurement_name)
+                dest_fh = self._open_geotiff(prod_name, None, output_filename, num_measurements)
 
                 for band, (measurement_name, measure_def) in enumerate(stat.product.measurements.items(), start=1):
                     self._set_band_metadata(dest_fh, measurement_name, band=band)
                 self._output_file_handles[prod_name] = dest_fh
 
     def _open_single_band_geotiff(self, prod_name, stat, measurement_name=None):
-        dest_fh = self._open_geotiff(prod_name, measurement_name, stat)
+        output_filename = self._prepare_output_file(stat, var_name=measurement_name)
+        dest_fh = self._open_geotiff(prod_name, measurement_name, output_filename)
         self._set_band_metadata(dest_fh, measurement_name)
         self._output_file_handles.setdefault(prod_name, {})[measurement_name] = dest_fh
 
@@ -357,8 +393,7 @@ class GeotiffOutputDriver(OutputDriver):
                             end_date='{:%Y-%m-%d}'.format(end_date),
                             name=measurement_name)
 
-    def _open_geotiff(self, prod_name, measurement_name, stat, num_bands=1):
-        output_filename = self._prepare_output_file(stat, var_name=measurement_name)
+    def _open_geotiff(self, prod_name, measurement_name, output_filename, num_bands=1):
         profile = self.default_profile.copy()
         dtype = self._get_dtype(prod_name, measurement_name)
         nodata = self._get_nodata(prod_name, measurement_name)
@@ -454,34 +489,10 @@ def _format_filename(path_template, **kwargs):
                                           **kwargs))
 
 
-def _find_source_datasets(task, stat, geobox, app_info, uri=None):
-    # Find all the source datasets for a task
-    # Put them in order so that they can be assigned to a stacked output, against it's time dimension
-    def _make_dataset(labels, sources_):
-        return make_dataset(product=stat.product,
-                            sources=sources_,
-                            extent=geobox.extent,
-                            center_time=labels['time'],
-                            uri=uri,
-                            app_info=app_info,
-                            valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
-
-    def merge_sources(prod):
-        # if stat.masked:
-            all_sources = xarray.align(prod['data'].sources, *[mask_tile.sources for mask_tile in prod['masks']])
-            return reduce_(operator.add, (sources_.sum() for sources_ in all_sources))
-
-        # else:
-        #     return prod['data'].sources.sum()
-
-    start_time, _ = task.time_period
-    sources = reduce_(operator.add, (merge_sources(prod) for prod in task.sources))
-    sources = unsqueeze_data_array(sources, dim='time', pos=0, coord=start_time,
-                                   attrs=task.time_attributes)
-
-    datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
-    datasets = datasets_to_doc(datasets)
-    return datasets, sources
+def _polygon_from_sources_extents(sources, geobox):
+    sources_union = geometry.unary_union(source.extent.to_crs(geobox.crs) for source in sources)
+    valid_data = geobox.extent.intersection(sources_union)
+    return valid_data
 
 
 class XarrayOutputDriver(OutputDriver):
@@ -494,10 +505,3 @@ class XarrayOutputDriver(OutputDriver):
     def open_output_files(self):
         pass
 
-#
-# OUTPUT_DRIVERS = {
-#     'NetCDF CF': NetCDFCFOutputDriver,
-#     'Geotiff': GeotiffOutputDriver,
-#     'Test': TestOutputDriver,
-#     'ENVIBIL': ENVIBILOutputDriver
-# }
