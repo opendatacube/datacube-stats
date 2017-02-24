@@ -306,6 +306,7 @@ class ReducingXarrayStatistic(Statistic):
         """
         :param str reduction_function: name of an :class:`xarray.Dataset` reduction function
         """
+        # TODO: Validate that reduction function exists
         self._stat_func_name = reduction_function
 
     def compute(self, data):

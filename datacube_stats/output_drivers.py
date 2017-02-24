@@ -208,7 +208,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         :return: (datasets, sources)
         """
         task = self._task
-        geobox = self._geobox
+        geobox = self._task.geobox
         app_info = self._app_info
 
         def _make_dataset(labels, sources_):

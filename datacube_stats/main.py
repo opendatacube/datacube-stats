@@ -250,6 +250,7 @@ def execute_task(task, output_driver, chunking):
     timer.pause('total')
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
+    return task
 
 
 class EmptyChunkException(Exception):
@@ -368,21 +369,20 @@ def create_stats_app(config, index=None):
     stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
     stats_app.date_ranges = _configure_date_ranges(index, config['date_ranges'], config['sources'])
     stats_app.task_generator = _create_task_generator(config.get('input_region'), stats_app.storage)
-    stats_app.output_driver = _prepare_output_driver(config)
+    stats_app.output_driver = _prepare_output_driver(stats_app.storage)
     stats_app.process_completed = do_nothing  # TODO: Save dataset to database
 
     return stats_app
 
 
-def _prepare_output_driver(config):
+def _prepare_output_driver(storage):
     try:
-        return OUTPUT_DRIVERS[config['storage']['driver']]
+        return OUTPUT_DRIVERS[storage['driver']]
     except KeyError:
-        specified_driver = config.get('storage', {}).get('driver')
-        if specified_driver is None:
-            msg = 'No output driver specified.'
-        else:
+        if 'driver' in storage:
             msg = 'Invalid output driver "{}" specified.'
+        else:
+            msg = 'No output driver specified.'
         raise StatsConfigurationError('{} Specify one of {} in storage->driver in the '
                                       'configuration file.'.format(msg, OUTPUT_DRIVERS.keys()))
 
