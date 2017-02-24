@@ -69,6 +69,13 @@ output_products:
 CONFIG_FILENAME = 'config.yaml'
 
 
+def sample_geometry():
+    from datacube.utils import geometry
+    from affine import Affine
+    gb = geometry.GeoBox(40, 40, Affine(2500, 0.0, 1200000.0, 0.0, -2500, -4300000.0), geometry.CRS('EPSG:3577'))
+    json = gb.extent.json
+
+
 def test_input_region_single_tile():
     runner = CliRunner()
     with runner.isolated_filesystem() as tmpdir:
