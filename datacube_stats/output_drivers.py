@@ -459,7 +459,8 @@ class ENVIBILOutputDriver(GeotiffOutputDriver):
         dest_file = source_file.with_name(source_file.stem)
         tmp_tif = source_file.with_suffix('.tif')
         source_file.replace(tmp_tif)
-        gdal_translate_command = ['gdal_translate', '--debug', 'ON', '-of', 'ENVI', str(tmp_tif), str(dest_file)]
+        gdal_translate_command = ['gdal_translate', '--debug', 'ON', '-of', 'ENVI', '-co', 'INTERLEAVE=BIL',
+                                  str(tmp_tif), str(dest_file)]
 
         _LOG.debug('Executing: ' + ' '.join(gdal_translate_command))
 
