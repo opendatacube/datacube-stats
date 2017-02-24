@@ -4,6 +4,7 @@ Create statistical summaries command
 """
 from __future__ import absolute_import, print_function
 
+import os
 import logging
 from functools import partial
 
@@ -360,7 +361,7 @@ def create_stats_app(config, index=None):
     stats_app.storage = config['storage']
     stats_app.sources = config['sources']
     stats_app.output_product_specs = config['output_products']
-    stats_app.location = config['location']
+    stats_app.location = config.get('location', os.getcwd())  # Write files to current directory if not set in config
     stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
     stats_app.date_ranges = _configure_date_ranges(index, config['date_ranges'], config['sources'])
     stats_app.task_generator = _create_task_generator(config.get('input_region'), stats_app.storage)

@@ -310,7 +310,7 @@ class GeotiffOutputDriver(OutputDriver):
     """
     Save data to file/s using rasterio. Eg. GeoTiff
 
-    Writes to a different file per statistic/measurement.
+    Con write all statistics to the same output file, or each statistic to a different file.
     """
     valid_extensions = ['.tif', '.tiff']
     default_profile = {
