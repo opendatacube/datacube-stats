@@ -65,3 +65,4 @@ def run_tasks(tasks, executor, run_task, process_result, queue_size=50):
             executor.release(result)
 
     _LOG.info('%d successful, %d failed' % (successful, failed))
+    return successful, failed

@@ -56,9 +56,12 @@ def main(index, stats_config_file, executor, queue_size):
     app.queue_size = queue_size
     app.validate()
 
-    app.run(executor)
+    successful, failed = app.run(executor)
     timer.pause('main')
     _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
+
+    if failed > 0:
+        raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful))
 
 
 class StatsApp(object):
@@ -156,7 +159,7 @@ class StatsApp(object):
         output_driver = partial(self.output_driver, output_path=self.location, app_info=app_info,
                                 storage=self.storage)
         task_runner = partial(execute_task, output_driver=output_driver, chunking=self.computation['chunking'])
-        run_tasks(tasks, executor, task_runner, self.process_completed, queue_size=self.queue_size)
+        return run_tasks(tasks, executor, task_runner, self.process_completed, queue_size=self.queue_size)
 
     def generate_tasks(self, output_products):
         """
