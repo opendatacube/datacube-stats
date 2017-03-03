@@ -206,6 +206,11 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         Put them in order so that they can be assigned to a stacked output aligned against it's time dimension
         :return: (datasets, sources)
+        datasets is a bunch of strings to dump, indexed on time
+        sources is a more structured form. An x-array of lists of dataset sources, indexed on time
+        
+        I suspect that there is only ever a single time per task, which makes all of this more complicated than necessary.
+        But I could be wrong.
         """
         task = self._task
         geobox = self._task.geobox
@@ -358,10 +363,6 @@ class GeotiffOutputDriver(OutputDriver):
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
-
-            # TODO: Save Dataset Metadata
-            datasets, sources = self._find_source_datasets(stat, uri=output_filename.as_uri())
-
             num_measurements = len(stat.product.measurements)
             if num_measurements == 0:
                 raise ValueError('No measurements to record for {}.'.format(prod_name))
@@ -373,6 +374,11 @@ class GeotiffOutputDriver(OutputDriver):
                 # Output all statistics into a single geotiff file, with as many bands
                 # as there are output statistic products
                 output_filename = self._prepare_output_file(stat, var_name=measurement_name)
+
+                # TODO: Save Dataset Metadata
+                # datasets, sources = self._find_source_datasets(stat, uri=output_filename.as_uri())
+                # Write to Yaml
+
                 dest_fh = self._open_geotiff(prod_name, None, output_filename, num_measurements)
 
                 for band, (measurement_name, measure_def) in enumerate(stat.product.measurements.items(), start=1):
