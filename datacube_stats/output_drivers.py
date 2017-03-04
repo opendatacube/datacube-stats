@@ -335,14 +335,15 @@ class GeotiffOutputDriver(OutputDriver):
 
     def _get_dtype(self, out_prod_name, measurement_name=None):
         if measurement_name:
-            return self._output_products[out_prod_name].product.measurements[measurement_name]['dtype']
+            dtype = self._output_products[out_prod_name].product.measurements[measurement_name]['dtype']
         else:
             dtypes = set(m['dtype'] for m in self._output_products[out_prod_name].product.measurements.values())
             if len(dtypes) == 1:
-                return dtypes.pop()
+                dtype = dtypes.pop()
             else:
                 raise StatsOutputError('Not all measurements for %s have the same dtype.'
                                        'For GeoTiff output they must ' % out_prod_name)
+        return self._dtype_map.get(dtype, dtype)
 
     def _get_nodata(self, prod_name, measurement_name=None):
         dtype = self._get_dtype(prod_name, measurement_name)

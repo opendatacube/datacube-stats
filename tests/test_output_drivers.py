@@ -16,7 +16,8 @@ import pytest
     ("int8", -5),
     ("uint8", 254),
     ("int16", -999),
-    ('float16', np.nan)
+    ('float32', np.nan),
+    ('float64', np.nan),
 ])
 def test_rio(tmpdir, dtype, nodata):
     size = 64
@@ -53,4 +54,3 @@ def test_rio(tmpdir, dtype, nodata):
         output_driver.write_data(prod_name='sample_prod', measurement_name='sample_input_measurement',
                                  tile_index=tile_index, values=values)
 
-    print('foo')
