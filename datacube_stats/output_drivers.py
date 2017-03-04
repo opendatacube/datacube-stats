@@ -373,7 +373,7 @@ class GeotiffOutputDriver(OutputDriver):
             else:
                 # Output all statistics into a single geotiff file, with as many bands
                 # as there are output statistic products
-                output_filename = self._prepare_output_file(stat, var_name=measurement_name)
+                output_filename = self._prepare_output_file(stat)
 
                 # TODO: Save Dataset Metadata
                 # datasets, sources = self._find_source_datasets(stat, uri=output_filename.as_uri())
