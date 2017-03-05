@@ -47,8 +47,9 @@ def list():
               is_flag=True)
 @click.option('--web-ui', help='Launch the bokeh web interface',
               is_flag=True, default=True)
+@click.option('--load-tasks', type=click.Path(exists=True, dir_okay=False))
 @click.argument('app_config', type=click.Path(exists=True, dir_okay=False))
-def qsub(app_config, queue, project, nodes, walltime, name, no_confirm, web_ui, config=None, env=None):
+def qsub(app_config, queue, project, nodes, walltime, name, no_confirm, web_ui, load_tasks, config=None, env=None):
     confirm = not no_confirm
     app_config = Path(app_config).absolute()
 
@@ -57,7 +58,8 @@ def qsub(app_config, queue, project, nodes, walltime, name, no_confirm, web_ui, 
 
     do_system_check(config_arg)
 
-    do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_config, confirm, web_ui)
+    do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, 
+            app_config, load_tasks, confirm, web_ui)
 
 
 def do_system_check(config_arg):
@@ -68,15 +70,17 @@ def do_system_check(config_arg):
     subprocess.check_call(check_cmd, shell=True)
 
 
-def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_config, confirm=True, web_ui=False):
+def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_config,
+            load_tasks=None, confirm=True, web_ui=False):
     """Submits the job to qsub"""
     name = name
     app_cmd = ('datacube-stats -v {config_arg} '
                '--queue-size {queue_size} '
-               '--executor distributed DSCHEDULER {app_config}'.format(
+               '--executor distributed DSCHEDULER {lt} {app_config}'.format(
         config_arg=config_arg,
         queue_size=nodes * CPUS_PER_NODE * 2,
-        app_config=app_config
+        app_config=app_config,
+        lt='--load-tasks {}'.format(load_tasks) if load_tasks else ''
     ))  # 'DSCHEDULER' is replaced by distributed.sh with the host/port for the dask scheduler
 
     distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(bokeh)s %(app_cmd)s' % dict(
