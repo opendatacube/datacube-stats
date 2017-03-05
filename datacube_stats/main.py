@@ -8,6 +8,11 @@ import os
 import logging
 from functools import partial
 
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
 import click
 import numpy as np
 import pandas as pd
@@ -45,10 +50,12 @@ DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
                 callback=to_pathlib)
 @click.option('--queue-size', type=click.IntRange(1, 100000), default=50,
               help='Number of tasks to queue at the start')
+@click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
+@click.option('--load-tasks', type=click.Path(exists=True, readable=True))
 @ui.global_cli_options
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size):
+def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks):
     _log_setup()
 
     timer = MultiTimer().start('main')
@@ -58,7 +65,13 @@ def main(index, stats_config_file, executor, queue_size):
     app.queue_size = queue_size
     app.validate()
 
-    successful, failed = app.run(executor)
+    if save_tasks:
+        app.save_tasks_to_file(save_tasks)
+    elif load_tasks:
+        successful, failed = app.run(executor, load_tasks)
+    else:
+        successful, failed = app.run(executor)
+
     timer.pause('main')
     _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
 
@@ -66,8 +79,13 @@ def main(index, stats_config_file, executor, queue_size):
         raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful))
 
 
+
+
 def _log_setup():
     _LOG.debug('Loaded datacube_stats from %s.', datacube_stats.__path__)
+
+
+
 
 
 class StatsApp(object):
@@ -156,16 +174,33 @@ class StatsApp(object):
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
 
-    def run(self, executor):
+    def run(self, executor, task_file=None):
+        if task_file:
+            tasks = unpickle_stream(task_file)
+        else:
+            tasks = self.generate_tasks(self.configure_outputs())
+
+        app_info = _get_app_metadata(self.config_file)
+        output_driver = partial(self.output_driver,
+                                output_path=self.location,
+                                app_info=app_info,
+                                storage=self.storage)
+        task_runner = partial(execute_task,
+                              output_driver=output_driver,
+                              chunking=self.computation['chunking'])
+        return run_tasks(tasks,
+                         executor,
+                         task_runner,
+                         self.process_completed,
+                         queue_size=self.queue_size)
+
+    def save_tasks_to_file(self, filename):
+        _LOG.debug('Saving tasks to %s.', filename)
         output_products = self.configure_outputs()
 
         tasks = self.generate_tasks(output_products)
-
-        app_info = _get_app_metadata(self.config_file)
-        output_driver = partial(self.output_driver, output_path=self.location, app_info=app_info,
-                                storage=self.storage)
-        task_runner = partial(execute_task, output_driver=output_driver, chunking=self.computation['chunking'])
-        return run_tasks(tasks, executor, task_runner, self.process_completed, queue_size=self.queue_size)
+        num_saved = pickle_stream(tasks)
+        _LOG.debug('Successfully saved %s tasks to %s.', num_saved, filename)
 
     def generate_tasks(self, output_products):
         """
@@ -548,6 +583,23 @@ def _generate_non_gridded_tasks(index, sources_spec, date_ranges, input_region, 
         if task.sources:
             _LOG.info('Created task for time period: %s', time_period)
             yield task
+
+
+def pickle_stream(objs, filename):
+    idx = 0
+    with open(filename, 'wb') as stream:
+        for idx, obj in enumerate(objs, start=1):
+            pickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
+    return idx
+
+
+def unpickle_stream(filename):
+    with open(filename, 'rb') as stream:
+        while True:
+            try:
+                yield pickle.load(stream)
+            except EOFError:
+                break
 
 
 if __name__ == '__main__':
