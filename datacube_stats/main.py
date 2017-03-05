@@ -199,7 +199,7 @@ class StatsApp(object):
         output_products = self.configure_outputs()
 
         tasks = self.generate_tasks(output_products)
-        num_saved = pickle_stream(tasks)
+        num_saved = pickle_stream(tasks, filename)
         _LOG.debug('Successfully saved %s tasks to %s.', num_saved, filename)
 
     def generate_tasks(self, output_products):
