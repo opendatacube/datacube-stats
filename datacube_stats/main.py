@@ -14,6 +14,7 @@ except ImportError:
     import pickle
 
 import click
+import cloudpickle
 import numpy as np
 import pandas as pd
 import xarray
@@ -67,6 +68,7 @@ def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks)
 
     if save_tasks:
         app.save_tasks_to_file(save_tasks)
+        failed = 0
     elif load_tasks:
         successful, failed = app.run(executor, load_tasks)
     else:
@@ -589,7 +591,7 @@ def pickle_stream(objs, filename):
     idx = 0
     with open(filename, 'wb') as stream:
         for idx, obj in enumerate(objs, start=1):
-            pickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
+            cloudpickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
     return idx
 
 
