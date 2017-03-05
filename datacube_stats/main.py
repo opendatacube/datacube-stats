@@ -49,8 +49,10 @@ DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, executor, queue_size):
-    timer = MultiTimer()
-    timer.start('main')
+    _log_setup()
+
+    timer = MultiTimer().start('main')
+
     _, config = next(read_documents(stats_config_file))
     app = create_stats_app(config, index)
     app.queue_size = queue_size
@@ -62,6 +64,10 @@ def main(index, stats_config_file, executor, queue_size):
 
     if failed > 0:
         raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful))
+
+
+def _log_setup():
+    _LOG.debug('Loaded datacube_stats from %s.', datacube_stats.__path__)
 
 
 class StatsApp(object):
@@ -219,9 +225,9 @@ def execute_task(task, output_driver, chunking):
     :type output_driver: OutputDriver
     :param chunking: dict of dimension sizes to chunk the computation by
     """
-    timer = MultiTimer()
-    timer.start('total')
+    timer = MultiTimer().start('total')
     datacube.set_options(reproject_threads=1)
+
     try:
         with output_driver(task=task) as output_files:
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
