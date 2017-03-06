@@ -19,6 +19,7 @@ import cloudpickle
 import numpy as np
 import pandas as pd
 import xarray
+import yaml
 
 import datacube_stats
 import datacube
@@ -28,7 +29,7 @@ from datacube.api.grid_workflow import GridWorkflow, Tile
 from datacube.api.query import query_group_by, query_geopolygon, Query
 from datacube.model import GridSpec
 from datacube.utils.geometry import CRS, GeoBox
-from datacube.storage.masking import mask_valid_data as mask_invalid_data
+from datacube.storage.masking import mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
@@ -82,13 +83,8 @@ def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks)
         raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful))
 
 
-
-
 def _log_setup():
     _LOG.debug('Loaded datacube_stats from %s.', datacube_stats.__path__)
-
-
-
 
 
 class StatsApp(object):
@@ -162,8 +158,13 @@ class StatsApp(object):
 
     def _ensure_stats_available(self):
         """Part of configuration validation"""
-        requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
+        for prod in self.output_product_specs:
+            if 'statistic' not in prod:
+                raise StatsConfigurationError('Invalid statistic definition %s, must specify which statistic to use. '
+                                              'eg. statistic: mean' % yaml.dump(prod, indent=4,
+                                                                                 default_flow_style=False))
         available_statistics = set(STATS.keys())
+        requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
         if not requested_statistics.issubset(available_statistics):
             raise StatsConfigurationError(
                 'Requested Statistic(s) %s are not valid statistics. Available statistics are: %s'
@@ -359,6 +360,14 @@ def _source_measurement_defs(index, sources):
     """
     # Check all source measurements are equal
     first_source = sources[0]
+
+    # Ensure specified sources match
+    for other_source in sources[1:]:
+        if other_source['measurements'] != first_source['measurements']:
+            raise StatsConfigurationError('Measurements in configured sources do not match. To combine sources'
+                                          'they must all be identical. %s measurements are %s while %s measurements '
+                                          'are %s' % (first_source['product'], first_source['measurements'],
+                                                      other_source['product'], other_source['measurements']))
 
     source_measurements = index.products.get_by_name(first_source['product']).measurements
 
