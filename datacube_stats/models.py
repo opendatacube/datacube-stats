@@ -112,7 +112,7 @@ class OutputProduct(object):
         return DatasetType(metadata_type, product_definition)
 
     def __str__(self):
-        return "StatsProduct<name={}, stat_name={}>".format(self.name, self.stat_name)
+        return "OutputProduct<name={}, stat_name={}>".format(self.name, self.stat_name)
 
     def __repr__(self):
         return self.__str__()
