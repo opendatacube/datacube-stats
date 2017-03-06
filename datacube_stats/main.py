@@ -7,6 +7,7 @@ from __future__ import absolute_import, print_function
 import os
 import logging
 from functools import partial
+from textwrap import dedent
 
 try:
     import cPickle as pickle
@@ -410,7 +411,7 @@ def create_stats_app(config, index=None):
     stats_app.output_product_specs = config['output_products']
     stats_app.location = config.get('location', os.getcwd())  # Write files to current directory if not set in config
     stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
-    stats_app.date_ranges = _configure_date_ranges(index, config['date_ranges'], config['sources'])
+    stats_app.date_ranges = _configure_date_ranges(index, config)
     stats_app.task_generator = _create_task_generator(config.get('input_region'), stats_app.storage)
     stats_app.output_driver = _prepare_output_driver(stats_app.storage)
     stats_app.process_completed = do_nothing  # TODO: Save dataset to database
@@ -430,7 +431,21 @@ def _prepare_output_driver(storage):
                                       'configuration file.'.format(msg, OUTPUT_DRIVERS.keys()))
 
 
-def _configure_date_ranges(index, date_ranges, sources):
+def _configure_date_ranges(index, config):
+    if 'date_ranges' not in config:
+        raise StatsConfigurationError(dedent("""\
+        No Date Range specification was found in the stats configuration file, please add a section similar to:
+        
+        date_ranges:
+          start_date: 2010-01-01
+          end_date: 2011-01-01
+          stats_duration: 3m
+          step_size: 3m
+        
+        This will produce 4 x quarterly statistics from the year 2010.
+        """))
+    date_ranges, sources = config['date_ranges'], config['sources']
+
     if date_ranges.get('type', 'simple') == 'simple':
         return list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
                                   end=pd.to_datetime(date_ranges['end_date']),
