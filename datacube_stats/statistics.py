@@ -236,7 +236,7 @@ class Statistic(object):
         :param xarray.Dataset data:
         :return: xarray.Dataset
         """
-        return
+        return data
 
     def measurements(self, input_measurements):
         """
@@ -246,9 +246,10 @@ class Statistic(object):
 
         :rtype: list(dict)
         """
-        return [
+        output_measurements = [
             {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
             for measurement in input_measurements]
+        return output_measurements
 
 
 class ClearCount(Statistic):
@@ -592,12 +593,18 @@ def percentile_stat(q):
                           q=q))
 
 
-def percentile_stat_no_prov(q):
-    return IndexStat(  # pylint: disable=redundant-keyword-arg
-        stat_func=partial(getattr(xarray.Dataset, 'reduce'),
-                          dim='time',
-                          func=argpercentile,
-                          q=q))
+class PercentileNoProv(Statistic):
+    def __init__(self, q):
+        self.q = q
+
+    def compute(self, data):
+        index = data.reduce(dim='time', func=argpercentile, q=self.q)
+
+        def index_dataset(var):
+            return axisindex(data.data_vars[var.name].values, var.values)
+
+        data_values = index.apply(index_dataset)
+        return data_values
 
 
 class Medoid(PerStatIndexStat):
@@ -609,8 +616,6 @@ class MedoidNoProv(PerStatIndexStat):
     def __init__(self):
         super(MedoidNoProv, self).__init__(stat_func=_compute_medoid)
 
-    # Dict of Classes
-
 
 STATS = {
     'simple': ReducingXarrayStatistic,
@@ -618,7 +623,7 @@ STATS = {
     # 'max': SimpleXarrayReduction('max'),
     # 'mean': SimpleXarrayReduction('mean'),
     'percentile': percentile_stat,
-    'percentile_no_prov': percentile_stat_no_prov,
+    'percentile_no_prov': PercentileNoProv,
     'medoid': Medoid,
     'medoid_no_prov': MedoidNoProv,
     'simple_normalised_difference': NormalisedDifferenceStats,
