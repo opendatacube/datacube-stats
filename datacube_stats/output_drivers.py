@@ -239,7 +239,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
         datasets = datasets_to_doc(datasets)
-        return datasets, sources
+        return datasets
 
 
 class NetCDFCFOutputDriver(OutputDriver):
@@ -262,10 +262,10 @@ class NetCDFCFOutputDriver(OutputDriver):
     def _create_storage_unit(self, stat, output_filename):
         all_measurement_defns = list(stat.product.measurements.values())
 
-        datasets, sources = self._find_source_datasets(stat, uri=output_filename.as_uri())
+        datasets = self._find_source_datasets(stat, uri=output_filename.as_uri())
 
         variable_params = self._create_netcdf_var_params(stat)
-        nco = self._nco_from_sources(sources,
+        nco = self._nco_from_sources(datasets,
                                      self._geobox,
                                      all_measurement_defns,
                                      variable_params,
@@ -380,8 +380,13 @@ class GeotiffOutputDriver(OutputDriver):
                 output_filename = self._prepare_output_file(stat)
 
                 # TODO: Save Dataset Metadata
-                # datasets, sources = self._find_source_datasets(stat, uri=output_filename.as_uri())
+                datasets = self._find_source_datasets(stat, uri=output_filename.as_uri())
                 # Write to Yaml
+                if len(datasets) == 1:  # Don't think there should ever be more than 1 dataset in here...
+                    with output_filename.with_suffix('.yaml').open('w') as yaml_dst:
+                        yaml_dst.write(datasets.values[0].decode('utf8'))
+                else:
+                    _LOG.error('Unexpected more than 1 dataset being written at once, investigate!', datasets)
 
                 dest_fh = self._open_geotiff(prod_name, None, output_filename, num_measurements)
 
