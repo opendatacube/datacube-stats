@@ -128,13 +128,16 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         # Turn file_handles into paths
         paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
 
-        # Close Files, need to iterate through generator so as not to be lazy
+        # Close Files, need to iterate with list()  since generator is lazy
         closed = list(_walk_dict(self._output_file_handles, lambda fh: fh.close()))
 
         # Remove '.tmp' suffix
         if completed_successfully and rename_tmps:
-            paths = [path.rename(str(path)[:-4]) for path in paths]
-        return paths
+            new_paths = [Path(str(path)[:-4]) for path in paths]
+            for tmp_path, new_name in zip(paths, new_paths):
+                tmp_path.rename(new_name)
+
+        return new_paths
 
     def _handle_to_path(self, file_handle):
         return Path(file_handle.name)
