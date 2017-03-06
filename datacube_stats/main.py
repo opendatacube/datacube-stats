@@ -357,12 +357,12 @@ def _source_measurement_defs(index, sources):
 
     :return: list of measurement definitions
     """
-    source_defn = sources[0]  # TODO: Check sources should have been checked to all have the same measureemnts
+    # Check all source measurements are equal
+    first_source = sources[0]
 
-    source_measurements = index.products.get_by_name(source_defn['product']).measurements
+    source_measurements = index.products.get_by_name(first_source['product']).measurements
 
-    measurements = [measurement for name, measurement in source_measurements.items()
-                    if name in source_defn['measurements']]
+    measurements = [source_measurements[name] for name in first_source['measurements']]
 
     return measurements
 
