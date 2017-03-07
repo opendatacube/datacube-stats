@@ -74,7 +74,7 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
             load_tasks=None, confirm=True, web_ui=False):
     """Submits the job to qsub"""
     name = name
-    app_cmd = ('datacube-stats -v {config_arg} '
+    app_cmd = ('datacube-stats -v -v -v {config_arg} '
                '--queue-size {queue_size} '
                '--executor distributed DSCHEDULER {lt} {app_config}'.format(
         config_arg=config_arg,
