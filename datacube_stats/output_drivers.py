@@ -136,8 +136,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
             new_paths = [Path(str(path)[:-4]) for path in paths]
             for tmp_path, new_name in zip(paths, new_paths):
                 tmp_path.rename(new_name)
-
-        return new_paths
+            return new_paths
 
     def _handle_to_path(self, file_handle):
         return Path(file_handle.name)
@@ -172,7 +171,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         
         :return: Path to write output to
         """
-        output_path = self._generate_output_filename(kwargs, stat)
+        output_path = self._generate_output_filename(stat, **kwargs)
 
         if output_path.suffix not in self.valid_extensions:
             raise StatsOutputError('Invalid Filename: %s for this Output Driver: %s' % (output_path, self))
@@ -191,7 +190,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         return tmp_path
 
-    def _generate_output_filename(self, kwargs, stat):
+    def _generate_output_filename(self, stat, **kwargs):
         # Fill parameters from config file filename specification
         x, y = self._task.tile_index
         epoch_start, epoch_end = self._task.time_period
@@ -229,7 +228,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                                 valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
 
         def merge_sources(prod):
-            all_sources = xarray.align(prod['data'].sources, *[mask_tile.sources for mask_tile in prod['masks']])
+            all_sources = xarray.align(prod['data'].sources, *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
             return reduce_(operator.add, (sources_.sum() for sources_ in all_sources))
 
         start_time, _ = task.time_period

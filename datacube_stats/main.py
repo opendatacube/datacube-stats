@@ -311,6 +311,9 @@ def _load_data(sub_tile_slice, sources):
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
     """
     datasets = [_load_masked_data(sub_tile_slice, source_prod) for source_prod in sources]  # list of datasets
+    datasets = [dataset for dataset in datasets if dataset is not None]
+    if len(datasets) == 0:
+        raise EmptyChunkException
     for idx, dataset in enumerate(datasets):
         dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
@@ -329,8 +332,16 @@ def _load_masked_data(sub_tile_slice, source_prod):
     data = _convert_dataset_to_float(data)
     data = mask_invalid_data(data)
 
+    # if all NaN
+    if all(ds for ds in xarray.ufuncs.isnan(data).all().data_vars.values()):
+        # Discard empty slice
+        return None
+
     if 'masks' in source_prod and 'masks' in source_prod['spec']:
         for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
+            if mask_tile is None:
+                # Discard data due to no mask data
+                return None
             fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
             mask = GridWorkflow.load(mask_tile[sub_tile_slice],
                                      measurements=[mask_spec['measurement']],
