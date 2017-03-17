@@ -39,16 +39,17 @@ sources:
 
 
 ## Define whether and how to chunk over time
-start_date: 2015-01-01
-end_date: 2015-04-01
-stats_duration: 3m
-step_size: 3m
+date_ranges:
+  start_date: 2015-01-01
+  end_date: 2015-04-01
+  stats_duration: 3m
+  step_size: 3m
 
 ## Define output directory
 location: '/g/data/u46/users/dra547/data/damostats'
 
 storage:
-  driver: NetCDFCF
+  driver: Geotiff
 
   crs: EPSG:3577
   tile_size:
