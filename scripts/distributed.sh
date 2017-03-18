@@ -55,11 +55,15 @@ eval ${init_env}
 
 SCHEDULER_NODE=`sed '1q;d' $PBS_NODEFILE`
 SCHEDULER_PORT=`shuf -i 2000-65000 -n 1`
-SCHEDULER_ADDR=$SCHEDULER_NODE:$SCHEDULER_PORT
+SCHEDULER_ADDR=${SCHEDULER_NODE}:${SCHEDULER_PORT}
 
 # Number of worker processes on Master Node
 n0ppn=$(( $ppn < $NCPUS-2 ? $ppn : $NCPUS-2 ))
 n0ppn=$(( $n0ppn > 0 ? $n0ppn : 1 ))
+
+# Run logstash log aggregator
+pbsdsh -n 0 -- /bin/bash -c "${init_env}; logstash -f ~/logstash.config"&
+sleep 2s
 
 # Run Dask Scheduler
 echo pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-scheduler --port $SCHEDULER_PORT ${bokeh_opt}"

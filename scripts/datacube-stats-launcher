@@ -58,7 +58,7 @@ def qsub(app_config, queue, project, nodes, walltime, name, no_confirm, web_ui, 
 
     do_system_check(config_arg)
 
-    do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, 
+    do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg,
             app_config, load_tasks, confirm, web_ui)
 
 
