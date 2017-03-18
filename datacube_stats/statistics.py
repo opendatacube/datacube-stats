@@ -662,6 +662,7 @@ for entry_point in iter_entry_points(group='datacube.stats', name=None):
 
 try:
     from hdmedians import nangeomedian
+    import warnings
 
 
     def apply_geomedian(inarray, f, axis=3, eps=1e-3, **kwargs):
@@ -670,12 +671,14 @@ try:
 
         xs, ys, bands, times = inarray.shape
         output = np.ndarray((xs, ys, bands), dtype=inarray.dtype)
-        for ix in range(xs):
-            for iy in range(ys):
-                try:
-                    output[ix, iy, :] = f(inarray[ix, iy, :, :], eps=eps, axis=1)
-                except ValueError:
-                    output[ix, iy, :] = np.nan
+        with warnings.catch_warnings():  # Don't print error about computing mean of empty slice
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            for ix in range(xs):
+                for iy in range(ys):
+                    try:
+                        output[ix, iy, :] = f(inarray[ix, iy, :, :], eps=eps, axis=1)
+                    except ValueError:
+                        output[ix, iy, :] = np.nan
         return output
 
 
