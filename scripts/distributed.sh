@@ -66,16 +66,17 @@ pbsdsh -n 0 -- /bin/bash -c "${init_env}; logstash -f ~/logstash.config"&
 sleep 2s
 
 # Run Dask Scheduler
+echo Launching Dask Scheduler
 echo pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-scheduler --port $SCHEDULER_PORT ${bokeh_opt}"
 pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-scheduler --port $SCHEDULER_PORT ${bokeh_opt}"&
 sleep 5s
 
-# Start Master Node Workers
+echo Starting Master Node Workers
 echo pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --no-nanny --nprocs ${n0ppn} --nthreads ${tpp}"
 pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --no-nanny --nprocs ${n0ppn} --nthreads ${tpp}"&
 sleep 0.5s
 
-# Start Workers on Other Nodes
+echo Starting Workers on Other Nodes
 for ((i=NCPUS; i<PBS_NCPUS; i+=NCPUS)); do
   echo pbsdsh -n $i -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --no-nanny --nprocs ${ppn} --nthreads ${tpp}"
   pbsdsh -n $i -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --no-nanny --nprocs ${ppn} --nthreads ${tpp}"&
