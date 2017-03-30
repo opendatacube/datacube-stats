@@ -276,7 +276,8 @@ def execute_task(task, output_driver, chunking):
                     timer.pause('loading_data')
 
                     for prod_name, stat in task.output_products.items():
-                        _LOG.info("Computing %s in tile %s. Current timing: %s", prod_name, sub_tile_slice, timer)
+                        _LOG.info("Computing %s in tile %s %s. Current timing: %s",
+                                  prod_name, task.tile_index, sub_tile_slice, timer)
                         timer.start(prod_name)
                         stats_data = stat.compute(data)
                         timer.pause(prod_name)

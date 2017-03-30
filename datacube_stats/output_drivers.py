@@ -8,21 +8,22 @@ The `RioOutputDriver` writes a single __band__ of data per file.
 import abc
 import logging
 import operator
+import subprocess
+import tempfile
 from collections import OrderedDict
 from functools import reduce as reduce_
-from six import with_metaclass
 from pathlib import Path
-import subprocess
 
 import numpy
 import rasterio
 import xarray
-
+from boltons import fileutils
 from datacube.model import Variable, GeoPolygon
 from datacube.model.utils import make_dataset, xr_apply, datasets_to_doc
 from datacube.storage import netcdf_writer
 from datacube.storage.storage import create_netcdf_storage_unit
 from datacube.utils import unsqueeze_data_array, geometry
+from six import with_metaclass
 
 _LOG = logging.getLogger(__name__)
 _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
@@ -116,7 +117,11 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         self._app_info = app_info
 
+        #: Maps from prod_name to Output File Handle
         self._output_file_handles = {}
+
+        #: Map temporary file it's target final filename
+        self.output_filename_tmpname = {}
 
         #: datacube_stats.models.StatsTask
         self._task = task
@@ -124,19 +129,22 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         self._geobox = task.geobox
         self._output_products = task.output_products
 
-    def close_files(self, completed_successfully, rename_tmps=True):
+    def close_files(self, completed_successfully):
         # Turn file_handles into paths
-        paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
+        written_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
 
-        # Close Files, need to iterate with list()  since generator is lazy
-        closed = list(_walk_dict(self._output_file_handles, lambda fh: fh.close()))
+        # Close Files, need to iterate with list()  since the _walk_dict() generator is lazy
+        list(_walk_dict(self._output_file_handles, lambda fh: fh.close()))
 
-        # Remove '.tmp' suffix
-        if completed_successfully and rename_tmps:
-            new_paths = [Path(str(path)[:-4]) for path in paths]
-            for tmp_path, new_name in zip(paths, new_paths):
-                tmp_path.rename(new_name)
-            return new_paths
+        # Rename to final filename
+        if completed_successfully:
+            destinations = [self.output_filename_tmpname[path] for path in written_paths]
+            for written, dest in zip(written_paths, destinations):
+                atomic_rename(written, dest)
+
+            return destinations
+        else:
+            return written_paths
 
     def _handle_to_path(self, file_handle):
         return Path(file_handle.name)
@@ -179,14 +187,16 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         if output_path.exists():
             raise OutputFileAlreadyExists(output_path)
 
+        # Ensure target directory exists
         try:
             output_path.parent.mkdir(parents=True)
         except OSError:
             pass
 
-        tmp_path = output_path.with_suffix(output_path.suffix + '.tmp')
-        if tmp_path.exists():
-            tmp_path.unlink()
+        with tempfile.NamedTemporaryFile(dir=str(output_path.parent), delete=False) as tmpfile:
+            pass
+        tmp_path = Path(tmpfile.name)
+        self.output_filename_tmpname[tmp_path] = output_path
 
         return tmp_path
 
@@ -228,7 +238,8 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                                 valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
 
         def merge_sources(prod):
-            all_sources = xarray.align(prod['data'].sources, *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
+            all_sources = xarray.align(prod['data'].sources,
+                                       *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
             return reduce_(operator.add, (sources_.sum() for sources_ in all_sources))
 
         start_time, _ = task.time_period
@@ -411,8 +422,10 @@ class GeotiffOutputDriver(OutputDriver):
         profile = self.default_profile.copy()
         dtype = self._get_dtype(prod_name, measurement_name)
         nodata = self._get_nodata(prod_name, measurement_name)
-        x_block_size = self._storage['chunking']['x'] if 'x' in self._storage['chunking'] else self._storage['chunking']['longitude']
-        y_block_size = self._storage['chunking']['y'] if 'y' in self._storage['chunking'] else self._storage['chunking']['latitude']
+        x_block_size = self._storage['chunking']['x'] if 'x' in self._storage['chunking'] else \
+        self._storage['chunking']['longitude']
+        y_block_size = self._storage['chunking']['y'] if 'y' in self._storage['chunking'] else \
+        self._storage['chunking']['latitude']
         profile.update({
             'blockxsize': x_block_size,
             'blockysize': y_block_size,
@@ -462,26 +475,29 @@ class ENVIBILOutputDriver(GeotiffOutputDriver):
     valid_extensions = ['.bil']
 
     def close_files(self, completed_successfully):
-        paths = super(ENVIBILOutputDriver, self).close_files(completed_successfully, rename_tmps=False)
+        paths = super(ENVIBILOutputDriver, self).close_files(completed_successfully)
 
         if completed_successfully:
             for filename in paths:
-                self._tif_to_envi(filename)
+                self.tif_to_envi(filename)
 
     @staticmethod
-    def _tif_to_envi(source_file):
-        dest_file = source_file.with_name(source_file.stem)
-        tmp_tif = source_file.with_suffix('.tif')
-        source_file.replace(tmp_tif)
+    def tif_to_envi(source_file):
+        # Rename to .tif
+        tif_file = source_file.with_suffix('.tif')
+        source_file.replace(tif_file)
+
+        # Convert and replace
+        dest_file = source_file
         gdal_translate_command = ['gdal_translate', '--debug', 'ON', '-of', 'ENVI', '-co', 'INTERLEAVE=BIL',
-                                  str(tmp_tif), str(dest_file)]
+                                  str(tif_file), str(dest_file)]
 
         _LOG.debug('Executing: ' + ' '.join(gdal_translate_command))
 
         try:
             subprocess.check_output(gdal_translate_command, stderr=subprocess.STDOUT)
 
-            tmp_tif.unlink()
+            tif_file.unlink()
         except subprocess.CalledProcessError as cpe:
             _LOG.error('Error running gdal_translate: %s', cpe.output)
 
@@ -510,6 +526,11 @@ def _polygon_from_sources_extents(sources, geobox):
     return valid_data
 
 
+def atomic_rename(src, dest, overwrite=False):
+    """Wrap boltons.fileutils.atomic_rename to allow passing  `str` or `pathlib.Path`"""
+    fileutils.atomic_rename(str(src.absolute()), str(dest.absolute()), overwrite=False)
+
+
 class XarrayOutputDriver(OutputDriver):
     def write_data(self, prod_name, measurement_name, tile_index, values):
         pass
@@ -519,4 +540,3 @@ class XarrayOutputDriver(OutputDriver):
 
     def open_output_files(self):
         pass
-
