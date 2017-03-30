@@ -131,16 +131,16 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     def close_files(self, completed_successfully):
         # Turn file_handles into paths
-        written_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
+        tmp_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
 
         # Close Files, need to iterate with list()  since the _walk_dict() generator is lazy
         list(_walk_dict(self._output_file_handles, lambda fh: fh.close()))
 
         # Rename to final filename
         if completed_successfully:
-            destinations = [self.output_filename_tmpname[path] for path in written_paths]
-            for written, dest in zip(written_paths, destinations):
-                atomic_rename(written, dest)
+            destinations = [self.output_filename_tmpname[path] for path in tmp_paths]
+            for tmp, dest in zip(tmp_paths, destinations):
+                atomic_rename(tmp, dest)
 
             return destinations
         else:
@@ -526,9 +526,10 @@ def _polygon_from_sources_extents(sources, geobox):
     return valid_data
 
 
-def atomic_rename(src, dest, overwrite=False):
+def atomic_rename(src, dest):
     """Wrap boltons.fileutils.atomic_rename to allow passing  `str` or `pathlib.Path`"""
-    fileutils.atomic_rename(str(src.absolute()), str(dest.absolute()), overwrite=False)
+    _LOG.info('renaming %s to %s', src, dest)
+    fileutils.replace(str(src), str(dest))
 
 
 class XarrayOutputDriver(OutputDriver):

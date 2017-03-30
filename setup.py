@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='datacube-stats',
-    version='0.3a2',
+    version='0.3b2',
     packages=['datacube_stats'],
     url='https://github.com/data-cube/',
     license='Apache',

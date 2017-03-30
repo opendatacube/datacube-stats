@@ -24,17 +24,15 @@ import yaml
 import datacube_stats
 import datacube
 from datacube import Datacube
-from datacube.api import make_mask
-from datacube.api.grid_workflow import GridWorkflow, Tile
+from datacube.api import make_mask, GridWorkflow, Tile
 from datacube.api.query import query_group_by, query_geopolygon, Query
 from datacube.model import GridSpec
-from datacube.utils.geometry import CRS, GeoBox
-from datacube.storage.masking import mask_valid_data as mask_invalid_data
+from datacube.utils.geometry import CRS, GeoBox, Geometry
+from datacube.storage.masking import mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function, tile_iter
 from datacube.utils.dates import date_sequence
-from datacube.utils.geometry import Geometry
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
 from datacube_stats.runner import run_tasks
