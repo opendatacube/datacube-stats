@@ -389,20 +389,28 @@ class GeotiffOutputDriver(OutputDriver):
                 # as there are output statistic products
                 output_filename = self._prepare_output_file(stat)
 
-                # TODO: Save Dataset Metadata
-                datasets = self._find_source_datasets(stat, uri=output_filename.as_uri())
-                # Write to Yaml
-                if len(datasets) == 1:  # Don't think there should ever be more than 1 dataset in here...
-                    with output_filename.with_suffix('.yaml').open('w') as yaml_dst:
-                        yaml_dst.write(datasets.values[0].decode('utf8'))
-                else:
-                    _LOG.error('Unexpected more than 1 dataset being written at once, investigate!', datasets)
+                self.write_yaml(stat, output_filename)
 
                 dest_fh = self._open_geotiff(prod_name, None, output_filename, num_measurements)
 
                 for band, (measurement_name, measure_def) in enumerate(stat.product.measurements.items(), start=1):
                     self._set_band_metadata(dest_fh, measurement_name, band=band)
                 self._output_file_handles[prod_name] = dest_fh
+
+    def write_yaml(self, stat, tmp_filename):
+        output_filename = self.output_filename_tmpname[tmp_filename]
+
+        datasets = self._find_source_datasets(stat, uri=output_filename.as_uri())
+
+        yaml_filename = str(output_filename.with_suffix('.yaml'))
+
+        # Write to Yaml
+        if len(datasets) == 1:  # I don't think there should ever be more than 1 dataset in here...
+            _LOG.info('writing dataset yaml for %s to %s', stat, yaml_filename)
+            with fileutils.atomic_save(yaml_filename) as yaml_dst:
+                yaml_dst.write(datasets.values[0])
+        else:
+            _LOG.error('Unexpected more than 1 dataset being written at once, investigate!', datasets)
 
     def _open_single_band_geotiff(self, prod_name, stat, measurement_name=None):
         output_filename = self._prepare_output_file(stat, var_name=measurement_name)
