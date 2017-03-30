@@ -4,12 +4,12 @@
 # run the desired script to connect to them to run a job.
 #
 
-set -eu
+#set -eu
 
-env_script=${module_dest}/scripts/environment.sh
+#env_script=${module_dest}/scripts/environment.sh
+env_script=~/scripts/environment.sh
 ppn=1
 tpp=1
-bokeh_opt="--no-bokeh"
 umask=0002
 
 while [[ $# > 0 ]]
@@ -17,7 +17,11 @@ do
     key="$1"
     case $key in
     --help)
-        echo Usage: $0 --env ${env_script} --umask ${umask} --ppn ${ppn} --tpp ${tpp} --bokeh script args
+        echo Usage: $0 --env ${env_script} --umask ${umask} --ppn ${ppn} --tpp ${tpp} script args
+        echo 
+        echo Options:
+        echo "  --ppn       Number of processors per node"
+        echo "  --tpp       Number of threads per worker process"
         exit 0
         ;;
     --env)
@@ -35,9 +39,6 @@ do
     --tpp)
         tpp="$2"
         shift
-        ;;
-    --bokeh)
-        bokeh_opt="--bokeh"
         ;;
     *)
     break
@@ -62,24 +63,29 @@ n0ppn=$(( $ppn < $NCPUS-2 ? $ppn : $NCPUS-2 ))
 n0ppn=$(( $n0ppn > 0 ? $n0ppn : 1 ))
 
 # Run logstash log aggregator
-pbsdsh -n 0 -- /bin/bash -c "${init_env}; logstash -f ~/logstash.config"&
+echo Launching Logstash Log aggregator
+pbsdsh -n 0 -- /bin/bash -c "${init_env}; logstash --log.level=info -f ~/logstash.config"&
 sleep 2s
+
+echo Running Metricbeats on each node
+#pbsdsh -- /bin/bash -c "${init_env}; export LOGSTASH_HOST=${SCHEDULER_NODE}; /g/data/u46/users/dra547/software/metricbeat-5.2.2-linux-x86_64/metricbeat -path.config ~" &
+
 
 # Run Dask Scheduler
 echo Launching Dask Scheduler
-echo pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-scheduler --port $SCHEDULER_PORT ${bokeh_opt}"
-pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-scheduler --port $SCHEDULER_PORT ${bokeh_opt}"&
+echo pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-scheduler --port $SCHEDULER_PORT"
+pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-scheduler --port $SCHEDULER_PORT"&
 sleep 5s
 
 echo Starting Master Node Workers
-echo pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --no-nanny --nprocs ${n0ppn} --nthreads ${tpp}"
-pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --no-nanny --nprocs ${n0ppn} --nthreads ${tpp}"&
+echo pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --nprocs ${n0ppn} --nthreads ${tpp}"
+pbsdsh -n 0 -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --nprocs ${n0ppn} --nthreads ${tpp}"&
 sleep 0.5s
 
 echo Starting Workers on Other Nodes
 for ((i=NCPUS; i<PBS_NCPUS; i+=NCPUS)); do
-  echo pbsdsh -n $i -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --no-nanny --nprocs ${ppn} --nthreads ${tpp}"
-  pbsdsh -n $i -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --no-nanny --nprocs ${ppn} --nthreads ${tpp}"&
+  echo pbsdsh -n $i -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --nprocs ${ppn} --nthreads ${tpp}"
+  pbsdsh -n $i -- /bin/bash -c "${init_env}; dask-worker $SCHEDULER_ADDR --nprocs ${ppn} --nthreads ${tpp}"&
   sleep 0.5s
 done
 sleep 5s
