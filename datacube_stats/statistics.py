@@ -31,6 +31,8 @@ import numpy as np
 import xarray
 from pkg_resources import iter_entry_points
 
+from datacube.storage.masking import make_mask
+
 try:
     from bottleneck import anynan, nansum
 except ImportError:
@@ -458,7 +460,7 @@ class PerBandIndexStat(SimpleStatistic):
                 'units': '1'
             }
             for measurement in input_measurements
-            ]
+        ]
         date_measurements = [
             {
                 'name': measurement['name'] + '_observed',
@@ -467,7 +469,7 @@ class PerBandIndexStat(SimpleStatistic):
                 'units': 'seconds since 1970-01-01 00:00:00'
             }
             for measurement in input_measurements
-            ]
+        ]
         text_measurements = [
             {
                 'name': measurement['name'] + '_observed_date',
@@ -476,7 +478,7 @@ class PerBandIndexStat(SimpleStatistic):
                 'units': 'Date as YYYYMMDD'
             }
             for measurement in input_measurements
-            ]
+        ]
 
         return (super(PerBandIndexStat, self).measurements(input_measurements) + date_measurements +
                 index_measurements + text_measurements)
@@ -615,6 +617,25 @@ class Medoid(PerStatIndexStat):
 class MedoidNoProv(PerStatIndexStat):
     def __init__(self):
         super(MedoidNoProv, self).__init__(stat_func=_compute_medoid)
+
+
+class MaskedCount(Statistic):
+    """
+    Use the provided flags to count the number of True values through time.
+    
+    """
+
+    def __init__(self, flags):
+        self.flags = flags
+
+    def compute(self, data):
+        return xarray.Dataset({'count': make_mask(data, **self.flags).sum(dim='time')},
+                              attrs=dict(crs=data.crs))
+
+    def measurements(self, input_measurements):
+        return [{'name': 'count',
+                 'dtype': 'int16',
+                 'units': '1'}]
 
 
 STATS = {
