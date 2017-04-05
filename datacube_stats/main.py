@@ -73,18 +73,20 @@ def _print_version(ctx, param, value):
               help='Number of tasks to queue at the start')
 @click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
+@click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
+                                                      'single tile_index specified as [X] [Y]')
 @ui.global_cli_options
 @ui.executor_cli_options
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks):
+def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index):
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = create_stats_app(config, index)
+    app = create_stats_app(config, index, tile_index)
     app.queue_size = queue_size
     app.validate()
 
@@ -444,14 +446,19 @@ def _find_periods_with_data(index, product_names, period_duration='1 day',
         yield time_range.begin, time_range.end
 
 
-def create_stats_app(config, index=None):
+def create_stats_app(config, index=None, tile_index=None):
     """
     Create a StatsApp to run a processing job, based on a configuration file
 
     :param config: dictionary based configuration
     :param index: open database connection
+    :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
     :return: read to run StatsApp
     """
+    input_region = config.get('input_region')
+    if tile_index and not input_region:
+        input_region = {'tile': tile_index}
+
     stats_app = StatsApp()
     stats_app.index = index
     stats_app.config_file = config
@@ -461,7 +468,7 @@ def create_stats_app(config, index=None):
     stats_app.location = config.get('location', os.getcwd())  # Write files to current directory if not set in config
     stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
     stats_app.date_ranges = _configure_date_ranges(index, config)
-    stats_app.task_generator = _create_task_generator(config.get('input_region'), stats_app.storage)
+    stats_app.task_generator = _create_task_generator(input_region, stats_app.storage)
     stats_app.output_driver = _prepare_output_driver(stats_app.storage)
     stats_app.process_completed = do_nothing  # TODO: Save dataset to database
 
