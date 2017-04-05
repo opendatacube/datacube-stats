@@ -4,8 +4,8 @@ Create statistical summaries command
 """
 from __future__ import absolute_import, print_function
 
-import os
 import logging
+import os
 from functools import partial
 from textwrap import dedent
 
@@ -45,16 +45,38 @@ DEFAULT_GROUP_BY = 'time'
 DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
 
 
+def _print_version(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+
+    click.echo(
+        '{prog}, version {version}'.format(
+            prog='Data Cube',
+            version=datacube.__version__
+        )
+    )
+
+    click.echo(
+        '{prog}, version {version}'.format(
+            prog='Data Cube Statistics',
+            version=datacube_stats.__version__
+        )
+    )
+    ctx.exit()
+
+
 @click.command(name='datacube-stats')
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
                 callback=to_pathlib)
-@click.option('--queue-size', type=click.IntRange(1, 100000), default=50,
+@click.option('--queue-size', type=click.IntRange(1, 100000), default=2000,
               help='Number of tasks to queue at the start')
 @click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
 @ui.global_cli_options
 @ui.executor_cli_options
+@click.option('--version', is_flag=True, callback=_print_version,
+              expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks):
     _log_setup()
@@ -82,7 +104,8 @@ def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks)
 
 
 def _log_setup():
-    _LOG.debug('Loaded datacube_stats from %s.', datacube_stats.__path__)
+    _LOG.debug('Loaded datacube_stats %s from %s.', datacube_stats.__version__, datacube_stats.__path__)
+    _LOG.debug('Running against datacube-core %s from %s', datacube.__version__, datacube.__path__)
 
 
 class StatsApp(object):
@@ -160,7 +183,7 @@ class StatsApp(object):
             if 'statistic' not in prod:
                 raise StatsConfigurationError('Invalid statistic definition %s, must specify which statistic to use. '
                                               'eg. statistic: mean' % yaml.dump(prod, indent=4,
-                                                                                 default_flow_style=False))
+                                                                                default_flow_style=False))
         available_statistics = set(STATS.keys())
         requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
         if not requested_statistics.issubset(available_statistics):
@@ -254,6 +277,10 @@ class StatsApp(object):
         return output_products
 
 
+class StatsProcessingException(Exception):
+    pass
+
+
 def execute_task(task, output_driver, chunking):
     """
     Load data, run the statistical operations and write results out to the filesystem.
@@ -290,6 +317,9 @@ def execute_task(task, output_driver, chunking):
                                sub_tile_slice, task)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
+    except Exception as e:
+        _LOG.error("Error processing task: %s", task)
+        raise StatsProcessingException("Error processing task: %s" % task) from e
 
     timer.pause('total')
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,

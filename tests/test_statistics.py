@@ -61,3 +61,19 @@ def test_xarray_reduce():
     dataarray = dataarray.reduce(reduction, dim='time')
 
     assert dataarray.dims == ('x', 'y')
+
+
+def test_masked_count():
+
+    arr = np.random.random((100, 100, 5))
+    dataarray = xr.DataArray(arr, dims=('x', 'y', 'time'))
+
+    # Added flag_values
+
+    from datacube_stats.statistics import MaskedCount, ClearCount
+
+    mc = MaskedCount(flats={'foo_bar': True, 'wop_zoo': False})
+
+    result = mc.compute(dataarray)
+
+    assert result

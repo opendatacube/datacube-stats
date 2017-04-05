@@ -1,2 +1,2 @@
 
-__version__ = '0.3b1'
+from .version import __version__
