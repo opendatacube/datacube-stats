@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 from os import path
 
 here = path.abspath(path.dirname(__file__))
@@ -12,7 +12,7 @@ with open(path.join(here, 'datacube_stats', 'version.py')) as h:
 setup(
     name='datacube-stats',
     version=__version__,
-    packages=['datacube_stats'],
+    packages=find_packages(),
     url='https://github.com/data-cube/',
     license='Apache',
     author='Geosience Australia',
@@ -24,7 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'datacube-stats = datacube_stats.main:main',
-            'datacube-stats-qsub = datacube_stats.cli.datacube_stats_qsub:main',
+            'datacube-stats-qsub = datacube_stats.cli.datacube_stats_qsub:qsub',
         ],
         'datacube.stats': [
             'wofs-summary = datacube_stats.statistics:WofsStats'

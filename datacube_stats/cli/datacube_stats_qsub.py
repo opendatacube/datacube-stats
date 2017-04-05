@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import subprocess
 from pathlib import Path
+import shutil
 
 import click
 
@@ -57,7 +58,7 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
             load_tasks=None, confirm=True):
     """Submits the job to qsub"""
     name = name
-    app_cmd = ('datacube-stats -v -v -v {config_arg} '
+    app_cmd = ('datacube-stats -v {config_arg} '
                '--queue-size {queue_size} '
                '--executor distributed DSCHEDULER {lt} {app_config}'.format(
         config_arg=config_arg,
@@ -67,7 +68,7 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
     ))  # 'DSCHEDULER' is replaced by distributed.sh with the host/port for the dask scheduler
 
     distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(app_cmd)s' % dict(
-        distr='launch-distributed-pbs',
+        distr=shutil.which('launch-distributed-pbs'),
         env_arg=env_arg,
         app_cmd=app_cmd,
     )
