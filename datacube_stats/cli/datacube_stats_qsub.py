@@ -15,20 +15,9 @@ CPUS_PER_NODE = 16
 MEMORY_PER_NODE = 62
 
 
-@click.group(help='Datacube Stats Application Launcher')
-def cli():
-    pass
-
-
-@cli.command(help='List all installed app config files')
-def list():
-    for cfg in CONFIG_DIR.glob('*.yaml'):
-        print(cfg.name)
-
-
-@cli.command(short_help='Submit a job to qsub',
-             help='Submit a job to qsub for '
-                  'an app_config (from the list command).')
+@click.command(short_help='Submit a stats job to qsub',
+               help='Submit a job to qsub for '
+                    'an app_config (from the list command).')
 @click.option('--queue', '-q', default='normal',
               type=click.Choice(['normal', 'express']))
 @click.option('--project', '-P', default='v10')
@@ -107,4 +96,4 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
 
 
 if __name__ == '__main__':
-    cli()
+    qsub()

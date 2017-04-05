@@ -23,7 +23,8 @@ setup(
     tests_require=['pytest', 'mock'],
     entry_points={
         'console_scripts': [
-            'datacube-stats = datacube_stats.main:main'
+            'datacube-stats = datacube_stats.main:main',
+            'datacube-stats-qsub = datacube_stats.cli.datacube_stats_qsub:main',
         ],
         'datacube.stats': [
             'wofs-summary = datacube_stats.statistics:WofsStats'
