@@ -221,12 +221,21 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         datasets is a bunch of strings to dump, indexed on time
         sources is a more structured form. An x-array of lists of dataset sources, indexed on time
         
-        I suspect that there is only ever a single time per task, which makes all of this more complicated than necessary.
-        But I could be wrong.
+
         """
         task = self._task
         geobox = self._task.geobox
         app_info = self._app_info
+
+        def add_all(iterable):
+            return reduce_(operator.add, iterable)
+
+        def merge_sources(prod):
+            # Merge data sources and mask sources
+            # Align the data `Tile` with potentially many mask `Tile`s along their time axis
+            all_sources = xarray.align(prod['data'].sources,
+                                       *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
+            return add_all(sources_.sum() for sources_ in all_sources)
 
         def _make_dataset(labels, sources_):
             return make_dataset(product=stat.product,
@@ -237,16 +246,16 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                                 app_info=app_info,
                                 valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
 
-        def merge_sources(prod):
-            all_sources = xarray.align(prod['data'].sources,
-                                       *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
-            return reduce_(operator.add, (sources_.sum() for sources_ in all_sources))
+        sources = add_all(merge_sources(prod) for prod in task.sources)
 
+        # Sources has no time at this point, so insert back in the start of our stats epoch
         start_time, _ = task.time_period
-        sources = reduce_(operator.add, (merge_sources(prod) for prod in task.sources))
         sources = unsqueeze_data_array(sources, dim='time', pos=0, coord=start_time,
                                        attrs=task.time_attributes)
 
+        if not sources:
+            raise StatsOutputError('No valid sources found, or supplied sources do not align to the same time.\n'
+                                   'Unable to write dataset metadata.')
         datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
         datasets = datasets_to_doc(datasets)
         return datasets
