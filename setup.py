@@ -30,4 +30,5 @@ setup(
             'wofs-summary = datacube_stats.statistics:WofsStats'
         ]
     },
+    scripts=['bin/launch-distributed-pbs'],
 )

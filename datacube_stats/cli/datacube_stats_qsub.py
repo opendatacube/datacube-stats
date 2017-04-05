@@ -7,10 +7,6 @@ from pathlib import Path
 
 import click
 
-ROOT_DIR = Path(__file__).absolute().parent.parent
-CONFIG_DIR = ROOT_DIR / 'configurations'
-SCRIPT_DIR = ROOT_DIR / 'scripts'
-
 CPUS_PER_NODE = 16
 MEMORY_PER_NODE = 62
 
@@ -71,7 +67,7 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
     ))  # 'DSCHEDULER' is replaced by distributed.sh with the host/port for the dask scheduler
 
     distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(app_cmd)s' % dict(
-        distr=SCRIPT_DIR / 'distributed.sh',
+        distr='launch-distributed-pbs',
         env_arg=env_arg,
         app_cmd=app_cmd,
     )
