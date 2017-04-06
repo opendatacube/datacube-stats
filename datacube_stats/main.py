@@ -4,8 +4,8 @@ Create statistical summaries command
 """
 from __future__ import absolute_import, print_function
 
-import os
 import logging
+import os
 from functools import partial
 from textwrap import dedent
 
@@ -27,7 +27,7 @@ import datacube_stats
 import datacube
 from datacube import Datacube
 from datacube.api import make_mask, GridWorkflow, Tile
-from datacube.api.query import query_group_by, query_geopolygon, Query
+from datacube.api.query import query_group_by, Query
 from datacube.model import GridSpec
 from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube.storage.masking import mask_invalid_data
@@ -170,7 +170,7 @@ class StatsApp(object):
             if 'statistic' not in prod:
                 raise StatsConfigurationError('Invalid statistic definition %s, must specify which statistic to use. '
                                               'eg. statistic: mean' % yaml.dump(prod, indent=4,
-                                                                                 default_flow_style=False))
+                                                                                default_flow_style=False))
         available_statistics = set(STATS.keys())
         requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
         if not requested_statistics.issubset(available_statistics):
@@ -442,7 +442,8 @@ def create_stats_app(config, index=None):
     stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
     stats_app.tide_class = config['tide_class']
     stats_app.date_ranges = _configure_date_ranges(index, config)
-    stats_app.task_generator = _create_task_generator(config.get('input_region'), stats_app.tide_class, stats_app.storage)
+    stats_app.task_generator = _create_task_generator(config.get('input_region'), stats_app.tide_class,
+                                                      stats_app.storage)
     stats_app.output_driver = _prepare_output_driver(stats_app.storage)
     stats_app.process_completed = do_nothing  # TODO: Save dataset to database
 
@@ -489,14 +490,15 @@ def _configure_date_ranges(index, config):
         raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
                                       'type=find_daily_data')
 
+
 def _create_task_generator(input_region, tide_class, storage):
     grid_spec = _make_grid_spec(storage)
-   
+
     if input_region is None:
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return partial(_generate_gridded_tasks, grid_spec=grid_spec)
 
-    if tide_class is not None: 
+    if tide_class is not None:
         _LOG.info('Generating polygon tidal images ')
         return partial(_generate_non_gridded_tasks, input_region=input_region, tide_class=tide_class, storage=storage)
 
@@ -583,7 +585,6 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
             yield task
 
 
-
 def _generate_non_gridded_tasks(index, sources_spec, date_ranges, tide_class, input_region, storage):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
@@ -598,13 +599,13 @@ def _generate_non_gridded_tasks(index, sources_spec, date_ranges, tide_class, in
     def make_tile(product, time, group_by, otpstime, geopoly):
         datasets = dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
         fil_datasets = list()
-        dt= [dd[0] for dd in otpstime]
+        dt = [dd[0] for dd in otpstime]
         # get the date list out of dt string and compare within the epoch
         for ds in datasets:
             if ds.time.begin.date().strftime("%Y-%m-%d") in dt:
                 fil_datasets.append(ds)
         if len(fil_datasets) == 0:
-            print ("No matched for " + pd)
+            print("No matched for " + pd)
             return None
         datasets = fil_datasets
         group_by = query_group_by(group_by=group_by)
@@ -612,89 +613,91 @@ def _generate_non_gridded_tasks(index, sources_spec, date_ranges, tide_class, in
 
         res = storage['resolution']
 
-        #geopoly = query_geopolygon(**input_region)
         geopoly = geopoly.to_crs(CRS(storage['crs']))
         geobox = GeoBox.from_geopolygon(geopoly, (res['y'], res['x']))
 
         return Tile(sources, geobox)
 
     def list_poly_dates(geom):
-        datasets = list()
         all_times = list()
         for source_spec in sources_spec:
             for mask in source_spec.get('masks', []):
-                group_by_name = source_spec.get('group_by', 'solar_day')
-                ds = dc.find_datasets(product=mask['product'], time=('1986-01-01', '2017-01-01'), geopolygon=geom, group_by=group_by_name)
-                if len(ds) > 0 :
-                    for dd in ds:
-                        all_times.append(dd.time.begin.strftime("%Y-%m-%d %H:%M:%S"))
+                group_by_name = mask.get('group_by', 'solar_day')
+                datasets = dc.find_datasets(product=mask['product'], time=('1986-01-01', '2017-01-01'), geopolygon=geom,
+                                            group_by=group_by_name)
+                if len(datasets) > 0:
+                    for dataset in datasets:
+                        all_times.append(dataset.time.begin.strftime("%Y-%m-%d %H:%M:%S"))
         return all_times
 
     def extract_otps_computed_data(dates, per, ln, la):
-        
-        tp = list()
-        tide_dict = dict()
-        ndate_list=list()
-        mnt=timedelta(minutes=15)
+        tp = []
+        tide_dict = {}
+        ndate_list = []
+        mnt = timedelta(minutes=15)
         for dt in dates:
             dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
-            ndate_list.append(dt-mnt)
+            ndate_list.append(dt - mnt)
             ndate_list.append(dt)
-            ndate_list.append(dt+mnt)
+            ndate_list.append(dt + mnt)
+
         for dt in ndate_list:
             tp.append(TimePoint(ln, la, dt))
         tides = predict_tide(tp)
+
         if len(tides) == 0:
-           print ("No tide height observed from OTPS model within lat/lon range")
-           sys.exit()
-        print ("received from predict tides 15 minutes before and after ", str(datetime.now()))
+            print("No tide height observed from OTPS model within lat/lon range")
+            sys.exit()
+        print("received from predict tides 15 minutes before and after ", str(datetime.now()))
         # collect in ebb/flow list
         for tt in tides:
             tide_dict[datetime.strptime(tt.timepoint.timestamp.isoformat()[0:19], "%Y-%m-%dT%H:%M:%S")] = tt.tide_m
         tmp_lt = sorted(tide_dict.items(), key=lambda x: x[0])
-        print ("original datasets with extra two for each date" + str(len(tmp_lt)))
+        print("original datasets with extra two for each date" + str(len(tmp_lt)))
         dtlist = tmp_lt[1::3]
         my_data = sorted(dtlist, key=itemgetter(1))
         # print ([[dt[0].strftime("%Y-%m-%d %H:%M:%S"), dt[1]] for dt in tmp_lt])
-        tmp_lt = [[tmp_lt[i+1][0].strftime("%Y-%m-%d"), 'ph'] \
-                 if tmp_lt[i][1] < tmp_lt[i+1][1] and tmp_lt[i+2][1] <  tmp_lt[i+1][1]  else \
-                 [tmp_lt[i+1][0].strftime("%Y-%m-%d"), 'pl'] if tmp_lt[i][1] > tmp_lt[i+1][1] and \
-                 tmp_lt[i+2][1] >  tmp_lt[i+1][1]  else [tmp_lt[i+1][0].strftime("%Y-%m-%d"),'f'] \
-                 if tmp_lt[i][1] < tmp_lt[i+2][1] else [tmp_lt[i+1][0].strftime("%Y-%m-%d"),'e'] \
-                 for i in range(0, len(tmp_lt), 3)]
-        print ("EBB FLOW tide details " + str(tmp_lt))
-        PERC = 25  if per == 50 else per
-        print ("percentage accepted " + str(per))
-        print ("calculating on percentage " + str(PERC))
-        max_height=my_data[-1][1]
-        min_height=my_data[0][1]
+        tmp_lt = [[tmp_lt[i + 1][0].strftime("%Y-%m-%d"), 'ph'] \
+                      if tmp_lt[i][1] < tmp_lt[i + 1][1] and tmp_lt[i + 2][1] < tmp_lt[i + 1][1]  else \
+                      [tmp_lt[i + 1][0].strftime("%Y-%m-%d"), 'pl'] if tmp_lt[i][1] > tmp_lt[i + 1][1] and \
+                                                                       tmp_lt[i + 2][1] > tmp_lt[i + 1][1]  else [
+                          tmp_lt[i + 1][0].strftime("%Y-%m-%d"), 'f'] \
+                          if tmp_lt[i][1] < tmp_lt[i + 2][1] else [tmp_lt[i + 1][0].strftime("%Y-%m-%d"), 'e'] \
+                  for i in range(0, len(tmp_lt), 3)]
+        print("EBB FLOW tide details " + str(tmp_lt))
+        PERC = 25 if per == 50 else per
+        print("percentage accepted " + str(per))
+        print("calculating on percentage " + str(PERC))
+        max_height = my_data[-1][1]
+        min_height = my_data[0][1]
         dr = max_height - min_height
-        lmr = min_height + dr*PERC*0.01   # low tide max range
-        hlr = max_height - dr*PERC*0.01   # high tide range
+        lmr = min_height + dr * PERC * 0.01  # low tide max range
+        hlr = max_height - dr * PERC * 0.01  # high tide range
         date_low = list()
         date_high = list()
 
         if PERC == 50:
-            date_high = sorted([[x[0][0].strftime('%Y-%m-%d'), x[0][1]] for x  in my_data if (x[0][1] >= lmr) & (x[0][1] <= hlr) ])
-            print (" 50 PERCENTAGE sorted date tide list " + str(len(date_high)))
-            print (date_high)
+            date_high = sorted(
+                [[x[0][0].strftime('%Y-%m-%d'), x[0][1]] for x in my_data if (x[0][1] >= lmr) & (x[0][1] <= hlr)])
+            print(" 50 PERCENTAGE sorted date tide list " + str(len(date_high)))
+            print(date_high)
         else:
             date_low = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if x[1] <= lmr])
             date_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if x[1] >= hlr])
         return dtlist, date_low, date_high
 
-    def polygon_tasks(geom, Id, low_list, high_list):
-        tasks = {}  
+    def polygon_tasks(geom, Id):
+        tasks = {}
         for time_period in date_ranges:
             task = tasks.setdefault(Id, StatsTask(time_period=time_period))
-            #task = StatsTask(time_period)
+            # task = StatsTask(time_period)
             for source_spec in sources_spec:
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
                 # Build Tile
                 data = make_tile(product=source_spec['product'], time=time_period,
                                  group_by=group_by_name, otpstime=otpstime, geopoly=geom)
-  
+
                 masks = [make_tile(product=mask['product'], time=time_period,
                                    group_by=group_by_name, otpstime=otpstime, geopoly=geom)
                          for mask in source_spec.get('masks', [])]
@@ -721,33 +724,34 @@ def _generate_non_gridded_tasks(index, sources_spec, date_ranges, tide_class, in
             if Id == tide_class['feature_id']:  # interest to us close to Gladstone 239
                 geom = feature['geometry']
                 boundary_polygon = Geometry(geom, crs)
-                print ("feature captured for Id " + str(Id) + " segmented centroid lon and lat " + str(lon) + str(lat))
+                print("feature captured for Id " + str(Id) + " segmented centroid lon and lat " + str(lon) + str(lat))
                 _LOG.info('Getting all dates corresponding this polygon for all sensor data')
                 all_dates = list_poly_dates(boundary_polygon)
-                all_list, low_list, high_list = extract_otps_computed_data(all_dates, tide_class['percent'], lon, lat)
-                #polygon_tasks(boundary_polygon, Id, low_list, high_list)
-                tasks = {}  
 
-                #pr =  ['low', 'high'] if 'low_high' in tide_class['product'] else ['high']
+                all_list, low_list, high_list = extract_otps_computed_data(all_dates, tide_class['percent'], lon, lat)
+                # polygon_tasks(boundary_polygon, Id, low_list, high_list)
+                tasks = {}
+
+                # pr =  ['low', 'high'] if 'low_high' in tide_class['product'] else ['high']
                 pr = ['low']
-                tile_index=(lon,lat)
+                tile_index = (lon, lat)
                 for time_period, pp in itertools.product(date_ranges, pr):
                     task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
-                    #task = StatsTask(time_period)
+                    # task = StatsTask(time_period)
                     for source_spec in sources_spec:
                         group_by_name = source_spec.get('group_by', 'solar_day')
 
                         # Build Tile
-                        otpstime = low_list if "low" in pr else high_list 
+                        otpstime = low_list if "low" in pr else high_list
                         data = make_tile(product=source_spec['product'], time=time_period,
-                                         group_by=group_by_name, otpstime=otpstime, geopoly=boundary_polygon) 
+                                         group_by=group_by_name, otpstime=otpstime, geopoly=boundary_polygon)
 
                         masks = [make_tile(product=mask['product'], time=time_period,
-                                         group_by=group_by_name, otpstime=otpstime, geopoly=boundary_polygon)
+                                           group_by=group_by_name, otpstime=otpstime, geopoly=boundary_polygon)
                                  for mask in source_spec.get('masks', [])]
 
                     if len(data.sources.time) == 0:
-                         continue
+                        continue
 
                     task.sources.append({
                         'data': data,
@@ -758,9 +762,6 @@ def _generate_non_gridded_tasks(index, sources_spec, date_ranges, tide_class, in
                 if task.sources:
                     _LOG.info('Created task for time period: %s', time_period)
                     yield task
-
-                    
-
 
 
 def pickle_stream(objs, filename):
