@@ -72,7 +72,7 @@ step_size: 3m
 location: '/g/data/u46/users/dra547/data'
 
 storage:
-  driver: rasterio
+  driver: NetCDFCF
 
   crs: EPSG:3577
   tile_size:
