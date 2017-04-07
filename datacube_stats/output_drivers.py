@@ -18,12 +18,13 @@ import numpy
 import rasterio
 import xarray
 from boltons import fileutils
+from six import with_metaclass
+
 from datacube.model import Variable, GeoPolygon
 from datacube.model.utils import make_dataset, xr_apply, datasets_to_doc
 from datacube.storage import netcdf_writer
 from datacube.storage.storage import create_netcdf_storage_unit
 from datacube.utils import unsqueeze_data_array, geometry
-from six import with_metaclass
 
 _LOG = logging.getLogger(__name__)
 _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
@@ -205,7 +206,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         x, y = self._task.tile_index
         epoch_start, epoch_end = self._task.time_period
         extra_params = kwargs.copy()
-        extra_params.update(output_product.extras)
+        extra_params.update(self._task.extras)
 
         output_path = Path(self._output_path,
                            output_product.file_path_template.format(
@@ -381,24 +382,25 @@ class GeotiffOutputDriver(OutputDriver):
             return nodata
 
     def open_output_files(self):
-        for prod_name, stat in self._output_products.items():
-            num_measurements = len(stat.product.measurements)
+        for prod_name, output_product in self._output_products.items():
+            num_measurements = len(output_product.product.measurements)
             if num_measurements == 0:
                 raise ValueError('No measurements to record for {}.'.format(prod_name))
-            elif num_measurements > 1 and 'var_name' in stat.file_path_template:
+            elif num_measurements > 1 and 'var_name' in output_product.file_path_template:
                 # Output each statistic product into a separate single band geotiff file
-                for measurement_name, measure_def in stat.product.measurements.items():
-                    self._open_single_band_geotiff(prod_name, stat, measurement_name)
+                for measurement_name, measure_def in output_product.product.measurements.items():
+                    self._open_single_band_geotiff(prod_name, output_product, measurement_name)
             else:
                 # Output all statistics into a single geotiff file, with as many bands
                 # as there are output statistic products
-                output_filename = self._prepare_output_file(stat)
+                output_filename = self._prepare_output_file(output_product)
 
-                self.write_yaml(stat, output_filename)
+                self.write_yaml(output_product, output_filename)
 
                 dest_fh = self._open_geotiff(prod_name, None, output_filename, num_measurements)
 
-                for band, (measurement_name, measure_def) in enumerate(stat.product.measurements.items(), start=1):
+                for band, (measurement_name, measure_def) in enumerate(output_product.product.measurements.items(),
+                                                                       start=1):
                     self._set_band_metadata(dest_fh, measurement_name, band=band)
                 self._output_file_handles[prod_name] = dest_fh
 
@@ -417,8 +419,8 @@ class GeotiffOutputDriver(OutputDriver):
         else:
             _LOG.error('Unexpected more than 1 dataset being written at once, investigate!', datasets)
 
-    def _open_single_band_geotiff(self, prod_name, stat, measurement_name=None):
-        output_filename = self._prepare_output_file(stat, var_name=measurement_name)
+    def _open_single_band_geotiff(self, prod_name, output_product, measurement_name=None):
+        output_filename = self._prepare_output_file(output_product, var_name=measurement_name)
         dest_fh = self._open_geotiff(prod_name, measurement_name, output_filename)
         self._set_band_metadata(dest_fh, measurement_name)
         self._output_file_handles.setdefault(prod_name, {})[measurement_name] = dest_fh
@@ -435,10 +437,11 @@ class GeotiffOutputDriver(OutputDriver):
         profile = self.default_profile.copy()
         dtype = self._get_dtype(prod_name, measurement_name)
         nodata = self._get_nodata(prod_name, measurement_name)
-        x_block_size = self._storage['chunking']['x'] if 'x' in self._storage['chunking'] else \
-        self._storage['chunking']['longitude']
-        y_block_size = self._storage['chunking']['y'] if 'y' in self._storage['chunking'] else \
-        self._storage['chunking']['latitude']
+        chunking = self._storage['chunking']
+
+        x_block_size = chunking['x'] if 'x' in chunking else chunking['longitude']
+        y_block_size = chunking['y'] if 'y' in chunking else chunking['latitude']
+
         profile.update({
             'blockxsize': x_block_size,
             'blockysize': y_block_size,
