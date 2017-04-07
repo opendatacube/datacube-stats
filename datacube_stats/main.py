@@ -60,16 +60,17 @@ DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
               help='Number of tasks to queue at the start')
 @click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
+@click.option('--output-location', help='Override output location in configuration file')
 @ui.global_cli_options
 @ui.executor_cli_options
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks):
+def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, output_location):
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = create_stats_app(config, index)
+    app = create_stats_app(config, index, output_location)
     app.queue_size = queue_size
     app.validate()
 
@@ -424,7 +425,7 @@ def _find_periods_with_data(index, product_names, period_duration='1 day',
         yield time_range.begin, time_range.end
 
 
-def create_stats_app(config, index=None):
+def create_stats_app(config, index=None, output_location=None):
     """
     Create a StatsApp to run a processing job, based on a configuration file
 
@@ -438,7 +439,7 @@ def create_stats_app(config, index=None):
     stats_app.storage = config['storage']
     stats_app.sources = config['sources']
     stats_app.output_product_specs = config['output_products']
-    stats_app.location = config.get('location', os.getcwd())  # Write files to current directory if not set in config
+    stats_app.location = config.get('location', output_location)  # Write files to current directory if not set in config
     stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
     stats_app.tide_class = config['tide_class']
     stats_app.date_ranges = _configure_date_ranges(index, config)
