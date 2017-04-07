@@ -524,7 +524,7 @@ def _create_task_generator(input_region, tide_class, storage):
 
     else:
         _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
-        return partial(_generate_non_gridded_tasks, input_region=input_region, tide_class=tide_class, storage=storage)
+        return partial(_generate_non_gridded_tasks, input_region=input_region, storage=storage)
 
 
 def do_nothing(task):
@@ -604,7 +604,7 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
             if ds.time.begin.date().strftime("%Y-%m-%d") in dt:
                 fil_datasets.append(ds)
         if len(fil_datasets) == 0:
-            print ("No matched for " + str(otpstime))
+            print ("No matched for product " + product + " on " + str(otpstime))
             return None
         datasets = fil_datasets
         group_by = query_group_by(group_by=group_by)
@@ -613,9 +613,11 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
         res = storage['resolution']
 
         #geopoly = query_geopolygon(**input_region)
-        geopoly = geopoly.to_crs(CRS(storage['crs']))
+        #import pdb; pdb.set_trace() 
+        #geopoly = geopoly.to_crs(CRS(storage['crs']))
         geobox = GeoBox.from_geopolygon(geopoly, (res['y'], res['x']))
 
+        #import pdb; pdb.set_trace() 
         return Tile(sources, geobox)
 
     def list_poly_dates(geom):
@@ -662,7 +664,8 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
                  tmp_lt[i+2][1] >  tmp_lt[i+1][1]  else [tmp_lt[i+1][0].strftime("%Y-%m-%d"),'f'] \
                  if tmp_lt[i][1] < tmp_lt[i+2][1] else [tmp_lt[i+1][0].strftime("%Y-%m-%d"),'e'] \
                  for i in range(0, len(tmp_lt), 3)]
-        #print ("EBB FLOW tide details " + str(tmp_lt))
+        _LOG.info('EBB FLOW tide details for entire archive of LS data %s', str(tmp_lt))
+        tmp_lt = tmp_lt[1::3]
         PERC = 25  if per == 50 else per
         print ("percentage accepted " + str(per))
         print ("calculating on percentage " + str(PERC))
@@ -671,24 +674,28 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
         dr = max_height - min_height
         lmr = min_height + dr*PERC*0.01   # low tide max range
         hlr = max_height - dr*PERC*0.01   # high tide range
-        list_time = list()
-
+        list_low = list()
+        list_high = list()
         if PERC == 50:
-            list_time = sorted([[x[0][0].strftime('%Y-%m-%d'), x[0][1]] for x  in my_data if (x[0][1] >= lmr) & (x[0][1] <= hlr) ])
-            print (" 50 PERCENTAGE sorted date tide list " + str(len(list_time)))
-            print (list_time)
+            list_high = sorted([[x[0][0].strftime('%Y-%m-%d'), x[0][1]] for x  in my_data if (x[0][1] >= lmr) & (x[0][1] <= hlr) ])
+            print (" 50 PERCENTAGE sorted date tide list " + str(len(high)))
+            print (list_high)
+            _LOG.info('Created EBB FLOW MIDDLE only dates and tide heights for time period: %s %s', date_ranges, str(list_high))
         else:
-            if tide_class['product'] == 'low':
-                 list_time = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] <= lmr) & 
-                                    (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
-            else:
-                 list_time = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] >= hlr) &
-                                    (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
+            list_low = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] <= lmr) & 
+                                (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
+            list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] >= hlr) &
+                                (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
+            _LOG.info('Created EBB FLOW LOW only dates and tide heights for time period: %s %s', date_ranges, str(list_low))
+            _LOG.info('Created EBB FLOW HIGH only dates and tide heights for time period: %s %s', date_ranges, str(list_high))
 
         print ( "product is " + tide_class['product'])
+        ebb_flow = str([tt for tt in tmp_lt if (datetime.strptime(tt[0], "%Y-%m-%d") >= date_ranges[0][0]) & 
+                                               (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])])
+        _LOG.info('Created EBB FLOW for time period: %s %s', date_ranges, ebb_flow)
         #print (" EBB FLOW for this epoch " + str([tt for tt in tmp_lt if (datetime.strptime(tt[0], "%Y-%m-%d") >= date_ranges[0][0]) & 
         #         (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])]))
-        return dtlist, list_time
+        return dtlist, list_low, list_high
 
     with fiona.open(input_region['from_file']) as input_region:
         crs = CRS(str(input_region.crs_wkt))
@@ -702,13 +709,19 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
                 print ("feature captured for Id " + str(Id) + " segmented centroid lon and lat " + str(lon) + str(lat))
                 _LOG.info('Getting all dates corresponding this polygon for all sensor data')
                 all_dates = list_poly_dates(boundary_polygon)
-                all_list, list_time = extract_otps_computed_data(all_dates, date_ranges, tide_class['percent'], lon, lat)
+                all_list, list_low, list_high = extract_otps_computed_data(all_dates, date_ranges, tide_class['percent'], lon, lat)
                 tasks = {}  
-
+                prod = list()
+                if "low_high" in tide_class['product']:
+                    prod = ['low', 'high']
+                else:
+                    prod = ['high']
                 tile_index=(lon,lat)
-                for time_period in date_ranges:
+                for time_period, pr in itertools.product(date_ranges, prod) :
+                    tile_index=(pr.upper()+"_"+str(lon), str(lat))
                     task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
-                    #task = StatsTask(time_period)
+                    list_time = list_low if pr == 'low' else list_high
+                    print ("doing for product " + pr)
                     for source_spec in sources_spec:
                         group_by_name = source_spec.get('group_by', 'solar_day')
 
@@ -722,7 +735,7 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
 
                     if len(data.sources.time) == 0:
                          continue
-
+                    print ("source details for " + pr + " " + str(data.sources.time.values))  
                     task.sources.append({
                         'data': data,
                         'masks': masks,
