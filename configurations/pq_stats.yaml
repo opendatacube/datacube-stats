@@ -4,12 +4,15 @@
 sources:
   - product: ls5_pq_albers
     group_by: solar_day
+    mask_nodata: False
 
   - product: ls7_pq_albers
     group_by: solar_day
+    mask_nodata: False
 
   - product: ls8_pq_albers
     group_by: solar_day
+    mask_nodata: False
 
 
 
@@ -42,8 +45,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 800
-    y: 400
+    x: 2000
+    y: 2000
 
 #input_region:
 ##  tile: [12, -43]
@@ -67,6 +70,7 @@ output_products:
        nir_saturated: False
        swir1_saturated: False
        swir2_saturated: False
-   zlib: True
-   fletcher32: True
-   file_path_template: 'PQ_STATS/{epoch_start:%Y}/{x}/SR_LS5_N_PCT_25_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+   output_params:  # TODO Add check for this
+     zlib: True
+     fletcher32: True
+   file_path_template: '{epoch_start:%Y}/{x}/SR_LS5_N_PCT_25_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'

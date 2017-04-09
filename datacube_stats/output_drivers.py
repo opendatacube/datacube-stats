@@ -170,7 +170,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         completed_successfully = exc_type is None
         self.close_files(completed_successfully)
 
-    def _prepare_output_file(self, stat, **kwargs):
+    def _prepare_output_file(self, output_product, **kwargs):
         """
         Format the output filename for the current task,
         make sure it is valid and doesn't already exist
@@ -179,7 +179,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         
         :return: Path to write output to
         """
-        output_path = self._generate_output_filename(stat, **kwargs)
+        output_path = self._generate_output_filename(output_product, **kwargs)
 
         if output_path.suffix not in self.valid_extensions:
             raise StatsOutputError('Invalid Filename: %s for this Output Driver: %s' % (output_path, self))
@@ -193,7 +193,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         except OSError:
             pass
 
-        with tempfile.NamedTemporaryFile(dir=str(output_path.parent), delete=False) as tmpfile:
+        with tempfile.NamedTemporaryFile(dir=str(output_path.parent)) as tmpfile:
             pass
         tmp_path = Path(tmpfile.name)
         self.output_filename_tmpname[tmp_path] = output_path

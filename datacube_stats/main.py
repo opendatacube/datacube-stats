@@ -175,7 +175,7 @@ class StatsApp(object):
             first_source = self.sources[0]
         except IndexError:
             raise StatsConfigurationError('No data sources specified.')
-        if not all(first_source['measurements'] == source['measurements'] for source in self.sources):
+        if not all(first_source.get('measurements') == source.get('measurements') for source in self.sources):
             raise StatsConfigurationError("Configuration Error: listed measurements of source products "
                                           "are not all the same.")
 
@@ -341,8 +341,11 @@ def _load_data(sub_tile_slice, sources):
     :param sources: a dictionary containing `data`, `spec` and `masks`
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
     """
-    datasets = [_load_masked_data(sub_tile_slice, source_prod) for source_prod in sources]  # list of datasets
-    datasets = [dataset for dataset in datasets if dataset is not None]
+    datasets = [_load_masked_data(sub_tile_slice, source_prod)
+                for source_prod in sources]  # list of datasets
+    datasets = [dataset
+                for dataset in datasets
+                if dataset is not None]
     if len(datasets) == 0:
         raise EmptyChunkException
     for idx, dataset in enumerate(datasets):
@@ -354,17 +357,31 @@ def _load_data(sub_tile_slice, sources):
     # return inplace_isel(datasets, time=datasets.time.argsort())
 
 
+def sensibly_mask_invalid_data(data):
+    # TODO This should be pushed up to datacube-core
+    # xarray.DataArray.where() converts ints to floats, since NaNs are used to represent nodata
+    # by default, this uses float64, which is way over the top for an int16 value, so
+    # lets convert to float32 first, to save a bunch of memory.
+    data = _convert_dataset_to_float(data)  # This is stripping out variable attributes
+    data = mask_invalid_data(data)
+    return data
+
+
 def _load_masked_data(sub_tile_slice, source_prod):
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
-                             measurements=source_prod['spec']['measurements'],
+                             measurements=source_prod['spec'].get('measurements'),
                              skip_broken_datasets=True)
-    crs = data.crs
+
+    mask_nodata = source_prod['spec'].get('mask_nodata', True)
+    if mask_nodata:
+        data = sensibly_mask_invalid_data(data)
+
+    crs = data.crs  # Store to reapply below
     # TODO: Check memory usage in here, I suspect it's blowing up
-    data = _convert_dataset_to_float(data)
-    data = mask_invalid_data(data)
 
     # if all NaN
-    if all(ds for ds in xarray.ufuncs.isnan(data).all().data_vars.values()):
+    completely_empty = all(ds for ds in xarray.ufuncs.isnan(data).all().data_vars.values())
+    if completely_empty:
         # Discard empty slice
         return None
 
@@ -405,7 +422,7 @@ def _source_measurement_defs(index, sources):
 
     # Ensure specified sources match
     for other_source in sources[1:]:
-        if other_source['measurements'] != first_source['measurements']:
+        if other_source.get('measurements') != first_source.get('measurements'):
             raise StatsConfigurationError('Measurements in configured sources do not match. To combine sources'
                                           'they must all be identical. %s measurements are %s while %s measurements '
                                           'are %s' % (first_source['product'], first_source['measurements'],
@@ -413,7 +430,10 @@ def _source_measurement_defs(index, sources):
 
     source_measurements = index.products.get_by_name(first_source['product']).measurements
 
-    measurements = [source_measurements[name] for name in first_source['measurements']]
+    try:
+        measurements = [source_measurements[name] for name in first_source['measurements']]
+    except KeyError:
+        measurements = source_measurements
 
     return measurements
 
@@ -567,6 +587,9 @@ def _make_grid_spec(storage):
 def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None):
     """
     Generate the required tasks through time and across a spatial grid.
+    
+    Input region can be limited by specifying either/or both of `geopolygon` and `cell_index`, which
+    will both result in only datasets covering the poly or cell to be included.
 
     :param index: Datacube Index
     :return:

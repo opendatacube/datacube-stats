@@ -629,13 +629,15 @@ class MaskedCount(Statistic):
         self.flags = flags
 
     def compute(self, data):
-        return xarray.Dataset({'count': make_mask(data, **self.flags).sum(dim='time')},
+        count = make_mask(data, **self.flags).sum(dim='time')
+        return xarray.Dataset({'count': count},
                               attrs=dict(crs=data.crs))
 
     def measurements(self, input_measurements):
         return [{'name': 'count',
                  'dtype': 'int16',
-                 'units': '1'}]
+                 'units': '1',
+                 'nodata': 65536}]  # No Data is required somewhere, but doesn't really make sense
 
 
 STATS = {
@@ -656,7 +658,8 @@ STATS = {
     # 'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'none': NoneStat,
     'wofs_summary': WofsStats,
-    'clear_count': ClearCount
+    'clear_count': ClearCount,
+    'masked_count': MaskedCount,
 }
 
 
