@@ -131,15 +131,15 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     def close_files(self, completed_successfully):
         # Turn file_handles into paths
-        tmp_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
+        written_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
 
         # Close Files, need to iterate with list()  since the _walk_dict() generator is lazy
         list(_walk_dict(self._output_file_handles, lambda fh: fh.close()))
 
         # Rename to final filename
         if completed_successfully:
-            destinations = [self.output_filename_tmpname[path] for path in tmp_paths]
-            for tmp, dest in zip(tmp_paths, destinations):
+            destinations = [self.output_filename_tmpname[path] for path in written_paths]
+            for tmp, dest in zip(written_paths, destinations):
                 atomic_rename(tmp, dest)
 
             return destinations
