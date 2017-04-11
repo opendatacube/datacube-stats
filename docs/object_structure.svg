@@ -26,8 +26,8 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="0.98994949"
-     inkscape:cx="376.78726"
-     inkscape:cy="621.12523"
+     inkscape:cx="372.74665"
+     inkscape:cy="605.97294"
      inkscape:document-units="mm"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -57,22 +57,22 @@
        id="rect4554"
        width="172.65611"
        height="191.63225"
-       x="16.174498"
-       y="46.568451"
+       x="15.639958"
+       y="60.199196"
        ry="5.5277281" />
     <rect
-       style="opacity:1;fill:#ededed;fill-opacity:1;stroke:#00b5f7;stroke-width:3.03500009;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="opacity:1;fill:#ededed;fill-opacity:1;stroke:#00b5f7;stroke-width:3.1789608;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        id="rect4485"
-       width="136.57472"
-       height="145.39462"
-       x="28.468914"
-       y="68.484558"
-       ry="5.5277281" />
+       width="136.43076"
+       height="159.68321"
+       x="28.006355"
+       y="82.187286"
+       ry="6.0709634" />
     <flowRoot
        xml:space="preserve"
        id="flowRoot4487"
        style="font-style:normal;font-weight:normal;font-size:40px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-       transform="matrix(0.26458333,0,0,0.26458333,7.4083338,-3.7041668)"><flowRegion
+       transform="matrix(0.26458333,0,0,0.26458333,6.8737947,9.9265791)"><flowRegion
          id="flowRegion4489"><rect
            id="rect4491"
            width="425.27423"
@@ -90,18 +90,18 @@
            x="106.06602"
            y="385.10834" /></flowRegion><flowPara
          id="flowPara4501"></flowPara></flowRoot>    <rect
-       style="opacity:1;fill:#ededed;fill-opacity:1;stroke:#00b5f7;stroke-width:3.03500009;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       style="opacity:1;fill:#ededed;fill-opacity:1;stroke:#00b5f7;stroke-width:3.26413798;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
        id="rect4503"
-       width="107.70962"
-       height="107.70962"
-       x="41.565121"
-       y="93.607895"
-       ry="5.5277281" />
+       width="107.48048"
+       height="124.853"
+       x="41.145153"
+       y="107.35321"
+       ry="6.4075375" />
     <flowRoot
        xml:space="preserve"
        id="flowRoot4505"
        style="font-style:normal;font-weight:normal;font-size:40px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-       transform="matrix(0.26458333,0,0,0.26458333,12.700002,-1.0583333)"><flowRegion
+       transform="matrix(0.26458333,0,0,0.26458333,12.165463,12.572413)"><flowRegion
          id="flowRegion4507"><rect
            id="rect4509"
            width="344.46201"
@@ -110,83 +110,30 @@
            y="371.97635" /></flowRegion><flowPara
          id="flowPara4511">Stats <flowSpan
    style="font-weight:bold"
-   id="flowSpan4564">Task</flowSpan></flowPara></flowRoot>    <g
-       id="g4552"
-       transform="translate(12.700002)">
-      <g
-         id="g4522">
-        <rect
-           style="opacity:1;fill:#ededed;fill-opacity:1;stroke:#00b5f7;stroke-width:3.17313647;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-           id="rect4513"
-           width="92.069847"
-           height="20.174347"
-           x="37.486801"
-           y="115.05852"
-           ry="5.4901361" />
-        <text
-           xml:space="preserve"
-           style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-           x="42.976398"
-           y="128.10158"
-           id="text4517"><tspan
-             sodipodi:role="line"
-             id="tspan4515"
-             x="42.976398"
-             y="128.10158"
-             style="stroke-width:0.26458332px">Output Product</tspan></text>
-      </g>
-      <g
-         transform="translate(0,26.994217)"
-         id="g4530">
-        <rect
-           ry="5.4901361"
-           y="115.05852"
-           x="37.486801"
-           height="20.174347"
-           width="92.069847"
-           id="rect4524"
-           style="opacity:1;fill:#ededed;fill-opacity:1;stroke:#00b5f7;stroke-width:3.17313647;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1" />
-        <text
-           id="text4528"
-           y="128.10158"
-           x="42.976398"
-           style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-           xml:space="preserve"><tspan
-             style="stroke-width:0.26458332px"
-             y="128.10158"
-             x="42.976398"
-             id="tspan4526"
-             sodipodi:role="line">Output Product</tspan></text>
-      </g>
-      <g
-         id="g4538"
-         transform="translate(0,53.988445)">
-        <rect
-           style="opacity:1;fill:#ededed;fill-opacity:1;stroke:#00b5f7;stroke-width:3.17313647;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-           id="rect4532"
-           width="92.069847"
-           height="20.174347"
-           x="37.486801"
-           y="115.05852"
-           ry="5.4901361" />
-        <text
-           xml:space="preserve"
-           style="font-style:normal;font-weight:normal;font-size:10.58333302px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-           x="42.976398"
-           y="128.10158"
-           id="text4536"><tspan
-             sodipodi:role="line"
-             id="tspan4534"
-             x="42.976398"
-             y="128.10158"
-             style="stroke-width:0.26458332px">Output Product</tspan></text>
-      </g>
-    </g>
+   id="flowSpan4564">Task</flowSpan></flowPara></flowRoot>    <rect
+       style="opacity:1;fill:#ededed;fill-opacity:1;stroke:#00b5f7;stroke-width:3.78621364;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect4513"
+       width="91.456772"
+       height="28.915703"
+       x="49.958801"
+       y="152.27898"
+       ry="7.8689609" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:7.24572325px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.18114308px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       x="55.329277"
+       y="162.47971"
+       id="text4517"><tspan
+         sodipodi:role="line"
+         id="tspan4515"
+         x="55.329277"
+         y="162.47971"
+         style="stroke-width:0.18114308px">Output Product</tspan></text>
     <flowRoot
        xml:space="preserve"
        id="flowRoot4556"
        style="font-style:normal;font-weight:normal;font-size:40px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-       transform="matrix(0.26458333,0,0,0.26458333,11.641668,-1.5875)"><flowRegion
+       transform="matrix(0.26458333,0,0,0.26458333,11.107129,12.043246)"><flowRegion
          id="flowRegion4558"><rect
            id="rect4560"
            width="499.01535"
@@ -204,5 +151,43 @@
          x="5.0781212"
          y="32.937706"
          style="stroke-width:0.26458332px">Data Cube Statistics Object Structure</tspan></text>
+    <flowRoot
+       xml:space="preserve"
+       id="flowRoot4643"
+       style="fill:black;stroke:none;stroke-opacity:1;stroke-width:1px;stroke-linejoin:miter;stroke-linecap:butt;fill-opacity:1;font-family:sans-serif;font-style:normal;font-weight:normal;font-size:16px;line-height:125%;letter-spacing:0px;word-spacing:0px;"><flowRegion
+         id="flowRegion4645"
+         style="font-size:16px;"><rect
+           id="rect4647"
+           width="327.28943"
+           height="55.558392"
+           x="182.83762"
+           y="465.92053"
+           style="font-size:16px;" /></flowRegion><flowPara
+         id="flowPara4649"></flowPara></flowRoot>    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:4.23333311px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       x="51.850285"
+       y="128.35292"
+       id="text4719"><tspan
+         sodipodi:role="line"
+         id="tspan4717"
+         x="51.850285"
+         y="128.35292"
+         style="stroke-width:0.26458332px">Contains</tspan><tspan
+         sodipodi:role="line"
+         x="51.850285"
+         y="133.64459"
+         style="stroke-width:0.26458332px"
+         id="tspan4721">- Source datasets to operate on</tspan><tspan
+         sodipodi:role="line"
+         x="51.850285"
+         y="138.93626"
+         style="stroke-width:0.26458332px"
+         id="tspan4723">- start/end dates</tspan><tspan
+         sodipodi:role="line"
+         x="51.850285"
+         y="144.22792"
+         style="stroke-width:0.26458332px"
+         id="tspan4725">- extra args</tspan></text>
   </g>
 </svg>
