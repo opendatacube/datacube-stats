@@ -719,8 +719,12 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
                 prod = list()
                 if "low_high" in tide_class['product']:
                     prod = ['low', 'high']
-                else:
+                elif "low" in tide_class['product']:
+                    prod = ['low']
+                elif "high" in tide_class['product']:
                     prod = ['high']
+                else:
+                    prod = ['middle']
                 tile_index=(lon,lat)
                 for time_period, pr in itertools.product(date_ranges, prod) :
                     nlon = pr.upper()+"_"+str(lon)
