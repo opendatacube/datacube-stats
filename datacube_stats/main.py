@@ -5,7 +5,6 @@ Create statistical summaries command
 from __future__ import absolute_import, print_function
 
 import logging
-import os
 from functools import partial
 from textwrap import dedent
 
