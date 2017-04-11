@@ -145,7 +145,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
             return destinations
         else:
-            return written_paths
+            return tmp_paths
 
     def _handle_to_path(self, file_handle):
         return Path(file_handle.name)
@@ -194,7 +194,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         except OSError:
             pass
 
-        with tempfile.NamedTemporaryFile(dir=str(output_path.parent), delete=False) as tmpfile:
+        with tempfile.NamedTemporaryFile(dir=str(output_path.parent)) as tmpfile:
             pass
         tmp_path = Path(tmpfile.name)
         self.output_filename_tmpname[tmp_path] = output_path
@@ -532,7 +532,8 @@ class TestOutputDriver(OutputDriver):
 def _format_filename(path_template, **kwargs):
     x, y = kwargs['tile_index']
     epoch_start, epoch_end = kwargs['time_period']
-    return Path(str(path_template).format(x=x, y=y, epoch_start=epoch_start, epoch_end=epoch_end,
+    percent = kwargs['percent'] 
+    return Path(str(path_template).format(x=x, y=y, epoch_start=epoch_start, epoch_end=epoch_end, percent=percent,
                                           **kwargs))
 
 

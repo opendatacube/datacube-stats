@@ -700,6 +700,45 @@ try:
             return data.transpose('variable', 'y', 'x').to_dataset(dim='variable')
 
 
-    STATS['geomedian'] = GeoMedian
+    #STATS['geomedian'] = GeoMedian
+
+    class PreciseGeoMedian(Statistic):
+        def __init__(self, eps=1e-3):
+            super(PreciseGeoMedian, self).__init__()
+            self.eps = eps
+
+        def compute(self, data):
+            """
+            :param xarray.Dataset data:
+            :return: xarray.Dataset
+            """
+            # Assert data shape/dims
+            data = data.to_array(dim='variable').transpose('x', 'y', 'variable', 'time').copy()
+
+            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
+
+            return data.transpose('variable', 'y', 'x').to_dataset(dim='variable')
+
+        def measurements(self, input_measurements):
+            """
+            Turn a list of input measurements into a list of output measurements.
+
+            Base implementation simply copies input measurements to output_measurements.
+
+            :rtype: list(dict)
+            """
+            output_measurements = [
+                {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
+                for measurement in input_measurements]
+            for key in output_measurements:
+                key['dtype'] = 'float32'
+                key['nodata'] = np.nan
+        
+            return output_measurements
+    STATS['precisegeomedian'] = PreciseGeoMedian
+
+
+
+
 except ImportError:
     pass

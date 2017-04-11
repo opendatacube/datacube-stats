@@ -22,6 +22,7 @@ import xarray
 import yaml
 import fiona
 import itertools
+import rasterio.features
 
 import datacube_stats
 import datacube
@@ -200,7 +201,7 @@ class StatsApp(object):
                                 storage=self.storage)
         task_runner = partial(execute_task,
                               output_driver=output_driver,
-                              chunking=self.computation['chunking'])
+                              chunking=self.computation['chunking'], tide_class=self.tide_class)
         return run_tasks(tasks,
                          executor,
                          task_runner,
@@ -264,8 +265,15 @@ class StatsApp(object):
 
         return output_products
 
+def geometry_mask(geoms, geobox, all_touched=False, invert=False):
 
-def execute_task(task, output_driver, chunking):
+    return rasterio.features.geometry_mask([geom.to_crs(geobox.crs) for geom in geoms],
+                                           out_shape=geobox.shape,
+                                           transform=geobox.affine,
+                                           all_touched=all_touched,
+                                           invert=invert)
+
+def execute_task(task, output_driver, chunking, tide_class):
     """
     Load data, run the statistical operations and write results out to the filesystem.
 
@@ -281,7 +289,7 @@ def execute_task(task, output_driver, chunking):
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
                 try:
                     timer.start('loading_data')
-                    data = _load_data(sub_tile_slice, task.sources)
+                    data = _load_data(sub_tile_slice, task.sources, tide_class['geom'])
                     timer.pause('loading_data')
 
                     for prod_name, stat in task.output_products.items():
@@ -289,8 +297,11 @@ def execute_task(task, output_driver, chunking):
                                   prod_name, task.tile_index, sub_tile_slice, timer)
                         timer.start(prod_name)
                         stats_data = stat.compute(data)
+                        # mask as per geometry now. Ideally Mask should have been done before computation
+                        # But masking before computation is a problem as it brings 0 value.
+                        mask = geometry_mask([tide_class['geom']], stats_data.geobox, invert=True)
+                        stats_data = stats_data.where(mask)
                         timer.pause(prod_name)
-
                         # For each of the data variables, shove this chunk into the output results
                         timer.start('writing_data')
                         for var_name, var in stats_data.data_vars.items():  # TODO: Move this loop into output_files
@@ -312,7 +323,7 @@ class EmptyChunkException(Exception):
     pass
 
 
-def _load_data(sub_tile_slice, sources):
+def _load_data(sub_tile_slice, sources, geom):
     """
     Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
 
@@ -320,7 +331,7 @@ def _load_data(sub_tile_slice, sources):
     :param sources: a dictionary containing `data`, `spec` and `masks`
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
     """
-    datasets = [_load_masked_data(sub_tile_slice, source_prod) for source_prod in sources]  # list of datasets
+    datasets = [_load_masked_data(sub_tile_slice, source_prod, geom) for source_prod in sources]  # list of datasets
     datasets = [dataset for dataset in datasets if dataset is not None]
     if len(datasets) == 0:
         raise EmptyChunkException
@@ -333,7 +344,7 @@ def _load_data(sub_tile_slice, sources):
     # return inplace_isel(datasets, time=datasets.time.argsort())
 
 
-def _load_masked_data(sub_tile_slice, source_prod):
+def _load_masked_data(sub_tile_slice, source_prod, geom):
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
                              measurements=source_prod['spec']['measurements'],
                              skip_broken_datasets=True)
@@ -341,7 +352,7 @@ def _load_masked_data(sub_tile_slice, source_prod):
     # TODO: Check memory usage in here, I suspect it's blowing up
     data = _convert_dataset_to_float(data)
     data = mask_invalid_data(data)
-
+    
     # if all NaN
     if all(ds for ds in xarray.ufuncs.isnan(data).all().data_vars.values()):
         # Discard empty slice
@@ -584,7 +595,6 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
             yield task
 
 
-
 def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_class, input_region, storage):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
@@ -610,15 +620,8 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
         datasets = fil_datasets
         group_by = query_group_by(group_by=group_by)
         sources = dc.group_datasets(datasets, group_by)
-
         res = storage['resolution']
-
-        #geopoly = query_geopolygon(**input_region)
-        #import pdb; pdb.set_trace() 
-        #geopoly = geopoly.to_crs(CRS(storage['crs']))
         geobox = GeoBox.from_geopolygon(geopoly, (res['y'], res['x']))
-
-        #import pdb; pdb.set_trace() 
         return Tile(sources, geobox)
 
     def list_poly_dates(geom):
@@ -669,7 +672,6 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
         tmp_lt = tmp_lt[1::3]
         PERC = 25  if per == 50 else per
         print ("percentage accepted " + str(per))
-        print ("calculating on percentage " + str(PERC))
         max_height=my_data[-1][1]
         min_height=my_data[0][1]
         dr = max_height - min_height
@@ -680,38 +682,40 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
         if PERC == 50:
             list_high = sorted([[x[0][0].strftime('%Y-%m-%d'), x[0][1]] for x  in my_data if (x[0][1] >= lmr) & (x[0][1] <= hlr) ])
             print (" 50 PERCENTAGE sorted date tide list " + str(len(high)))
-            print (list_high)
-            _LOG.info('Created EBB FLOW MIDDLE only dates and tide heights for time period: %s %s', date_ranges, str(list_high))
+            _LOG.info('Created middle dates and tide heights for time period: %s %s', date_ranges, str(list_high))
         else:
             list_low = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] <= lmr) & 
                                 (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
             list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] >= hlr) &
                                 (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
-            _LOG.info('Created EBB FLOW LOW only dates and tide heights for time period: %s %s', date_ranges, str(list_low))
-            _LOG.info('Created EBB FLOW HIGH only dates and tide heights for time period: %s %s', date_ranges, str(list_high))
+            _LOG.info('Created low percentage dates and tide heights for time period: %s %s', date_ranges, str(list_low))
+            _LOG.info('\nCreated high percentage dates and tide heights for time period: %s %s', date_ranges, str(list_high))
 
         print ( "product is " + tide_class['product'])
         ebb_flow = str([tt for tt in tmp_lt if (datetime.strptime(tt[0], "%Y-%m-%d") >= date_ranges[0][0]) & 
                                                (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])])
-        _LOG.info('Created EBB FLOW for time period: %s %s', date_ranges, ebb_flow)
+        _LOG.info('\nCreated EBB FLOW for time period: %s %s', date_ranges, ebb_flow)
         #print (" EBB FLOW for this epoch " + str([tt for tt in tmp_lt if (datetime.strptime(tt[0], "%Y-%m-%d") >= date_ranges[0][0]) & 
         #         (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])]))
-        return dtlist, list_low, list_high
+        return dtlist, list_low, list_high, ebb_flow
 
     with fiona.open(input_region['from_file']) as input_region:
         crs = CRS(str(input_region.crs_wkt))
+        
         for feature in input_region:
             lon = feature['properties']['lon']
             lat = feature['properties']['lat']
             Id = feature['properties']['Id']
-            if Id == tide_class['feature_id']:  # interest to us close to Gladstone 239
+            #filter out only on selected features
+            if Id in tide_class['feature_id']:
                 geom = feature['geometry']
                 boundary_polygon = Geometry(geom, crs)
+                tide_class['geom'] = boundary_polygon
                 print ("feature captured for Id " + str(Id) + " segmented centroid lon and lat " + str(lon) + str(lat))
                 _LOG.info('Getting all dates corresponding this polygon for all sensor data')
                 all_dates = list_poly_dates(boundary_polygon)
-                all_list, list_low, list_high = extract_otps_computed_data(all_dates, date_ranges, tide_class['percent'], lon, lat)
-                tasks = {}  
+                all_list, list_low, list_high, ebb_flow = extract_otps_computed_data(all_dates, date_ranges, 
+                                                                                     tide_class['percent'], lon, lat)
                 prod = list()
                 if "low_high" in tide_class['product']:
                     prod = ['low', 'high']
@@ -719,17 +723,18 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
                     prod = ['high']
                 tile_index=(lon,lat)
                 for time_period, pr in itertools.product(date_ranges, prod) :
-                    tile_index=(pr.upper()+"_"+str(lon), str(lat))
-                    task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
+                    nlon = pr.upper()+"_"+str(lon)
+                    tile_index=(nlon,lat)
                     list_time = list_low if pr == 'low' else list_high
-                    print ("doing for product " + pr)
+                    task = StatsTask(time_period=time_period, tile_index=tile_index,
+                                     extras={'percent': tide_class['percent']})
+                    print ("doing for product " + pr + " for percentage " + str(tide_class['percent']))
                     for source_spec in sources_spec:
                         group_by_name = source_spec.get('group_by', 'solar_day')
 
                         # Build Tile
                         data = make_tile(product=source_spec['product'], time=time_period,
                                          group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon) 
-
                         masks = [make_tile(product=mask['product'], time=time_period,
                                          group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon)
                                  for mask in source_spec.get('masks', [])]
@@ -742,10 +747,11 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
                         'masks': masks,
                         'spec': source_spec,
                     })
-
-                if task.sources:
-                    _LOG.info('Created task for time period: %s', time_period)
                     yield task
+
+                #if task.sources:
+                #    _LOG.info('Created task for time period: %s', time_period)
+                #    yield task
 
 def _generate_non_gridded_tasks(index, sources_spec, date_ranges, input_region, storage):
     """
