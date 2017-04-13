@@ -4,31 +4,17 @@ from __future__ import print_function
 
 import subprocess
 from pathlib import Path
+import shutil
 
 import click
-
-ROOT_DIR = Path(__file__).absolute().parent.parent
-CONFIG_DIR = ROOT_DIR / 'configurations'
-SCRIPT_DIR = ROOT_DIR / 'scripts'
 
 CPUS_PER_NODE = 16
 MEMORY_PER_NODE = 62
 
 
-@click.group(help='Datacube Stats Application Launcher')
-def cli():
-    pass
-
-
-@cli.command(help='List all installed app config files')
-def list():
-    for cfg in CONFIG_DIR.glob('*.yaml'):
-        print(cfg.name)
-
-
-@cli.command(short_help='Submit a job to qsub',
-             help='Submit a job to qsub for '
-                  'an app_config (from the list command).')
+@click.command(short_help='Submit a stats job to qsub',
+               help='Submit a job to qsub for '
+                    'an app_config (from the list command).')
 @click.option('--queue', '-q', default='normal',
               type=click.Choice(['normal', 'express']))
 @click.option('--project', '-P', default='v10')
@@ -72,7 +58,7 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
             load_tasks=None, confirm=True):
     """Submits the job to qsub"""
     name = name
-    app_cmd = ('datacube-stats -v -v -v {config_arg} '
+    app_cmd = ('datacube-stats -v {config_arg} '
                '--queue-size {queue_size} '
                '--executor distributed DSCHEDULER {lt} {app_config}'.format(
         config_arg=config_arg,
@@ -82,7 +68,7 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
     ))  # 'DSCHEDULER' is replaced by distributed.sh with the host/port for the dask scheduler
 
     distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(app_cmd)s' % dict(
-        distr=SCRIPT_DIR / 'distributed.sh',
+        distr=shutil.which('launch-distributed-pbs'),
         env_arg=env_arg,
         app_cmd=app_cmd,
     )
@@ -107,4 +93,4 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
 
 
 if __name__ == '__main__':
-    cli()
+    qsub()

@@ -31,6 +31,8 @@ import numpy as np
 import xarray
 from pkg_resources import iter_entry_points
 
+from datacube.storage.masking import make_mask
+
 try:
     from bottleneck import anynan, nansum
 except ImportError:
@@ -248,7 +250,7 @@ class Statistic(object):
         """
         output_measurements = [
             {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
-            for measurement in input_measurements]
+            for measurement in input_measurements.values()]
         return output_measurements
 
 
@@ -458,7 +460,7 @@ class PerBandIndexStat(SimpleStatistic):
                 'units': '1'
             }
             for measurement in input_measurements
-            ]
+        ]
         date_measurements = [
             {
                 'name': measurement['name'] + '_observed',
@@ -467,7 +469,7 @@ class PerBandIndexStat(SimpleStatistic):
                 'units': 'seconds since 1970-01-01 00:00:00'
             }
             for measurement in input_measurements
-            ]
+        ]
         text_measurements = [
             {
                 'name': measurement['name'] + '_observed_date',
@@ -476,7 +478,7 @@ class PerBandIndexStat(SimpleStatistic):
                 'units': 'Date as YYYYMMDD'
             }
             for measurement in input_measurements
-            ]
+        ]
 
         return (super(PerBandIndexStat, self).measurements(input_measurements) + date_measurements +
                 index_measurements + text_measurements)
@@ -617,6 +619,27 @@ class MedoidNoProv(PerStatIndexStat):
         super(MedoidNoProv, self).__init__(stat_func=_compute_medoid)
 
 
+class MaskedCount(Statistic):
+    """
+    Use the provided flags to count the number of True values through time.
+    
+    """
+
+    def __init__(self, flags):
+        self.flags = flags
+
+    def compute(self, data):
+        count = make_mask(data, **self.flags).sum(dim='time')
+        return xarray.Dataset({'count': count},
+                              attrs=dict(crs=data.crs))
+
+    def measurements(self, input_measurements):
+        return [{'name': 'count',
+                 'dtype': 'int16',
+                 'units': '1',
+                 'nodata': 65536}]  # No Data is required somewhere, but doesn't really make sense
+
+
 STATS = {
     'simple': ReducingXarrayStatistic,
     # 'min': SimpleXarrayReduction('min'),
@@ -635,7 +658,8 @@ STATS = {
     # 'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'none': NoneStat,
     'wofs_summary': WofsStats,
-    'clear_count': ClearCount
+    'clear_count': ClearCount,
+    'masked_count': MaskedCount,
 }
 
 

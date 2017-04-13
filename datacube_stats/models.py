@@ -69,7 +69,7 @@ class OutputProduct(object):
     """
 
     def __init__(self, metadata_type, input_measurements, storage, name, file_path_template,
-                 stat_name, statistic, output_params=None):
+                 stat_name, statistic, output_params=None, extras=None):
         #: The product name.
         self.name = name
 
@@ -86,6 +86,10 @@ class OutputProduct(object):
 
         self.product = self._create_product(metadata_type, self.data_measurements, storage)
         self.output_params = output_params
+
+        #: A dictionary of extra arguments to be used through the processing chain
+        #: Will be available as named argument when producing the output filename
+        self.extras = extras or {}
 
     @classmethod
     def from_json_definition(cls, metadata_type, input_measurements, storage, definition):

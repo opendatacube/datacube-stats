@@ -4,7 +4,6 @@ Create statistical summaries command
 """
 from __future__ import absolute_import, print_function
 
-import os
 import logging
 from functools import partial
 from textwrap import dedent
@@ -53,25 +52,49 @@ DEFAULT_GROUP_BY = 'time'
 DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 400, 'y': 400}}
 
 
+def _print_version(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+
+    click.echo(
+        '{prog}, version {version}'.format(
+            prog='Data Cube',
+            version=datacube.__version__
+        )
+    )
+
+    click.echo(
+        '{prog}, version {version}'.format(
+            prog='Data Cube Statistics',
+            version=datacube_stats.__version__
+        )
+    )
+    ctx.exit()
+
+
 @click.command(name='datacube-stats')
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
                 callback=to_pathlib)
-@click.option('--queue-size', type=click.IntRange(1, 100000), default=50,
+@click.option('--queue-size', type=click.IntRange(1, 100000), default=2000,
               help='Number of tasks to queue at the start')
 @click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
+@click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
+                                                      'single tile_index specified as [X] [Y]')
 @click.option('--output-location', help='Override output location in configuration file')
 @ui.global_cli_options
 @ui.executor_cli_options
+@click.option('--version', is_flag=True, callback=_print_version,
+              expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, output_location):
+def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index, output_location):
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = create_stats_app(config, index, output_location)
+    app = create_stats_app(config, index, tile_index, output_location)
     app.queue_size = queue_size
     app.validate()
 
@@ -91,7 +114,8 @@ def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks,
 
 
 def _log_setup():
-    _LOG.debug('Loaded datacube_stats from %s.', datacube_stats.__path__)
+    _LOG.debug('Loaded datacube_stats %s from %s.', datacube_stats.__version__, datacube_stats.__path__)
+    _LOG.debug('Running against datacube-core %s from %s', datacube.__version__, datacube.__path__)
 
 
 class StatsApp(object):
@@ -162,7 +186,7 @@ class StatsApp(object):
             first_source = self.sources[0]
         except IndexError:
             raise StatsConfigurationError('No data sources specified.')
-        if not all(first_source['measurements'] == source['measurements'] for source in self.sources):
+        if not all(first_source.get('measurements') == source.get('measurements') for source in self.sources):
             raise StatsConfigurationError("Configuration Error: listed measurements of source products "
                                           "are not all the same.")
 
@@ -172,7 +196,7 @@ class StatsApp(object):
             if 'statistic' not in prod:
                 raise StatsConfigurationError('Invalid statistic definition %s, must specify which statistic to use. '
                                               'eg. statistic: mean' % yaml.dump(prod, indent=4,
-                                                                                 default_flow_style=False))
+                                                                                default_flow_style=False))
         available_statistics = set(STATS.keys())
         requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
         if not requested_statistics.issubset(available_statistics):
@@ -265,15 +289,12 @@ class StatsApp(object):
 
         return output_products
 
-def geometry_mask(geoms, geobox, all_touched=False, invert=False):
 
-    return rasterio.features.geometry_mask([geom.to_crs(geobox.crs) for geom in geoms],
-                                           out_shape=geobox.shape,
-                                           transform=geobox.affine,
-                                           all_touched=all_touched,
-                                           invert=invert)
+class StatsProcessingException(Exception):
+    pass
 
-def execute_task(task, output_driver, chunking, tide_class):
+
+def execute_task(task, output_driver, chunking):
     """
     Load data, run the statistical operations and write results out to the filesystem.
 
@@ -287,31 +308,12 @@ def execute_task(task, output_driver, chunking, tide_class):
     try:
         with output_driver(task=task) as output_files:
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-                try:
-                    timer.start('loading_data')
-                    data = _load_data(sub_tile_slice, task.sources, tide_class['geom'])
-                    timer.pause('loading_data')
-
-                    for prod_name, stat in task.output_products.items():
-                        _LOG.info("Computing %s in tile %s %s. Current timing: %s",
-                                  prod_name, task.tile_index, sub_tile_slice, timer)
-                        timer.start(prod_name)
-                        stats_data = stat.compute(data)
-                        # mask as per geometry now. Ideally Mask should have been done before computation
-                        # But masking before computation is a problem as it brings 0 value.
-                        mask = geometry_mask([tide_class['geom']], stats_data.geobox, invert=True)
-                        stats_data = stats_data.where(mask)
-                        timer.pause(prod_name)
-                        # For each of the data variables, shove this chunk into the output results
-                        timer.start('writing_data')
-                        for var_name, var in stats_data.data_vars.items():  # TODO: Move this loop into output_files
-                            output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
-                        timer.pause('writing_data')
-                except EmptyChunkException:
-                    _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
-                               sub_tile_slice, task)
+                load_process_save_chunk(output_files, sub_tile_slice, task, timer)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
+    except Exception as e:
+        _LOG.error("Error processing task: %s", task)
+        raise StatsProcessingException("Error processing task: %s" % task) from e
 
     timer.pause('total')
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
@@ -319,11 +321,34 @@ def execute_task(task, output_driver, chunking, tide_class):
     return task
 
 
+def load_process_save_chunk(output_files, chunk, task, timer):
+    try:
+        timer.start('loading_data')
+        data = _load_data(chunk, task.sources)
+        timer.pause('loading_data')
+
+        for prod_name, stat in task.output_products.items():
+            _LOG.info("Computing %s in tile %s %s. Current timing: %s",
+                      prod_name, task.tile_index, chunk, timer)
+            timer.start(prod_name)
+            data = stat.compute(data)
+            timer.pause(prod_name)
+
+            # For each of the data variables, shove this chunk into the output results
+            timer.start('writing_data')
+            for var_name, var in data.data_vars.items():  # TODO: Move this loop into output_files
+                output_files.write_data(prod_name, var_name, chunk, var.values)
+            timer.pause('writing_data')
+    except EmptyChunkException:
+        _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
+                   chunk, task)
+
+
 class EmptyChunkException(Exception):
     pass
 
 
-def _load_data(sub_tile_slice, sources, geom):
+def _load_data(sub_tile_slice, sources):
     """
     Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
 
@@ -331,30 +356,46 @@ def _load_data(sub_tile_slice, sources, geom):
     :param sources: a dictionary containing `data`, `spec` and `masks`
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
     """
-    datasets = [_load_masked_data(sub_tile_slice, source_prod, geom) for source_prod in sources]  # list of datasets
-    datasets = [dataset for dataset in datasets if dataset is not None]
+    datasets = [_load_masked_data(sub_tile_slice, source_prod)
+                for source_prod in sources]  # list of datasets
+    datasets = _mark_source_idx(datasets)
+    datasets = _remove_emptys(datasets)
     if len(datasets) == 0:
-        raise EmptyChunkException
-    for idx, dataset in enumerate(datasets):
-        dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
+        raise EmptyChunkException()
+
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
     if len(datasets.time) == 0:
         raise EmptyChunkException()
-    return datasets.isel(time=datasets.time.argsort())  # sort along time dim  # Copies all the data again
-    # return inplace_isel(datasets, time=datasets.time.argsort())
+
+    # sort along time dim
+    return datasets.isel(time=datasets.time.argsort())  # Copies all the data again
 
 
-def _load_masked_data(sub_tile_slice, source_prod, geom):
+def _mark_source_idx(datasets):
+    for idx, dataset in enumerate(datasets):
+        if dataset is not None:
+            dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
+    return datasets
+
+
+def _remove_emptys(datasets):
+    return [dataset
+            for dataset in datasets
+            if dataset is not None]
+
+
+def _load_masked_data(sub_tile_slice, source_prod):
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
-                             measurements=source_prod['spec']['measurements'],
+                             measurements=source_prod['spec'].get('measurements'),
                              skip_broken_datasets=True)
-    crs = data.crs
-    # TODO: Check memory usage in here, I suspect it's blowing up
-    data = _convert_dataset_to_float(data)
-    data = mask_invalid_data(data)
-    
+
+    mask_nodata = source_prod['spec'].get('mask_nodata', True)
+    if mask_nodata:
+        data = sensible_mask_invalid_data(data)
+
     # if all NaN
-    if all(ds for ds in xarray.ufuncs.isnan(data).all().data_vars.values()):
+    completely_empty = all(ds for ds in xarray.ufuncs.isnan(data).all().data_vars.values())
+    if completely_empty:
         # Discard empty slice
         return None
 
@@ -369,13 +410,26 @@ def _load_masked_data(sub_tile_slice, source_prod, geom):
                                      fuse_func=fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
             mask = make_mask(mask, **mask_spec['flags'])
-            data = data.where(mask)
+            data = sensible_where(data, mask)
             del mask
-    data.attrs['crs'] = crs  # Reattach crs, it gets lost when masking
     return data
 
 
-def _convert_dataset_to_float(data):
+def sensible_mask_invalid_data(data):
+    # TODO This should be pushed up to datacube-core
+    # xarray.DataArray.where() converts ints to floats, since NaNs are used to represent nodata
+    # by default, this uses float64, which is way over the top for an int16 value, so
+    # lets convert to float32 first, to save a bunch of memory.
+    data = _convert_to_floats(data)  # This is stripping out variable attributes
+    return mask_invalid_data(data)
+
+
+def sensible_where(data, mask):
+    data = _convert_to_floats(data)  # This is stripping out variable attributes
+    return data.where(mask)
+
+
+def _convert_to_floats(data):
     # Use float32 instead of float64 if input dtype is int16
     assert isinstance(data, xarray.Dataset)
     for name, dataarray in data.data_vars.items():
@@ -395,7 +449,7 @@ def _source_measurement_defs(index, sources):
 
     # Ensure specified sources match
     for other_source in sources[1:]:
-        if other_source['measurements'] != first_source['measurements']:
+        if other_source.get('measurements') != first_source.get('measurements'):
             raise StatsConfigurationError('Measurements in configured sources do not match. To combine sources'
                                           'they must all be identical. %s measurements are %s while %s measurements '
                                           'are %s' % (first_source['product'], first_source['measurements'],
@@ -403,7 +457,10 @@ def _source_measurement_defs(index, sources):
 
     source_measurements = index.products.get_by_name(first_source['product']).measurements
 
-    measurements = [source_measurements[name] for name in first_source['measurements']]
+    try:
+        measurements = [source_measurements[name] for name in first_source['measurements']]
+    except KeyError:
+        measurements = source_measurements
 
     return measurements
 
@@ -436,14 +493,19 @@ def _find_periods_with_data(index, product_names, period_duration='1 day',
         yield time_range.begin, time_range.end
 
 
-def create_stats_app(config, index=None, output_location=None):
+def create_stats_app(config, index=None, tile_index=None, output_location=None):
     """
     Create a StatsApp to run a processing job, based on a configuration file
 
     :param config: dictionary based configuration
     :param index: open database connection
+    :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
     :return: read to run StatsApp
     """
+    input_region = config.get('input_region')
+    if tile_index and not input_region:
+        input_region = {'tile': tile_index}
+
     stats_app = StatsApp()
     stats_app.index = index
     stats_app.config_file = config
@@ -556,6 +618,9 @@ def _make_grid_spec(storage):
 def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None):
     """
     Generate the required tasks through time and across a spatial grid.
+    
+    Input region can be limited by specifying either/or both of `geopolygon` and `cell_index`, which
+    will both result in only datasets covering the poly or cell to be included.
 
     :param index: Datacube Index
     :return:

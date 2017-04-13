@@ -132,15 +132,15 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     def close_files(self, completed_successfully):
         # Turn file_handles into paths
-        tmp_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
+        written_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
 
         # Close Files, need to iterate with list()  since the _walk_dict() generator is lazy
         list(_walk_dict(self._output_file_handles, lambda fh: fh.close()))
 
         # Rename to final filename
         if completed_successfully:
-            destinations = [self.output_filename_tmpname[path] for path in tmp_paths]
-            for tmp, dest in zip(tmp_paths, destinations):
+            destinations = [self.output_filename_tmpname[path] for path in written_paths]
+            for tmp, dest in zip(written_paths, destinations):
                 atomic_rename(tmp, dest)
 
             return destinations
@@ -171,7 +171,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         completed_successfully = exc_type is None
         self.close_files(completed_successfully)
 
-    def _prepare_output_file(self, stat, **kwargs):
+    def _prepare_output_file(self, output_product, **kwargs):
         """
         Format the output filename for the current task,
         make sure it is valid and doesn't already exist
@@ -180,7 +180,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         
         :return: Path to write output to
         """
-        output_path = self._generate_output_filename(stat, **kwargs)
+        output_path = self._generate_output_filename(output_product, **kwargs)
 
         if output_path.suffix not in self.valid_extensions:
             raise StatsOutputError('Invalid Filename: %s for this Output Driver: %s' % (output_path, self))
@@ -227,12 +227,21 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         datasets is a bunch of strings to dump, indexed on time
         sources is a more structured form. An x-array of lists of dataset sources, indexed on time
         
-        I suspect that there is only ever a single time per task, which makes all of this more complicated than necessary.
-        But I could be wrong.
+
         """
         task = self._task
         geobox = self._task.geobox
         app_info = self._app_info
+
+        def add_all(iterable):
+            return reduce_(operator.add, iterable)
+
+        def merge_sources(prod):
+            # Merge data sources and mask sources
+            # Align the data `Tile` with potentially many mask `Tile`s along their time axis
+            all_sources = xarray.align(prod['data'].sources,
+                                       *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
+            return add_all(sources_.sum() for sources_ in all_sources)
 
         def _make_dataset(labels, sources_):
             return make_dataset(product=stat.product,
@@ -243,16 +252,16 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                                 app_info=app_info,
                                 valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
 
-        def merge_sources(prod):
-            all_sources = xarray.align(prod['data'].sources,
-                                       *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
-            return reduce_(operator.add, (sources_.sum() for sources_ in all_sources))
+        sources = add_all(merge_sources(prod) for prod in task.sources)
 
+        # Sources has no time at this point, so insert back in the start of our stats epoch
         start_time, _ = task.time_period
-        sources = reduce_(operator.add, (merge_sources(prod) for prod in task.sources))
         sources = unsqueeze_data_array(sources, dim='time', pos=0, coord=start_time,
                                        attrs=task.time_attributes)
 
+        if not sources:
+            raise StatsOutputError('No valid sources found, or supplied sources do not align to the same time.\n'
+                                   'Unable to write dataset metadata.')
         datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
         datasets = datasets_to_doc(datasets)
         return datasets
