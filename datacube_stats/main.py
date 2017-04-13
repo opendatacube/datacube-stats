@@ -297,26 +297,7 @@ def execute_task(task, output_driver, chunking):
     try:
         with output_driver(task=task) as output_files:
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-                try:
-                    timer.start('loading_data')
-                    data = _load_data(sub_tile_slice, task.sources)
-                    timer.pause('loading_data')
-
-                    for prod_name, stat in task.output_products.items():
-                        _LOG.info("Computing %s in tile %s %s. Current timing: %s",
-                                  prod_name, task.tile_index, sub_tile_slice, timer)
-                        timer.start(prod_name)
-                        stats_data = stat.compute(data)
-                        timer.pause(prod_name)
-
-                        # For each of the data variables, shove this chunk into the output results
-                        timer.start('writing_data')
-                        for var_name, var in stats_data.data_vars.items():  # TODO: Move this loop into output_files
-                            output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
-                        timer.pause('writing_data')
-                except EmptyChunkException:
-                    _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
-                               sub_tile_slice, task)
+                load_process_save_chunk(output_files, sub_tile_slice, task, timer)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
     except Exception as e:
@@ -327,6 +308,29 @@ def execute_task(task, output_driver, chunking):
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
     return task
+
+
+def load_process_save_chunk(output_files, chunk, task, timer):
+    try:
+        timer.start('loading_data')
+        data = _load_data(chunk, task.sources)
+        timer.pause('loading_data')
+
+        for prod_name, stat in task.output_products.items():
+            _LOG.info("Computing %s in tile %s %s. Current timing: %s",
+                      prod_name, task.tile_index, chunk, timer)
+            timer.start(prod_name)
+            data = stat.compute(data)
+            timer.pause(prod_name)
+
+            # For each of the data variables, shove this chunk into the output results
+            timer.start('writing_data')
+            for var_name, var in data.data_vars.items():  # TODO: Move this loop into output_files
+                output_files.write_data(prod_name, var_name, chunk, var.values)
+            timer.pause('writing_data')
+    except EmptyChunkException:
+        _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
+                   chunk, task)
 
 
 class EmptyChunkException(Exception):
@@ -343,13 +347,11 @@ def _load_data(sub_tile_slice, sources):
     """
     datasets = [_load_masked_data(sub_tile_slice, source_prod)
                 for source_prod in sources]  # list of datasets
-    datasets = [dataset
-                for dataset in datasets
-                if dataset is not None]
+    datasets = _mark_source_idx(datasets)
+    datasets = _remove_emptys(datasets)
     if len(datasets) == 0:
-        raise EmptyChunkException
-    for idx, dataset in enumerate(datasets):
-        dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
+        raise EmptyChunkException()
+
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
     if len(datasets.time) == 0:
         raise EmptyChunkException()
@@ -357,14 +359,17 @@ def _load_data(sub_tile_slice, sources):
     # return inplace_isel(datasets, time=datasets.time.argsort())
 
 
-def sensibly_mask_invalid_data(data):
-    # TODO This should be pushed up to datacube-core
-    # xarray.DataArray.where() converts ints to floats, since NaNs are used to represent nodata
-    # by default, this uses float64, which is way over the top for an int16 value, so
-    # lets convert to float32 first, to save a bunch of memory.
-    data = _convert_dataset_to_float(data)  # This is stripping out variable attributes
-    data = mask_invalid_data(data)
-    return data
+def _mark_source_idx(datasets):
+    for idx, dataset in enumerate(datasets):  # TODO, should be based on Source idx, not ds idx
+        if dataset is not None:
+            dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
+    return datasets
+
+
+def _remove_emptys(datasets):
+    return [dataset
+            for dataset in datasets
+            if dataset is not None]
 
 
 def _load_masked_data(sub_tile_slice, source_prod):
@@ -374,9 +379,8 @@ def _load_masked_data(sub_tile_slice, source_prod):
 
     mask_nodata = source_prod['spec'].get('mask_nodata', True)
     if mask_nodata:
-        data = sensibly_mask_invalid_data(data)
+        data = sensible_mask_invalid_data(data)
 
-    crs = data.crs  # Store to reapply below
     # TODO: Check memory usage in here, I suspect it's blowing up
 
     # if all NaN
@@ -396,13 +400,26 @@ def _load_masked_data(sub_tile_slice, source_prod):
                                      fuse_func=fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
             mask = make_mask(mask, **mask_spec['flags'])
-            data = data.where(mask)
+            data = sensible_where(data, mask)
             del mask
-    data.attrs['crs'] = crs  # Reattach crs, it gets lost when masking
     return data
 
 
-def _convert_dataset_to_float(data):
+def sensible_mask_invalid_data(data):
+    # TODO This should be pushed up to datacube-core
+    # xarray.DataArray.where() converts ints to floats, since NaNs are used to represent nodata
+    # by default, this uses float64, which is way over the top for an int16 value, so
+    # lets convert to float32 first, to save a bunch of memory.
+    data = _convert_to_floats(data)  # This is stripping out variable attributes
+    return mask_invalid_data(data)
+
+
+def sensible_where(data, mask):
+    data = _convert_to_floats(data)  # This is stripping out variable attributes
+    return data.where(mask)
+
+
+def _convert_to_floats(data):
     # Use float32 instead of float64 if input dtype is int16
     assert isinstance(data, xarray.Dataset)
     for name, dataarray in data.data_vars.items():
@@ -485,7 +502,8 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None):
     stats_app.storage = config['storage']
     stats_app.sources = config['sources']
     stats_app.output_product_specs = config['output_products']
-    stats_app.location = config.get('location', output_location)  # Write files to current directory if not set in config
+    stats_app.location = config.get('location',
+                                    output_location)  # Write files to current directory if not set in config
     stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
     stats_app.date_ranges = _configure_date_ranges(index, config)
     stats_app.task_generator = _create_task_generator(input_region, stats_app.storage)
