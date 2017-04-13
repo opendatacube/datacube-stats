@@ -50,7 +50,7 @@ from operator import itemgetter
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
 DEFAULT_GROUP_BY = 'time'
-DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
+DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 400, 'y': 400}}
 
 
 @click.command(name='datacube-stats')
