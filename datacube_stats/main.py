@@ -355,12 +355,13 @@ def _load_data(sub_tile_slice, sources):
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
     if len(datasets.time) == 0:
         raise EmptyChunkException()
-    return datasets.isel(time=datasets.time.argsort())  # sort along time dim  # Copies all the data again
-    # return inplace_isel(datasets, time=datasets.time.argsort())
+
+    # sort along time dim
+    return datasets.isel(time=datasets.time.argsort())  # Copies all the data again
 
 
 def _mark_source_idx(datasets):
-    for idx, dataset in enumerate(datasets):  # TODO, should be based on Source idx, not ds idx
+    for idx, dataset in enumerate(datasets):
         if dataset is not None:
             dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
     return datasets
@@ -380,8 +381,6 @@ def _load_masked_data(sub_tile_slice, source_prod):
     mask_nodata = source_prod['spec'].get('mask_nodata', True)
     if mask_nodata:
         data = sensible_mask_invalid_data(data)
-
-    # TODO: Check memory usage in here, I suspect it's blowing up
 
     # if all NaN
     completely_empty = all(ds for ds in xarray.ufuncs.isnan(data).all().data_vars.values())
