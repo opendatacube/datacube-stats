@@ -250,7 +250,7 @@ class Statistic(object):
         """
         output_measurements = [
             {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
-            for measurement in input_measurements]
+            for measurement in input_measurements.values()]
         return output_measurements
 
 
