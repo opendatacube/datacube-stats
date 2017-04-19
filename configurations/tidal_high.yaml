@@ -27,30 +27,30 @@ sources:
           swir1_saturated: False
           swir2_saturated: False
 
-#  - product: ls7_nbar_albers
-#    name: intertidal_high
-#    measurements: [blue, green, red, nir, swir1, swir2]
-#    group_by: solar_day
+  - product: ls7_nbar_albers
+    name: intertidal_high
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
 #    source_filter:
 #      product: ls7_level1_scene
 #      gqa_cep90: (-0.25, 0.25)
-#    masks:
-#      - product: ls7_pq_albers
-#        measurement: pixelquality
-#        group_by: solar_day
-#        fuse_func: datacube.helpers.ga_pq_fuser
-#        flags:
-#          contiguous: True
-#          cloud_acca: no_cloud
-#          cloud_fmask: no_cloud
-#          cloud_shadow_acca: no_cloud_shadow
-#          cloud_shadow_fmask: no_cloud_shadow
-#          blue_saturated: False
-#          green_saturated: False
-#          red_saturated: False
-#          nir_saturated: False
-#          swir1_saturated: False
-#          swir2_saturated: False
+    masks:
+      - product: ls7_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
 
 
   - product: ls8_nbar_albers
@@ -79,9 +79,19 @@ sources:
           swir2_saturated: False
 
 tide_class:
-  product: high 
-  percent: 25 
-  feature_id: [28, 108, 178, 221, 239]
+  product: high
+#Filter in/out LS7 data By default ls7_slc_off is set meaning datasets not included after 2003-05-01
+#In case we need all data just set this parameter or comment it out in case of we don't need post SLC dates
+#  ls7_slc_off: False
+# This is for deciding low high percentile based on global dates
+  global_epoch_start: 1986-01-01
+  global_epoch_end: 2017-01-01
+  percent: 40 
+  #feature_id: [28, 108, 178, 221, 239] To run only of interest of the polygon
+  feature_id: [108]
+  #Needs sub composite then chose one of these now
+  #e, f, ph, pl
+  #sub_class: e 
 
 ## Define whether and how to chunk over time
 date_ranges:

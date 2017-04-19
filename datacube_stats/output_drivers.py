@@ -334,6 +334,7 @@ class NetCDFCFOutputDriver(OutputDriver):
         _LOG.debug("Updated %s %s", measurement_name, tile_index[1:])
 
     def write_global_attributes(self, attributes):
+        import pdb; pdb.set_trace()
         for output_file in self._output_file_handles.values():
             for k, v in attributes.items():
                 output_file.attrs[k] = v
