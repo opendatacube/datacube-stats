@@ -727,9 +727,10 @@ try:
     #STATS['geomedian'] = GeoMedian
 
     class PreciseGeoMedian(Statistic):
-        def __init__(self, eps=1e-3):
+        def __init__(self, eps=1e-6, maxiters=5000):
             super(PreciseGeoMedian, self).__init__()
             self.eps = eps
+            self.maxiters = maxiters
 
         def compute(self, data):
             """
@@ -738,8 +739,8 @@ try:
             """
             # Assert data shape/dims
             data = data.to_array(dim='variable').transpose('x', 'y', 'variable', 'time').copy()
-
-            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
+            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps,
+                               maxiters=self.maxiters)
 
             return data.transpose('variable', 'y', 'x').to_dataset(dim='variable')
 

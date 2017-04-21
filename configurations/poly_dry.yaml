@@ -1,0 +1,136 @@
+## Define inputs to perform statistics on
+global_attributes:
+  title: DRY composite 
+sources:
+  - product: ls5_nbar_albers
+    name: dry_period
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
+#    source_filter:
+#      product: ls5_level1_scene
+#      gqa_cep90: (-0.25, 0.25)
+    masks:
+      - product: ls5_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
+
+  - product: ls7_nbar_albers
+    name: dry_period
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
+#    source_filter:
+#      product: ls7_level1_scene
+#      gqa_cep90: (-0.25, 0.25)
+    masks:
+      - product: ls7_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
+
+
+  - product: ls8_nbar_albers
+    name: dry_period
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
+#    source_filter:
+#      product: ls8_level1_scene
+#      gqa_cep90: (-0.25, 0.25)
+    masks:
+      - product: ls8_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
+
+
+## Define whether and how to chunk over time
+date_ranges:
+  start_date: 1986-01-01
+  end_date: 2017-01-01
+  stats_duration: 31y
+  step_size: 31y
+  type: simple
+
+## Define output directory and file structure
+#location: '/short/v10/datacube/wofs-summary'
+location: '/g/data/r78/bxb547/GW_works/data'
+
+input_region:
+#  tile: [12, -43]
+  from_file: /g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp
+#
+storage:
+  driver: NetCDFCF
+  #driver: Geotiff
+
+  crs: EPSG:3577
+  tile_size:
+          x: 100000.0
+          y: 100000.0
+  resolution:
+          x: 25
+          y: -25
+  chunking:
+      x: 200
+      y: 200
+      time: 1
+  dimension_order: [time, y, x]
+
+## Computational
+computation:
+  chunking:
+    x: 400
+    y: 400
+
+## Define statistics to perform and how to store the data
+
+output_products:
+ - name: dry 
+   statistic: precisegeomedian
+   output_params:
+      zlib: True
+      fletcher32: True
+   file_path_template: 'DRY_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+   product_type: COMPOSITE DRY
+
+tide_class:
+  product: dry
+  # Here is to consider these months for the following year from polygon data
+  months: ['07', '11']
+  #feature_id: [1, 2, 10, 17, 22, 31] To run only of interest of the polygon

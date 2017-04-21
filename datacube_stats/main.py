@@ -341,6 +341,8 @@ def load_process_save_chunk(output_files, chunk, task, timer, geom):
             _LOG.info("Computing %s in tile %s %s. Current timing: %s",
                       prod_name, task.tile_index, chunk, timer)
             timer.start(prod_name)
+            # scale it to represent in float32 for precise geomedian
+            data = data/10000 if stat.stat_name == 'precisegeomedian' else data
             data = stat.compute(data)
             # mask as per geometry now. Ideally Mask should have been done before computation
             # But masking before computation is a problem as it gets 0 value
@@ -584,8 +586,8 @@ def _create_task_generator(input_region, tide_class, storage):
         return partial(_generate_gridded_tasks, grid_spec=grid_spec)
 
     if tide_class is not None: 
-        _LOG.info('Generating polygon tidal images ')
-        return partial(_generate_non_gridded_tidal_tasks, input_region=input_region, tide_class=tide_class, storage=storage)
+        _LOG.info('Generating polygon images ')
+        return partial(_generate_non_gridded_my_tasks, input_region=input_region, tide_class=tide_class, storage=storage)
 
     if 'tile' in input_region:  # Simple, single tile
         return partial(_generate_gridded_tasks, grid_spec=grid_spec, cell_index=input_region['tile'])
@@ -673,7 +675,7 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
             yield task
 
 
-def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_class, input_region, storage):
+def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class, input_region, storage):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
 
@@ -687,7 +689,11 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
     def make_tile(product, time, group_by, otpstime, geopoly):
         datasets = dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
         fil_datasets = list()
-        dt= [dd[0] for dd in otpstime]
+        dt = list()
+        if tide_class.get('product') == 'dry' or tide_class.get('product') == 'wet':
+            dt = otpstime
+        else:
+            dt= [dd[0] for dd in otpstime]
         # get the date list out of dt string and compare within the epoch
         for ds in datasets:
             if ds.time.begin.date().strftime("%Y-%m-%d") in dt:
@@ -812,8 +818,66 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
         #         (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])]))
         return dtlist, list_low, list_high, ebb_flow
 
+    def get_hydrologic_months():
+        year = tide_class['year']
+        months = tide_class.get('months')
+        if months is not None:
+            st_dt =  str(year+1)+str(months[0])+'01'
+            en_dt =  str(year+1)+str(months[1])+'30'
+        else:
+            st_dt = '01/07/' + str(year+1)
+            en_dt = '30/11/' + str(year+1)
+        date_list = pd.date_range(st_dt, en_dt)
+        date_list = date_list.to_datetime().astype(str).tolist()
+        return date_list
+        
+
     with fiona.open(input_region['from_file']) as input_region:
         crs = CRS(str(input_region.crs_wkt))
+        if tide_class.get('product') == 'dry' or tide_class.get('product') == 'wet':
+            for feature in input_region:
+                # get the year id and geometry
+                tide_class['year'] = feature['properties']['DN']
+                Id = feature['properties']['Id']
+                if Id in tide_class['feature_id']:
+                    geom = feature['geometry']
+                    boundary_polygon = Geometry(geom, crs)
+                    tide_class['geom'] = boundary_polygon
+                    tile_index=(str(Id), tide_class['year'])
+                    list_time = get_hydrologic_months()  
+                    for time_period in date_ranges:
+                        task = StatsTask(time_period=time_period, tile_index=tile_index)
+                        for source_spec in sources_spec:
+                            group_by_name = source_spec.get('group_by', 'solar_day')
+
+                        # Build Tile
+                            ep_range = time_period
+                            if (source_spec['product'] == 'ls7_nbar_albers') and (ep_range[0] > LS7_SLC_DT)  \
+                                    and (tide_class.get('ls7_slc_off') is None):
+                                continue
+                            if (tide_class.get('ls7_slc_off') is None) and (source_spec['product'] == 'ls7_nbar_albers') \
+                                    and (ep_range[1]  > LS7_SLC_DT):
+                                ep_range = (ep_range[0], LS7_SLC_DT)
+                            data = make_tile(product=source_spec['product'], time=ep_range,
+                                             group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon) 
+                            masks = [make_tile(product=mask['product'], time=ep_range,
+                                             group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon)
+                                     for mask in source_spec.get('masks', [])]
+
+                            if data is None:
+                                continue
+                            _LOG.info("source details for %s and values %s", source_spec['product'], 
+                                      str(data.sources.time.values))  
+                            task.sources.append({
+                                'data': data,
+                                'masks': masks,
+                                'spec': source_spec,
+                            })
+                        if task.sources:
+                            _LOG.info('Created task for time period: %s', time_period)
+                            yield task
+            return
+
          
         for feature in input_region:
             lon = feature['properties']['lon']
@@ -858,10 +922,10 @@ def _generate_non_gridded_tidal_tasks(index, sources_spec, date_ranges, tide_cla
                     key = set(e[0] for e in list_time)
                     ebb_flow_class = [ff for ff in eval(ebb_flow) if ff[0] in key]
                     tide_class['ebb_flow'] = {'ebb_flow':ebb_flow_class}
-                    _LOG.info('\nCreated EBB FLOW for feature %d , time period: %s \t%s', 
-                              Id, date_ranges, str(ebb_flow_class))
-                    _LOG.info('\n %s DATE LIST for feature %d , time period: %s \t%s',
-                              pr.upper(), Id, date_ranges, str(list_time))
+                    _LOG.info('\nCreated EBB FLOW for feature %d , length %d, time period: %s \t%s', 
+                              Id, len(ebb_flow_class), date_ranges, str(ebb_flow_class))
+                    _LOG.info('\n %s DATE LIST for feature %d length %d, time period: %s \t%s',
+                              pr.upper(), Id, len(list_time), date_ranges, str(list_time))
                     task = StatsTask(time_period=time_period, tile_index=tile_index,
                                      extras={'percent': tide_class['percent']})
                     _LOG.info("doing for product %s for percentage %s ", pr, str(tide_class['percent']))
