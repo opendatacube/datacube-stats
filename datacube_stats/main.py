@@ -30,13 +30,14 @@ from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube.storage.masking import mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
-from datacube.utils import read_documents, import_function, tile_iter
+from datacube.utils import read_documents, import_function
 from datacube.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
 from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
+from datacube_stats.utils import tile_iter
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
