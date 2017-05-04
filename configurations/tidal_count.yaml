@@ -89,11 +89,11 @@ date_ranges:
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
-location: '/g/data/r78/bxb547/TIDE_MODEL/output_product'
+location: '/g/data/r78/bxb547/TIDE_MODEL/output'
 
 input_region:
 #  tile: [12, -43]
-  from_file: /g/data/r78/bxb547/TIDE_MODEL/GA_tidal_model.shp
+  from_file: /g/data/u46/users/bxb547/otps/vector_data/GA_tidal_model.shp
 #
 storage:
   driver: NetCDFCF
@@ -122,20 +122,12 @@ computation:
 
 output_products:
  - name: tidal_low
-   statistic: precisegeomedian
-   output_params:
-      zlib: True
-      fletcher32: True
-   file_path_template: 'COMPOSITE_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
-   product_type: COMPOSITE LOW 
-
- - name: tidal_count
+   #statistic: precisegeomedian
    statistic: clearcount
-#   statistic: clearcount
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
+   file_path_template: 'COUNT_COMPOSITE_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
    product_type: COMPOSITE LOW 
 
 tide_class:
@@ -150,4 +142,3 @@ tide_class:
   #Needs sub composite then chose one of these now
   #e, f, ph, pl
   #sub_class: f
-  feature_id: [67, 68, 69, 70, 71, 72]

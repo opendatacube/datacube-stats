@@ -139,5 +139,5 @@ output_products:
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'COMPOSITE_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
+   file_path_template: 'TEST_32_COMPOSITE_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
    product_type: COMPOSITE HIGH

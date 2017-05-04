@@ -34,13 +34,14 @@ from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube.storage.masking import mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
-from datacube.utils import read_documents, import_function, tile_iter
+from datacube.utils import read_documents, import_function
 from datacube.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
 from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
+from datacube_stats.utils import tile_iter
 from otps.predict_wrapper import predict_tide
 from otps import TimePoint
 from datetime import timedelta
@@ -322,8 +323,8 @@ def execute_task(task, output_driver, chunking, tide_class):
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
     except Exception as e:
-        _LOG.error("Error processing task: %s %s", task, e)
-        raise sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2] 
+        _LOG.error("Error processing task: %s", task)
+        raise StatsProcessingException("Error processing task: %s" % task) from e
 
     timer.pause('total')
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
@@ -343,16 +344,20 @@ def load_process_save_chunk(output_files, chunk, task, timer, geom):
             timer.start(prod_name)
             # scale it to represent in float32 for precise geomedian
             data = data/10000 if stat.stat_name == 'precisegeomedian' else data
-            data = stat.compute(data)
+            geobox = data.geobox
+            ndata = stat.compute(data)
             # mask as per geometry now. Ideally Mask should have been done before computation
             # But masking before computation is a problem as it gets 0 value
-            mask = geometry_mask([geom], data.geobox, invert=True)
-            data = data.where(mask)
+            mask = geometry_mask([geom], geobox, invert=True)
+            ndata = ndata.where(mask)
             timer.pause(prod_name)
             # For each of the data variables, shove this chunk into the output results
             timer.start('writing_data')
-            for var_name, var in data.data_vars.items():  # TODO: Move this loop into output_files
-                output_files.write_data(prod_name, var_name, chunk, var.values)
+            if stat.stat_name == "clearcount":
+               output_files.write_data(prod_name, ndata.name, chunk, ndata.values)
+            else: 
+                for var_name, var in ndata.data_vars.items():  # TODO: Move this loop into output_files
+                    output_files.write_data(prod_name, var_name, chunk, var.values)
             timer.pause('writing_data')
     except EmptyChunkException:
         _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
@@ -370,6 +375,7 @@ def _load_data(sub_tile_slice, sources):
     :param sub_tile_slice: A portion of a tile, tuple coordinates
     :param sources: a dictionary containing `data`, `spec` and `masks`
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
+   
     """
     datasets = [_load_masked_data(sub_tile_slice, source_prod)
                 for source_prod in sources]  # list of datasets
@@ -413,7 +419,6 @@ def _load_masked_data(sub_tile_slice, source_prod):
     if completely_empty:
         # Discard empty slice
         return None
-
     if 'masks' in source_prod and 'masks' in source_prod['spec']:
         for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
             if mask_tile is None:
@@ -427,6 +432,7 @@ def _load_masked_data(sub_tile_slice, source_prod):
             mask = make_mask(mask, **mask_spec['flags'])
             data = sensible_where(data, mask)
             del mask
+    #import pdb; pdb.set_trace() 
     return data
 
 
@@ -697,6 +703,7 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
         # get the date list out of dt string and compare within the epoch
         for ds in datasets:
             if ds.time.begin.date().strftime("%Y-%m-%d") in dt:
+                #_LOG.info("location of filter ds %s", ds.local_path)
                 fil_datasets.append(ds)
         if len(fil_datasets) == 0:
             _LOG.info("No matched for product %s on %s", product, str(otpstime))
@@ -837,8 +844,11 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
         if tide_class.get('product') == 'dry' or tide_class.get('product') == 'wet':
             for feature in input_region:
                 # get the year id and geometry
-                tide_class['year'] = feature['properties']['DN']
-                Id = feature['properties']['Id']
+                if tide_class.get('product') == 'dry':
+                    tide_class['year'] = int(feature['properties']['DN'])
+                else:
+                    tide_class['year'] = int(feature['properties']['WY1'])
+                Id = feature['properties']['ID']
                 if Id in tide_class['feature_id']:
                     geom = feature['geometry']
                     boundary_polygon = Geometry(geom, crs)
@@ -882,7 +892,7 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
         for feature in input_region:
             lon = feature['properties']['lon']
             lat = feature['properties']['lat']
-            Id = feature['properties']['Id']
+            Id = feature['properties']['ID']
             #filter out only on selected features
             if Id in tide_class['feature_id']:
             #To run a limited polygons

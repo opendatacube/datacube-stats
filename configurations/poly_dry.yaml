@@ -89,11 +89,12 @@ date_ranges:
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
-location: '/g/data/r78/bxb547/GW_works/data'
+location: '/g/data/r78/bxb547/GW_works/data_2'
 
 input_region:
 #  tile: [12, -43]
-  from_file: /g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp
+  #from_file: /g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp
+  from_file: /g/data/r78/bxb547/GW_works/bur_dry_albers.shp
 #
 storage:
   driver: NetCDFCF

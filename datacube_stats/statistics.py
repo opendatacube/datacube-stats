@@ -259,8 +259,9 @@ class ClearCount(Statistic):
 
     def compute(self, data):
         # TODO Fix Hardcoded 'time' and pulling out first data var
-        _, sample_data_var = next(data.data_vars.items())
-        count_values = sample_data_var.count(dim='time').rename('clear_observations')
+        #_, sample_data_var = next(data.data_vars.items())
+        _, sample_data_var = next(iter(data.data_vars.items())) 
+        count_values = sample_data_var.count(dim='time').rename('count_observations')
         return count_values
 
     def measurements(self, input_measurements):
@@ -693,6 +694,7 @@ try:
         assert len(inarray.shape) == 4
         assert axis == 3
 
+        maxiters = kwargs.get('maxiters', 500) 
         xs, ys, bands, times = inarray.shape
         output = np.ndarray((xs, ys, bands), dtype=inarray.dtype)
         with warnings.catch_warnings():  # Don't print error about computing mean of empty slice
@@ -700,7 +702,7 @@ try:
             for ix in range(xs):
                 for iy in range(ys):
                     try:
-                        output[ix, iy, :] = f(inarray[ix, iy, :, :], eps=eps, axis=1)
+                        output[ix, iy, :] = f(inarray[ix, iy, :, :], eps=eps, maxiters=maxiters, axis=1)
                     except ValueError:
                         output[ix, iy, :] = np.nan
         return output
@@ -760,7 +762,9 @@ try:
                 key['nodata'] = np.nan
         
             return output_measurements
+
     STATS['precisegeomedian'] = PreciseGeoMedian
+    STATS['clearcount'] = ClearCount
 
 
 
