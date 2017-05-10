@@ -212,7 +212,8 @@ class StatsApp(object):
         output_driver = partial(self.output_driver,
                                 output_path=self.location,
                                 app_info=app_info,
-                                storage=self.storage)
+                                storage=self.storage,
+                                global_attributes=self.global_attributes)
         task_runner = partial(execute_task,
                               output_driver=output_driver,
                               chunking=self.computation['chunking'])
@@ -508,6 +509,7 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None):
     stats_app.date_ranges = _configure_date_ranges(index, config)
     stats_app.task_generator = _create_task_generator(input_region, stats_app.storage)
     stats_app.output_driver = _prepare_output_driver(stats_app.storage)
+    stats_app.global_attributes = config.get('global_attributes', {})
     stats_app.process_completed = do_nothing  # TODO: Save dataset to database
 
     return stats_app

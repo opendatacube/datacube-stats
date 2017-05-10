@@ -110,7 +110,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
     """
     valid_extensions = []
 
-    def __init__(self, task, storage, output_path, app_info=None):
+    def __init__(self, task, storage, output_path, app_info=None, global_attributes=None):
         self._storage = storage
 
         self._output_path = output_path
@@ -128,6 +128,9 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         self._geobox = task.geobox
         self._output_products = task.output_products
+
+        #: dict of str to str
+        self.global_attributes = global_attributes
 
     def close_files(self, completed_successfully):
         # Turn file_handles into paths
@@ -312,8 +315,7 @@ class NetCDFCFOutputDriver(OutputDriver):
                 {k: v for k, v in measurement.items() if k in _NETCDF_VARIABLE__PARAMETER_NAMES})
         return variable_params
 
-    @staticmethod
-    def _nco_from_sources(sources, geobox, measurements, variable_params, filename):
+    def _nco_from_sources(self, sources, geobox, measurements, variable_params, filename):
         coordinates = OrderedDict((name, geometry.Coordinate(coord.values, coord.units))
                                   for name, coord in sources.coords.items())
         coordinates.update(geobox.coordinates)
@@ -324,7 +326,9 @@ class NetCDFCFOutputDriver(OutputDriver):
                                                             units=variable['units']))
                                 for variable in measurements)
 
-        return create_netcdf_storage_unit(filename, geobox.crs, coordinates, variables, variable_params)
+        return create_netcdf_storage_unit(filename, crs=geobox.crs, coordinates=coordinates,
+                                          variables=variables, variable_params=variable_params,
+                                          global_attributes=self.global_attributes)
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
         self._output_file_handles[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(
