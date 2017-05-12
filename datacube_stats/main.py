@@ -465,7 +465,7 @@ def _get_app_metadata(config_file):
                 'name': 'datacube-stats',
                 'version': datacube_stats.__version__,
                 'repo_url': 'https://github.com/GeoscienceAustralia/agdc_statistics.git',
-                'parameters': {'configuration_file': str(config_file)}
+                'parameters': {'configuration_file': config_file}
             },
         }
     }
