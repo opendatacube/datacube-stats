@@ -6,6 +6,7 @@ This command is run as ``datacube-stats``, all operation are driven by a configu
 """
 from __future__ import absolute_import, print_function
 
+import inspect
 import logging
 from functools import partial
 from textwrap import dedent
@@ -67,6 +68,20 @@ def _print_version(ctx, param, value):
     ctx.exit()
 
 
+def list_statistics(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+
+#       click.echo("{:>20} | {}".format(name, inspect.getdoc(stat)))
+    for name, stat in STATS.items():
+        click.echo(name)
+        # click.echo(inspect.getdoc(stat))
+        # click.echo('\n\n')
+#     click.echo(pd.Series({name: inspect.getdoc(stat) for name, stat in STATS.items()}))
+
+    ctx.exit()
+
+
 @click.command(name='datacube-stats')
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
@@ -78,6 +93,7 @@ def _print_version(ctx, param, value):
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
                                                       'single tile_index specified as [X] [Y]')
 @click.option('--output-location', help='Override output location in configuration file')
+@click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
 @ui.global_cli_options
 @ui.executor_cli_options
 @click.option('--version', is_flag=True, callback=_print_version,
