@@ -445,17 +445,19 @@ Available statistics
 Custom statistics
 =================
 
-Statistics operations in Data Cube Statistics are implemented as Python Classes, which extends :class:`datacube_stats.statistics.Statistic`. Two
-methods should be implmented, ``measurements()`` and ``compute()``.
+Statistics operations in Data Cube Statistics are implemented as Python Classes, which extends ``datacube_stats.statistics.Statistic``. Two
+methods should be implemented, ``measurements()`` and ``compute()``.
 
 measurements()
     Takes a list of measurements provided by the input product type, and returns a list
     of measurements that this class will produce when asked to compute a statistic over some data.
 
 compute()
-    Takes a :class:`xarray.Dataset` containing some data that has been loaded, and returns another :class:`xarray.Dataset` after doing some computation.
+    Takes a ``xarray.Dataset`` containing some data that has been loaded, and returns another ``xarray.Dataset`` after doing some computation.
     The variables on the returned dataset must match the types specified by ``measurements()``.
 
+For example, the following implementation requires it's input data to contain a variable named ``water``, and outputs datasets with a single variable
+named ``count_wet`` of type ``int16``. When passed appropriate data it counts the number of times that 132 or 128 occur.
 
 .. code-block:: python
 
@@ -465,7 +467,7 @@ compute()
             # The PQ sea mask that we use is dodgy and should be ignored. It excludes lots of useful data
             wet = ((data.water == 128) + (data.water == 132)).sum(dim='time')
             return xarray.Dataset({'count_wet': wet,
-                                   attrs=dict(crs=data.crs))
+                                   attrs={'crs':data.crs})
 
         def measurements(self, input_measurements):
             measurement_names = set(m['name'] for m in input_measurements)
