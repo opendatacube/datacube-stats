@@ -53,6 +53,7 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
+_html/
 
 # PyBuilder
 target/
@@ -67,3 +68,5 @@ docs/html/
 
 # Generated Documentation
 docs/dev/generate/
+
+*.swp
