@@ -25,15 +25,21 @@ Main features
 * Optional per-pixel metadata tracking
 * Out of the box support for most common statistics - see `Available statistics`_
 * Able to create user defined `Custom statistics`_
-* Able to handle any CRS and resolution combination (through the power of the `ODC`_)
+* Able to handle any `CRS`_ and resolution combination (through the power of the `ODC`_)
 
 
 Installation
 ============
 
+.. code-block:: bash
+
+    $ pip install https://github.com/GeoscienceAustralia/agdc_statistics/
 
 Usage
 =====
+
+Simplest case
+-------------
 
 At it's simplest, Data Cube Statistics only requires specifying a configuration file:
 
@@ -41,6 +47,8 @@ At it's simplest, Data Cube Statistics only requires specifying a configuration 
 
     $ datacube-stats example-configuration.yaml
 
+Parallel processing
+-------------------
 
 Parallel operation is provided by executors in ODC. For example to run across 4 cores:
 
@@ -48,6 +56,8 @@ Parallel operation is provided by executors in ODC. For example to run across 4 
 
     $ datacube-stats --executor multiproc 4 example-configuration.yaml
 
+Overrides for testing
+---------------------
 
 For tiled jobs, you can specify a single tile as a test run:
 
@@ -62,6 +72,12 @@ Also useful when testing stats configurations, you can override the output direc
 
     $ datacube-stats --output-location /home/user/example_folder/ example-configuration.yaml
 
+Listing available Statistics
+----------------------------
+
+.. code-block:: bash
+
+    $ datacube-stats --list-statistics
 
 
 Configuration format
