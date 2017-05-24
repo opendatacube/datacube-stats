@@ -218,7 +218,7 @@ class StatsApp(object):
                                 global_attributes=self.global_attributes)
         task_runner = partial(execute_task,
                               output_driver=output_driver,
-                              chunking=self.computation['chunking'])
+                              chunking=self.computation.get('chunking', {}))
         return run_tasks(tasks,
                          executor,
                          task_runner,
@@ -306,7 +306,7 @@ def execute_task(task, output_driver, chunking):
         _LOG.warning(e)
     except Exception as e:
         _LOG.error("Error processing task: %s", task)
-        raise StatsProcessingException("Error processing task: %s" % task) from e
+        raise StatsProcessingException("Error processing task: %s" % task)
 
     timer.pause('total')
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
@@ -507,7 +507,7 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None):
     stats_app.output_product_specs = config['output_products']
     stats_app.location = config.get('location',
                                     output_location)  # Write files to current directory if not set in config
-    stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
+    stats_app.computation = config.get('computation', {})
     stats_app.date_ranges = _configure_date_ranges(index, config)
     stats_app.task_generator = _create_task_generator(input_region, stats_app.storage)
     stats_app.output_driver = _prepare_output_driver(stats_app.storage)
@@ -560,19 +560,18 @@ def _configure_date_ranges(index, config):
 
 
 def _create_task_generator(input_region, storage):
-    grid_spec = _make_grid_spec(storage)
     if input_region is None:
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
-        return partial(_generate_gridded_tasks, grid_spec=grid_spec)
+        return GriddedTaskGenerator(storage)
 
-    if 'tile' in input_region:  # Simple, single tile
-        return partial(_generate_gridded_tasks, grid_spec=grid_spec, cell_index=input_region['tile'])
+    elif 'tile' in input_region:  # Simple, single tile
+        return GriddedTaskGenerator(storage, cell_index=input_region['tile'])
 
     elif 'geometry' in input_region:  # Larger spatial region
         # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
         _LOG.info('Found geojson `input_region`, outputing tiles.')
-        geopolygon = Geometry(input_region['geometry'], CRS('EPSG:4326'))
-        return partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
+        geopolygon = Geometry(input_region['geometry'], CRS('EPSG:4326'))  # GeoJSON is always 4326
+        return GriddedTaskGenerator(storage, geopolygon=geopolygon)
 
     elif 'from_file' in input_region:
         _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])
@@ -585,15 +584,66 @@ def _create_task_generator(input_region, storage):
             crs = CRS(input_region.crs_wkt)
             boundary_polygon = Geometry(mapping(final), crs)
 
-        return partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=boundary_polygon)
+        return GriddedTaskGenerator(storage, geopolygon=boundary_polygon)
 
     else:
         _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
-        return partial(_generate_non_gridded_tasks, input_region=input_region, storage=storage)
+        return NonGriddedTaskGenerator(input_region=input_region, storage=storage)
 
 
-def do_nothing(task):
+def do_nothing(*args, **varargs):
     pass
+
+
+class GriddedTaskGenerator(object):
+    def __init__(self, storage, geopolygon=None, cell_index=None):
+        self.grid_spec = _make_grid_spec(storage)
+        self.geopolygon = geopolygon
+        self.cell_index = cell_index
+
+    def __call__(self, index, sources_spec, date_ranges, ):
+        """
+        Generate the required tasks through time and across a spatial grid.
+        
+        Input region can be limited by specifying either/or both of `geopolygon` and `cell_index`, which
+        will both result in only datasets covering the poly or cell to be included.
+    
+        :param index: Datacube Index
+        :return:
+        """
+        workflow = GridWorkflow(index, grid_spec=self.grid_spec)
+
+        for time_period in date_ranges:
+            _LOG.info('Making output product tasks for time period: %s', time_period)
+            timer = MultiTimer().start('creating_tasks')
+
+            # Tasks are grouped by tile_index, and may contain sources from multiple places
+            # Each source may be masked by multiple masks
+            tasks = {}
+            for source_spec in sources_spec:
+                group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
+                source_filter = source_spec.get('source_filter', None)
+                data = workflow.list_cells(product=source_spec['product'], time=time_period,
+                                           group_by=group_by_name, geopolygon=self.geopolygon,
+                                           cell_index=self.cell_index, source_filter=source_filter)
+                masks = [workflow.list_cells(product=mask['product'], time=time_period,
+                                             group_by=group_by_name, geopolygon=self.geopolygon,
+                                             cell_index=self.cell_index)
+                         for mask in source_spec.get('masks', [])]
+
+                for tile_index, sources in data.items():
+                    task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
+                    task.sources.append({
+                        'data': sources,
+                        'masks': [mask.get(tile_index) for mask in masks],
+                        'spec': source_spec,
+                    })
+
+            timer.pause('creating_tasks')
+            if tasks:
+                _LOG.info('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
+            for task in tasks.values():
+                yield task
 
 
 def _make_grid_spec(storage):
@@ -606,101 +656,74 @@ def _make_grid_spec(storage):
                     resolution=[storage['resolution'][dim] for dim in crs.dimensions])
 
 
-def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None):
-    """
-    Generate the required tasks through time and across a spatial grid.
+class NonGriddedTaskGenerator(object):
+    def __init__(self, input_region, storage):
+        self.input_region = input_region
+        self.storage = storage
+
+    def __call__(self, index, sources_spec, date_ranges):
+        """
+        Make stats tasks for a single defined spatial region, not part of a grid.
     
-    Input region can be limited by specifying either/or both of `geopolygon` and `cell_index`, which
-    will both result in only datasets covering the poly or cell to be included.
+        :param index: database index
+        :param input_region: dictionary of query parameters defining the target input region. Usually
+                             x/y spatial boundaries.
+        :return:
+        """
+        make_tile = ArbitraryTileMaker(index, self.input_region, self.storage)
 
-    :param index: Datacube Index
-    :return:
-    """
-    workflow = GridWorkflow(index, grid_spec=grid_spec)
+        for time_period in date_ranges:
+            task = StatsTask(time_period)
 
-    for time_period in date_ranges:
-        _LOG.info('Making output product tasks for time period: %s', time_period)
-        timer = MultiTimer().start('creating_tasks')
+            for source_spec in sources_spec:
+                group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
-        # Tasks are grouped by tile_index, and may contain sources from multiple places
-        # Each source may be masked by multiple masks
-        tasks = {}
-        for source_spec in sources_spec:
-            group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
-            source_filter = source_spec.get('source_filter', None)
-            data = workflow.list_cells(product=source_spec['product'], time=time_period,
-                                       group_by=group_by_name, geopolygon=geopolygon,
-                                       cell_index=cell_index, source_filter=source_filter)
-            masks = [workflow.list_cells(product=mask['product'], time=time_period,
-                                         group_by=group_by_name, geopolygon=geopolygon,
-                                         cell_index=cell_index)
-                     for mask in source_spec.get('masks', [])]
+                # Build Tile
+                data = make_tile(product=source_spec['product'], time=time_period, group_by=group_by_name)
 
-            for tile_index, sources in data.items():
-                task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
+                masks = [make_tile(product=mask['product'], time=time_period, group_by=group_by_name)
+                         for mask in source_spec.get('masks', [])]
+
+                if len(data.sources.time) == 0:
+                    continue
+
                 task.sources.append({
-                    'data': sources,
-                    'masks': [mask.get(tile_index) for mask in masks],
+                    'data': data,
+                    'masks': masks,
                     'spec': source_spec,
                 })
 
-        timer.pause('creating_tasks')
-        if tasks:
-            _LOG.info('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
-        for task in tasks.values():
-            yield task
+            if task.sources:
+                _LOG.info('Created task for time period: %s', time_period)
+                yield task
 
 
-def _generate_non_gridded_tasks(index, sources_spec, date_ranges, input_region, storage):
+class ArbitraryTileMaker(object):
     """
-    Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
-
-    :param index: database index
-    :param input_region: dictionary of query parameters defining the target input region. Usually
-                         x/y spatial boundaries.
-    :return:
+    Create a :class:`Tile` which can be used by :class:`GridWorkflow` to later load the required data.
+    
     """
-    dc = Datacube(index=index)
+    def __init__(self, index, input_region, storage):
+        self.dc = Datacube(index=index)
+        self.input_region = input_region
+        self.storage = storage
 
-    def make_tile(product, time, group_by):
-        datasets = dc.find_datasets(product=product, time=time, **input_region)
+    def __call__(self, product, time, group_by):
+        # Find the sources for each layer
+        datasets = self.dc.find_datasets(product=product, time=time, **self.input_region)
         group_by = query_group_by(group_by=group_by)
-        sources = dc.group_datasets(datasets, group_by)
+        sources = self.dc.group_datasets(datasets, group_by)
 
-        res = storage['resolution']
+        # Find the geopolygon for the tile of interest
+        output_crs = CRS(self.storage['crs'])
+        output_resolution = [self.storage['resolution'][dim] for dim in output_crs.dimensions]
 
-        geopoly = query_geopolygon(**input_region)
-        geopoly = geopoly.to_crs(CRS(storage['crs']))
-        geobox = GeoBox.from_geopolygon(geopoly, (res['y'], res['x']))
+        geopoly = query_geopolygon(**self.input_region)
+        geopoly = geopoly.to_crs(output_crs)
+
+        geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
 
         return Tile(sources, geobox)
-
-    for time_period in date_ranges:
-        task = StatsTask(time_period)
-
-        for source_spec in sources_spec:
-            group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
-
-            # Build Tile
-            data = make_tile(product=source_spec['product'], time=time_period,
-                             group_by=group_by_name)
-
-            masks = [make_tile(product=mask['product'], time=time_period,
-                               group_by=group_by_name)
-                     for mask in source_spec.get('masks', [])]
-
-            if len(data.sources.time) == 0:
-                continue
-
-            task.sources.append({
-                'data': data,
-                'masks': masks,
-                'spec': source_spec,
-            })
-
-        if task.sources:
-            _LOG.info('Created task for time period: %s', time_period)
-            yield task
 
 
 def pickle_stream(objs, filename):

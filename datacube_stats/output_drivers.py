@@ -205,19 +205,18 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     def _generate_output_filename(self, output_product, **kwargs):
         # Fill parameters from config file filename specification
-        x, y = self._task.tile_index
-        epoch_start, epoch_end = self._task.time_period
-        extra_params = kwargs.copy()
-        extra_params.update(output_product.extras)
+        params = {}
+        if self._task.tile_index is not None:
+            params['x'], params['y'] = self._task.tile_index
+
+        params['epoch_start'], params['epoch_end'] = self._task.time_period
+        params['name'] = output_product.name
+        params['stat_name'] = output_product.stat_name
+        params.update(output_product.extras)
+        params.update(kwargs)
 
         output_path = Path(self._output_path,
-                           output_product.file_path_template.format(
-                               x=x, y=y,
-                               epoch_start=epoch_start,
-                               epoch_end=epoch_end,
-                               name=output_product.name,
-                               stat_name=output_product.stat_name,
-                               **extra_params))
+                           output_product.file_path_template.format(**params))
         return output_path
 
     def _find_source_datasets(self, stat, uri=None):

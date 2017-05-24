@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from datacube.model import DatasetType
 from datacube_stats.statistics import STATS
 
