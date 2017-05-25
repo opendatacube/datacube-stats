@@ -502,6 +502,16 @@ Running with PBS job scheduler
 ==============================
 
 
+
+Release Notes
+=============
+
+0.9 release
+-----------
+
+* User documentation!
+* List available statistics from the command line ``datacube-stats --list-statistics``
+
 .. _ODC: https://github.com/opendatacube/datacube-core
 .. _Open Data Cube: https://github.com/opendatacube/datacube-core
 .. _NetCDF-CF: http://cfconventions.org/
