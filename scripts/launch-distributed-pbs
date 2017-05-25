@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Use PBSDSH to start a dask-scheduler and a bunch of dask-workers, then
 # run the desired script to connect to them to run a job.

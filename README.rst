@@ -502,6 +502,23 @@ Running with PBS job scheduler
 ==============================
 
 
+Installation onto Raijin
+========================
+
+This section is only relevant for `DEA`_ deployment managers
+
+Run the following after logging into ``raijin``.
+
+.. code-block:: bash
+
+    $ cd ansible
+    $ ansible-playbook -v -v -i "localhost," -c local install-stats-module.yml
+
+-v                Show verbose output
+-i <hosts list>   Which hosts to run on, trailing ',' indicates list of one
+-c                Connection type. local: run commands locally, not over SSH
+
+
 
 Release Notes
 =============
@@ -512,6 +529,10 @@ Release Notes
 * User documentation!
 * List available statistics from the command line ``datacube-stats --list-statistics``
 
+
+
+
+.. _DEA: http://www.ga.gov.au/about/projects/geographic/digital-earth-australia
 .. _ODC: https://github.com/opendatacube/datacube-core
 .. _Open Data Cube: https://github.com/opendatacube/datacube-core
 .. _NetCDF-CF: http://cfconventions.org/
