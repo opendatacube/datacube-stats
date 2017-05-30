@@ -42,4 +42,7 @@
 #        backup: yes
 #      notify: restart sd-agent
 
+    - name: Ensure module is not writable by anyone
+      command: "chmod -R a-w {{ install_root }}"
+
     

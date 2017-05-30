@@ -1,0 +1,52 @@
+dist: trusty
+sudo: false  # Use the new travis docker based infrastructure
+
+git:
+  # We need a deeper depth for 'git descibe' to ensure
+  # we can reach the last tagged version.
+  depth: 99999
+
+language: python
+matrix:
+  include:
+    - python: "3.6"
+
+cache:
+  directories:
+    - $HOME/.cache/pip
+
+
+install:
+  - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+  - bash miniconda.sh -f -b -p $HOME/miniconda
+  - export PATH="$HOME/miniconda/bin:$PATH"
+  - hash -r
+
+  # travis specific goo
+  - conda config --set always_yes yes --set changeps1 no
+  - conda config --show-sources
+  - conda config --show
+
+  - conda config --prepend channels conda-forge
+  - conda update --all
+
+  # print conda info
+  - conda info -a
+
+  - conda env create -n agdc datacube pytest
+  - source activate agdc
+  - pip install . --no-deps --upgrade
+
+  - pip freeze
+
+
+after_success:
+  - test $TRAVIS_PYTHON_VERSION = "3.6" && coveralls
+
+notifications:
+  slack:
+    on_success: change
+    on_failure: always
+    on_pull_requests: false
+    rooms:
+      secure: kUlIXKlqxpnfNwJxgZdLy5XtfeYnc5Iq+OdvtyMFBJ94Iw3gP64KH8C/pUPqJblwiINj/vi5AF1TSaVG5VgSVF5zwEhAa4Ad0V9OZvsfJuLoE5/nFvkCdXeOU70/aMitF5SG7x6Q9LYhDqUDtS/XyGy48f2eiXN0Sa6/3KGQbyFXRvMDQercNR8LXXXjJZ0VjMsUD2Zl5FVy3FMHItVUTVlyMiBc/1fPJiSxOPz8ySSjeANnKuFIQN7/h+IbIrEVIJh8/T8SkOpuYceXBosr4HDfcTt3mFp0gT4Gc4TvYIjN/ykzomSY2+fkr0txSb7ao7+ZZvZ6XWfB6A/MnGNbmwSFmYX5fbBs493ErsIrCealsqvtyE2lvAj58vOv/5sFtBcD9d2hPUCCm345D7TGh6KMrSELfg4fhTiGfg181I6ZdQUR6veb9H1aPmE2Kh+XnZOaGP/uI7GkUeCRH92pPPjWf6/7YdxwFTsgggKxdE3FZVwYjO6DJBJ12iuXcOVz6MFXCpeiYNZPzXBtCF+tngGS9NEG6/CM1wP5CfbJEEbYXB0eL+qRQRkCgzYKQgvtreOfsfbMP1Oi2vBTq/JfdY888B3HVXJxUm1RPAAw4DsynbKzyCqoRECz6+X2zCR7i5DlcoEKuKURRA9DA0WPnMqUHAJsUS2n7jj58ANHo0o=
