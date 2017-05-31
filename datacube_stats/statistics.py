@@ -363,6 +363,33 @@ class WofsStats(Statistic):
             return [wet, dry, frequency]
 
 
+class FlagCounter(Statistic):
+    """
+    Count number of flagged pixels
+
+    Requires:
+    - The name of a `measurement` to base the count upon
+    - A list of `flags` that must be set in the measurement
+    """
+
+    def __init__(self, measurement, flags):
+        self.measurement = measurement
+        self.flags = flags
+
+    def compute(self, data):
+        mask = make_mask(data[self.measurement], **self.flags)
+        return mask.sum(dim='time').rename({self.measurement: 'count'})
+
+    def measurements(self, input_measurements):
+        measurement_names = set(m['name'] for m in input_measurements)
+        assert self.measurement in measurement_names
+
+        return {'name': 'count',
+                'dtype': 'int16',
+                'nodata': -1,
+                'units': '1'}
+
+
 class NormalisedDifferenceStats(Statistic):
     """
     Simple NDVI/NDWI and other Normalised Difference stats
@@ -660,6 +687,7 @@ STATS = {
     'wofs_summary': WofsStats,
     'clear_count': ClearCount,
     'masked_count': MaskedCount,
+    'flag_counter': FlagCounter,
 }
 
 

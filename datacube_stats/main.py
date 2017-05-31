@@ -6,10 +6,11 @@ This command is run as ``datacube-stats``, all operation are driven by a configu
 """
 from __future__ import absolute_import, print_function
 
-import inspect
 import logging
 from functools import partial
 from textwrap import dedent
+
+from utils import sensible_mask_invalid_data, sensible_where
 
 try:
     import cPickle as pickle
@@ -30,7 +31,6 @@ from datacube.api import make_mask, GridWorkflow, Tile
 from datacube.api.query import query_group_by, query_geopolygon, Query
 from datacube.model import GridSpec
 from datacube.utils.geometry import CRS, GeoBox, Geometry
-from datacube.storage.masking import mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function
@@ -422,29 +422,6 @@ def _load_masked_data(sub_tile_slice, source_prod):
             data = sensible_where(data, mask)
             del mask
     return data
-
-
-def sensible_mask_invalid_data(data):
-    # TODO This should be pushed up to datacube-core
-    # xarray.DataArray.where() converts ints to floats, since NaNs are used to represent nodata
-    # by default, this uses float64, which is way over the top for an int16 value, so
-    # lets convert to float32 first, to save a bunch of memory.
-    data = _convert_to_floats(data)  # This is stripping out variable attributes
-    return mask_invalid_data(data)
-
-
-def sensible_where(data, mask):
-    data = _convert_to_floats(data)  # This is stripping out variable attributes
-    return data.where(mask)
-
-
-def _convert_to_floats(data):
-    # Use float32 instead of float64 if input dtype is int16
-    assert isinstance(data, xarray.Dataset)
-    for name, dataarray in data.data_vars.items():
-        if dataarray.dtype != np.int16:
-            return data
-    return data.apply(lambda d: d.astype(np.float32), keep_attrs=True)
 
 
 def _source_measurement_defs(index, sources):
