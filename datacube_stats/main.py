@@ -10,8 +10,6 @@ import logging
 from functools import partial
 from textwrap import dedent
 
-from utils import sensible_mask_invalid_data, sensible_where
-
 try:
     import cPickle as pickle
 except ImportError:
@@ -40,7 +38,7 @@ from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExist
 from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
-from datacube_stats.utils import tile_iter
+from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
