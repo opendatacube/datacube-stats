@@ -342,7 +342,7 @@ class WofsStats(Statistic):
                                    'frequency': frequency}, attrs=dict(crs=data.crs))
 
     def measurements(self, input_measurements):
-        measurement_names = set(m['name'] for m in input_measurements)
+        measurement_names = set(m['name'] for m in input_measurements.values())
         assert 'water' in measurement_names
 
         wet = {'name': 'count_wet',
@@ -361,33 +361,6 @@ class WofsStats(Statistic):
             return [frequency]
         else:
             return [wet, dry, frequency]
-
-
-class FlagCounter(Statistic):
-    """
-    Count number of flagged pixels
-
-    Requires:
-    - The name of a `measurement` to base the count upon
-    - A list of `flags` that must be set in the measurement
-    """
-
-    def __init__(self, measurement, flags):
-        self.measurement = measurement
-        self.flags = flags
-
-    def compute(self, data):
-        mask = make_mask(data[self.measurement], **self.flags)
-        return mask.sum(dim='time').rename({self.measurement: 'count'})
-
-    def measurements(self, input_measurements):
-        measurement_names = set(m['name'] for m in input_measurements)
-        assert self.measurement in measurement_names
-
-        return {'name': 'count',
-                'dtype': 'int16',
-                'nodata': -1,
-                'units': '1'}
 
 
 class NormalisedDifferenceStats(Statistic):
@@ -414,7 +387,7 @@ class NormalisedDifferenceStats(Statistic):
                               attrs=dict(crs=data.crs))
 
     def measurements(self, input_measurements):
-        measurement_names = [m['name'] for m in input_measurements]
+        measurement_names = [m['name'] for m in input_measurements.values()]
         if self.band1 not in measurement_names or self.band2 not in measurement_names:
             raise StatsConfigurationError('Input measurements for %s must include "%s" and "%s"',
                                           self.name, self.band1, self.band2)
@@ -644,6 +617,34 @@ class Medoid(PerStatIndexStat):
 class MedoidNoProv(PerStatIndexStat):
     def __init__(self):
         super(MedoidNoProv, self).__init__(stat_func=_compute_medoid)
+
+
+class FlagCounter(Statistic):
+    """
+    Count number of flagged pixels
+
+    Requires:
+    - The name of a `measurement` to base the count upon
+    - A list of `flags` that must be set in the measurement
+    """
+
+    def __init__(self, measurement, flags):
+        self.measurement = measurement
+        self.flags = flags
+
+    def compute(self, data):
+        mask = make_mask(data[self.measurement], **self.flags)
+        count = mask.sum(dim='time')
+        return count.to_dataset().rename({self.measurement: 'count'})
+
+    def measurements(self, input_measurements):
+        measurement_names = set(m['name'] for m in input_measurements.values())
+        assert self.measurement in measurement_names
+
+        return [{'name': 'count',
+                 'dtype': 'int16',
+                 'nodata': -1,
+                 'units': '1'}]
 
 
 class MaskedCount(Statistic):
