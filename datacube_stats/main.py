@@ -119,7 +119,7 @@ def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks,
     _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
 
     if failed > 0:
-        raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful))
+        raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful + failed))
 
 
 def _log_setup():
