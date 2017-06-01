@@ -89,7 +89,8 @@ date_ranges:
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
-location: '/g/data/r78/bxb547/GW_works/data_2'
+#location: '/g/data/r78/bxb547/GW_works/data_2'
+location: '/g/data/r78/bxb547/GW_works/data_multi_year'
 
 input_region:
 #  tile: [12, -43]
@@ -127,7 +128,7 @@ output_products:
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'WET_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+   file_path_template: 'WET_{x}_{y}.nc'
    product_type: COMPOSITE WET
 
 tide_class:

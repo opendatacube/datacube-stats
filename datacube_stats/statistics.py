@@ -275,6 +275,88 @@ class ClearCount(Statistic):
         ]
 
 
+class MedNdwi(Statistic):
+    """Calculate ndwi out of median image through time"""
+
+    def compute(self, data):
+        # TODO Fix Hardcoded 'time' and pulling out median value then calculate ndwi 
+        med = (data.green-data.nir)/(data.green+data.nir)
+        med = med.median(dim='time', keep_attrs=True, skipna=True)
+        return med.rename('ndwi')
+
+    def measurements(self, input_measurements):
+        return [
+            {
+                'name': 'ndwi',
+                'dtype': 'float32',
+                'nodata': np.nan,
+                'units': '1'
+            }
+        ]
+
+class RelNdwi(Statistic):
+    """Calculate relative binary image out of ndwi median """
+
+    def compute(self, data):
+        # TODO Fix Hardcoded 'time' and pulling out median value then calculate ndwi 
+        med = (data.green-data.nir)/(data.green+data.nir)
+        med = med.median(dim='time', keep_attrs=True, skipna=True)
+        med = med.rename('rel')
+        med.values[med.values > 0] = 0
+        med.values[med.values <= 0] = 1
+        return med
+
+    def measurements(self, input_measurements):
+        return [
+            {
+                'name': 'rel',
+                'dtype': 'int8',
+                'nodata': -9,
+                'units': '1'
+            }
+        ]
+
+class StdNdwi(Statistic):
+    """ Calculate standard deviation on NDWI values """
+
+    def compute(self, data):
+        med = (data.green-data.nir)/(data.green+data.nir)
+        med =  med.std(dim='time', keep_attrs=True, skipna=True)
+        return med.rename('std')
+
+    def measurements(self, input_measurements):
+        return [
+            {
+                'name': 'std',
+                'dtype': 'float32',
+                'nodata': np.nan,
+                'units': '1'
+            }
+        ]
+        
+
+class Std(Statistic):
+    """Calculate standard deviation through time"""
+
+    def compute(self, data):
+        #index = data.reduce(dim='time', func=np.std, keep_attrs=True)
+        return data.std(dim='time', keep_attrs=True, skipna=True)
+        #def index_dataset(var):
+        #    return axisindex(data.data_vars[var.name].values, var.values)
+
+        #data_values = index.apply(index_dataset)
+        #return data_values        
+
+    def measurements(self, input_measurements):
+        output_measurements = [
+                {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
+                for measurement in input_measurements]
+        for key in output_measurements:
+            key['dtype'] = 'float32'
+            key['nodata'] = np.nan
+
+        return output_measurements
+
 class NoneStat(Statistic):
     def compute(self, data):
         class Empty:
@@ -764,6 +846,9 @@ try:
             return output_measurements
 
     STATS['precisegeomedian'] = PreciseGeoMedian
+    STATS['medndwi'] = MedNdwi
+    STATS['rel'] = RelNdwi
+    STATS['std'] = StdNdwi 
     STATS['clearcount'] = ClearCount
 
 

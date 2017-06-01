@@ -27,30 +27,30 @@ sources:
           swir1_saturated: False
           swir2_saturated: False
 
-#  - product: ls7_nbar_albers
-#    name: intertidal_low
-#    measurements: [blue, green, red, nir, swir1, swir2]
-#    group_by: solar_day
+  - product: ls7_nbar_albers
+    name: intertidal_low
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
 #    source_filter:
 #      product: ls7_level1_scene
 #      gqa_cep90: (-0.25, 0.25)
-#    masks:
-#      - product: ls7_pq_albers
-#        measurement: pixelquality
-#        group_by: solar_day
-#        fuse_func: datacube.helpers.ga_pq_fuser
-#        flags:
-#          contiguous: True
-#          cloud_acca: no_cloud
-#          cloud_fmask: no_cloud
-#          cloud_shadow_acca: no_cloud_shadow
-#          cloud_shadow_fmask: no_cloud_shadow
-#          blue_saturated: False
-#          green_saturated: False
-#          red_saturated: False
-#          nir_saturated: False
-#          swir1_saturated: False
-#          swir2_saturated: False
+    masks:
+      - product: ls7_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
 
 
   - product: ls8_nbar_albers
@@ -89,11 +89,15 @@ date_ranges:
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
-location: '/g/data/r78/bxb547/TIDE_MODEL/output_product'
+#location: '/g/data/r78/bxb547/TIDE_MODEL/output_low'
+#location: '/g/data/r78/intertidal/big_poly_data'
+#location: '/g/data/r78/intertidal/output_low_3'
+location: '/g/data/v10/intertidal/low_composite'
 
 input_region:
 #  tile: [12, -43]
-  from_file: /g/data/r78/bxb547/TIDE_MODEL/GA_tidal_model.shp
+  from_file: /g/data/r78/intertidal/GA_tidal_model.shp
+#  from_file: /g/data/r78/intertidal/low_composite_20.shp
 #
 storage:
   driver: NetCDFCF
@@ -150,4 +154,4 @@ tide_class:
   #Needs sub composite then chose one of these now
   #e, f, ph, pl
   #sub_class: f
-  feature_id: [67, 68, 69, 70, 71, 72]
+  #feature_id: [67, 68, 69, 70, 71, 72, 73]

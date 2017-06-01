@@ -25,6 +25,8 @@ from datacube.model.utils import make_dataset, xr_apply, datasets_to_doc
 from datacube.storage import netcdf_writer
 from datacube.storage.storage import create_netcdf_storage_unit
 from datacube.utils import unsqueeze_data_array, geometry
+from datacube.utils.geometry import Geometry
+from osgeo import ogr, osr
 
 _LOG = logging.getLogger(__name__)
 _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
@@ -232,7 +234,6 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         task = self._task
         geobox = self._task.geobox
         app_info = self._app_info
-
         def add_all(iterable):
             return reduce_(operator.add, iterable)
 
@@ -241,16 +242,23 @@ class OutputDriver(with_metaclass(RegisterDriver)):
             # Align the data `Tile` with potentially many mask `Tile`s along their time axis
             all_sources = xarray.align(prod['data'].sources,
                                        *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
+            if len(all_sources[0]) == 0:
+                _LOG.info("source files %s and mask data %s", prod['data'].sources, prod['masks'])
+                raise StatsOutputError('supplied sources do not align to the same time.\n'
+                                       'Unable to write dataset metadata.')
+
             return add_all(sources_.sum() for sources_ in all_sources)
 
         def _make_dataset(labels, sources_):
+            valid_data = _polygon_from_sources_extents(sources_, geobox)
             return make_dataset(product=stat.product,
                                 sources=sources_,
                                 extent=geobox.extent,
                                 center_time=labels['time'],
                                 uri=uri,
                                 app_info=app_info,
-                                valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
+                                #valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
+                                valid_data=valid_data)
 
         sources = add_all(merge_sources(prod) for prod in task.sources)
 
@@ -262,6 +270,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         if not sources:
             raise StatsOutputError('No valid sources found, or supplied sources do not align to the same time.\n'
                                    'Unable to write dataset metadata.')
+        #valid_data=GeoPolygon.from_sources_extents(sources, geobox))
         datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
         datasets = datasets_to_doc(datasets)
         return datasets
@@ -332,6 +341,7 @@ class NetCDFCFOutputDriver(OutputDriver):
             values)
         self._output_file_handles[prod_name].sync()
         _LOG.debug("Updated %s %s", measurement_name, tile_index[1:])
+        #_LOG.info("Updated %s %s %s", measurement_name, tile_index[1:], self._output_file_handles)
 
     def write_global_attributes(self, attributes):
         for output_file in self._output_file_handles.values():
@@ -483,6 +493,7 @@ class GeotiffOutputDriver(OutputDriver):
         t, y, x = tile_index
         window = ((y.start, y.stop), (x.start, x.stop))
         _LOG.debug("Updating %s.%s %s", prod_name, measurement_name, window)
+        _LOG.info("Updating %s.%s %s", prod_name, measurement_name, window)
 
         dtype = self._get_dtype(prod_name, measurement_name)
 
@@ -547,9 +558,42 @@ def _format_filename(path_template, **kwargs):
 
 
 def _polygon_from_sources_extents(sources, geobox):
-    sources_union = geometry.unary_union(source.extent.to_crs(geobox.crs) for source in sources)
+    #sources_union = geometry.unary_union(source.extent.to_crs(geobox.crs) for source in sources)
+    sources_union = unary_union_cus(source.extent.to_crs(geobox.crs) for source in sources)
     valid_data = geobox.extent.intersection(sources_union)
     return valid_data
+
+def _make_geom_from_ogr_cust(geom, crs):
+    result = Geometry.__new__(Geometry)
+    result._geom = geom  # pylint: disable=protected-access
+    result.crs = crs
+    return result
+
+def unary_union_cus(geoms):
+    """
+    compute union of multiple (multi)polygons efficiently using ConvexHull
+    """
+    # pylint: disable=protected-access
+    geom = ogr.Geometry(ogr.wkbMultiPolygon)
+    crs = None
+    for g in geoms:
+        if crs:
+            assert crs == g.crs
+        else:
+            crs = g.crs
+        if g._geom.GetGeometryType() == ogr.wkbPolygon:
+            geom.AddGeometry(g._geom)
+        elif g._geom.GetGeometryType() == ogr.wkbLineString:
+            geom.AddGeometry(g._geom)
+        elif g._geom.GetGeometryType() == ogr.wkbMultiPolygon:
+            for poly in g._geom:
+                geom.AddGeometry(poly)
+        else:
+            raise ValueError('"%s" is not supported' % g.type)
+   
+    #union = geom.UnionCascaded() 
+    union = geom.ConvexHull()
+    return _make_geom_from_ogr_cust(union, crs)
 
 
 def atomic_rename(src, dest):

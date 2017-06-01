@@ -147,7 +147,7 @@ for dt in log_date:
     dates.append(dt[0])
 
 indexers = {'geopolygon': boundary_polygon,  'group_by':'solar_day'}
-print "length of dates " + str(len(dates)) + str(dates)
+print ("length of dates %d %s", len(dates) , str(dates))
 for dt in dates:
     dt1 = datetime.strptime(dt, "%Y-%m-%d")
     dt2 = dt1 + DT.timedelta(0,86399) 
@@ -167,7 +167,7 @@ for dt in dates:
             ndata = data.where(mask)
             ndata = ndata.isel(time=0)
             filename=fildir + str(Id) + "_NO_MASK_" + prod.split('_')[0] + "_" + str(dt) + "_RGB.tif"
-            print "writing for " + filename
+            print ("writing for %s", filename)
             write_geotiff(filename=filename, dataset=ndata[['red', 'green', 'blue']],
                               profile_override={'photometric':'RGB'})
             mask = make_mask(pq, **mask_spec['flags'])
@@ -176,7 +176,7 @@ for dt in dates:
             data = data.where(mask)
             data = data.isel(time=0)
             filename=fildir + str(Id) + "_" + prod.split('_')[0] + "_" + str(dt) + "_RGB.tif"
-            print "writing for " + filename
+            print ("writing for %s" ,filename)
             write_geotiff(filename=filename, dataset=data[['red', 'green', 'blue']],
                               profile_override={'photometric':'RGB'})
             break

@@ -164,13 +164,13 @@ for st in product:
     if st == 'ls8_nbar_albers':
         prod = 'ls8_pq_albers'
     pq = dc.load(product=prod, fuse_func=pq_fuser, **indexers)
-    print "time observed " + str(pq.time.data)
+    print ("time observed %s" + str(pq.time.data))
     dates = pq.time.data.astype('M8[D]')
     dates = [datetime.strftime(dt, "%Y-%m-%d") for dt in  dates.tolist()]
-    print "observation dates " + str(dates) 
+    print ("observation dates %s" + str(dates))
     if len(pq) > 0:
         stats = "MEDIAN"
-        print "doing for no pq " + st + " for stats " + stats
+        print ("doing for no pq %s for stats %s " , st, stats)
         data = dc.load(product=st, measurements=['red', 'green', 'blue'], **indexers)
         ndata = copy.deepcopy(data)
         red = data.red.median(dim='time')
@@ -187,7 +187,7 @@ for st in product:
         filename=fildir + str(Id) + "_NO_PQ_" + stats + "_" + str(year) + "_RGB.tif"
         write_geotiff(filename=filename, dataset=ndata,
                           profile_override={'photometric':'RGB'})
-        print 'median finished without pq ' + " on " + str(datetime.now())
+        print ("median finished without pq  on %s", str(datetime.now()))
 
         mask = make_mask(pq, **mask_spec['flags'])
         ndata = data.where(mask['pixelquality'])
@@ -203,7 +203,7 @@ for st in product:
         filename=fildir + str(Id) + "_" + stats + "_" + str(year) + "_RGB.tif"
         write_geotiff(filename=filename, dataset=ndata,
                           profile_override={'photometric':'RGB'})
-        print 'median finished with pq ' + " on " + str(datetime.now())
+        print ("median finished with pq on %s", str(datetime.now()))
         stats = "GEOMED"
         data = dc.load(product=st, measurements=['red', 'green', 'blue', 'nir', 'swir1', 'swir2'], **indexers)
         mask = make_mask(pq, **mask_spec['flags'])
@@ -215,15 +215,15 @@ for st in product:
         ds['count_observations'] = ndata
         filename=fildir + str(Id) + "_COUNT_" + str(year) + ".tif"
         write_geotiff(filename=filename, dataset=ds)
-        print 'observation count finished and created ' + filename + ' ' + str(datetime.now())
+        print ('observation count finished and created %s %s', filename, str(datetime.now()))
  
         data = data/10000
-        print 'computing statistics ' + stats + " on " + str(datetime.now())
+        print ('computing statistics %s on %s ', stats, str(datetime.now()))
         data = compute(data)
         data = data.where(mask)
         filename=fildir + str(Id) + "_" + stats + "_" + str(year) + "_RGB.tif"
         write_geotiff(filename=filename, dataset=data[['red', 'green', 'blue']],
                           profile_override={'photometric':'RGB'})
-        print 'computing finished and created for geomedian ' + filename + ' ' + str(datetime.now())
+        print ('computing finished and created for geomedian %s %s', filename, str(datetime.now()))
         break
 

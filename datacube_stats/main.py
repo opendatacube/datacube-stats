@@ -42,6 +42,9 @@ from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import tile_iter
+from datacube_stats.utils.tide_utility import range_tidal_data, extract_otps_computed_data
+from datacube_stats.utils.tide_utility import extract_otps_computed_data
+from datacube_stats.utils.tide_utility import get_hydrologic_months, filter_sub_class
 from otps.predict_wrapper import predict_tide
 from otps import TimePoint
 from datetime import timedelta
@@ -51,7 +54,7 @@ from operator import itemgetter
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
 DEFAULT_GROUP_BY = 'time'
-DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 400, 'y': 400}}
+DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
 LS7_SLC_DT = datetime.strptime("2003-05-01", "%Y-%m-%d")
 
 
@@ -353,13 +356,16 @@ def load_process_save_chunk(output_files, chunk, task, timer, geom):
             timer.pause(prod_name)
             # For each of the data variables, shove this chunk into the output results
             timer.start('writing_data')
-            if stat.stat_name == "clearcount":
-               output_files.write_data(prod_name, ndata.name, chunk, ndata.values)
+            # Single variable dataset deals here
+            if stat.stat_name == "clearcount" or stat.stat_name == "medndwi" or stat.stat_name == "rel" \
+                   or stat.stat_name == "std":
+                output_files.write_data(prod_name, ndata.name, chunk, ndata.values)
             else: 
                 for var_name, var in ndata.data_vars.items():  # TODO: Move this loop into output_files
                     output_files.write_data(prod_name, var_name, chunk, var.values)
             timer.pause('writing_data')
     except EmptyChunkException:
+        _LOG.info("CHUNK ERROR %s ", task.tile_index)
         _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
                    chunk, task)
 
@@ -432,7 +438,6 @@ def _load_masked_data(sub_tile_slice, source_prod):
             mask = make_mask(mask, **mask_spec['flags'])
             data = sensible_where(data, mask)
             del mask
-    #import pdb; pdb.set_trace() 
     return data
 
 
@@ -726,10 +731,9 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                     (tide_class.get('ls7_slc_off') is None):
                     continue
                 if (tide_class.get('ls7_slc_off') is None) and (mask['product'] == 'ls7_pq_albers') and  \
-                        (datetime.strptime(gl_range[1], "%Y-%m-%d")  > LS7_SLC_DT):
+                    (datetime.strptime(gl_range[1], "%Y-%m-%d")  > LS7_SLC_DT):
                     gl_range = (gl_range[0], LS7_SLC_DT)
              
-
                 ds = dc.find_datasets(product=mask['product'], time=gl_range, geopolygon=geom, group_by=group_by_name)
                 group_by = query_group_by(group_by=group_by_name)
                 sources = dc.group_datasets(ds, group_by)
@@ -737,124 +741,26 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                     all_times = all_times + [dd for dd in sources.time.data.astype('M8[s]').astype('O').tolist()]    
         return sorted(all_times)
 
-    def filter_sub_class(list_low, list_high, ebb_flow):
-        if tide_class['sub_class'] == 'e':
-           if list_low is not None:
-               key = set(e[0] for e in eval(ebb_flow) if e[1] == 'e')
-               list_low = [ff for ff in list_low if ff[0] in key]
-           key = set(e[0] for e in eval(ebb_flow) if e[1] == 'e')
-           list_high = [ff for ff in list_high if ff[0] in key]
-        if tide_class['sub_class'] == 'f':
-           if list_low is not None:
-               key = set(e[0] for e in eval(ebb_flow) if e[1] == 'f')
-               list_low = [ff for ff in list_low if ff[0] in key]
-           key = set(e[0] for e in eval(ebb_flow) if e[1] == 'f')
-           list_high = [ff for ff in list_high if ff[0] in key]
-        if tide_class['sub_class'] == 'ph':
-           if list_low is not None:
-               key = set(e[0] for e in eval(ebb_flow) if e[1] == 'ph')
-               list_low = [ff for ff in list_low if ff[0] in key]
-           key = set(e[0] for e in eval(ebb_flow) if e[1] == 'ph')
-           list_high = [ff for ff in list_high if ff[0] in key]
-        if tide_class['sub_class'] == 'pl':
-           if list_low is not None:
-               key = set(e[0] for e in eval(ebb_flow) if e[1] == 'pl')
-               list_low = [ff for ff in list_low if ff[0] in key]
-           key = set(e[0] for e in eval(ebb_flow) if e[1] == 'pl')
-           list_high = [ff for ff in list_high if ff[0] in key]
-        return list_low, list_high, ebb_flow
-
-
-    def extract_otps_computed_data(dates, date_ranges, per, ln, la):
-        
-        tp = list()
-        tide_dict = dict()
-        ndate_list=list()
-        mnt=timedelta(minutes=15)
-        for dt in dates:
-            ndate_list.append(dt-mnt)
-            ndate_list.append(dt)
-            ndate_list.append(dt+mnt)
-        for dt in ndate_list:
-            tp.append(TimePoint(ln, la, dt))
-        tides = predict_tide(tp)
-        if len(tides) == 0:
-           _LOG.info("No tide height observed from OTPS model within lat/lon range")
-           sys.exit()
-        _LOG.info("received from predict tides 15 minutes before and after %s", str(datetime.now()))
-        # collect in ebb/flow list
-        for tt in tides:
-            tide_dict[datetime.strptime(tt.timepoint.timestamp.isoformat()[0:19], "%Y-%m-%dT%H:%M:%S")] = tt.tide_m
-        tmp_lt = sorted(tide_dict.items(), key=lambda x: x[0])
-        dtlist = tmp_lt[1::3]
-        my_data = sorted(dtlist, key=itemgetter(1))
-        # print ([[dt[0].strftime("%Y-%m-%d %H:%M:%S"), dt[1]] for dt in tmp_lt])
-        tmp_lt = [[tmp_lt[i+1][0].strftime("%Y-%m-%d"), 'ph'] \
-                 if tmp_lt[i][1] < tmp_lt[i+1][1] and tmp_lt[i+2][1] <  tmp_lt[i+1][1]  else \
-                 [tmp_lt[i+1][0].strftime("%Y-%m-%d"), 'pl'] if tmp_lt[i][1] > tmp_lt[i+1][1] and \
-                 tmp_lt[i+2][1] >  tmp_lt[i+1][1]  else [tmp_lt[i+1][0].strftime("%Y-%m-%d"),'f'] \
-                 if tmp_lt[i][1] < tmp_lt[i+2][1] else [tmp_lt[i+1][0].strftime("%Y-%m-%d"),'e'] \
-                 for i in range(0, len(tmp_lt), 3)]
-        #_LOG.info('EBB FLOW tide details for entire archive of LS data %s', str(tmp_lt))
-        PERC = 25  if per == 50 else per
-        max_height=my_data[-1][1]
-        min_height=my_data[0][1]
-        dr = max_height - min_height
-        lmr = min_height + dr*PERC*0.01   # low tide max range
-        hlr = max_height - dr*PERC*0.01   # high tide range
-        list_low = list()
-        list_high = list()
-        if PERC == 50:
-            list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x  in my_data if (x[1] >= lmr) & (x[1] <= hlr) &
-                         (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
-            _LOG.info(" 50 PERCENTAGE sorted date tide list " + str(len(high)))
-            #_LOG.info('Created middle dates and tide heights for time period: %s %s', date_ranges, str(list_high))
-        else:
-            list_low = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] <= lmr) & 
-                                (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
-            list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] >= hlr) &
-                                (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
-            #_LOG.info('Created low percentage dates and tide heights for time period: %s %s', date_ranges, str(list_low))
-            #_LOG.info('\nCreated high percentage dates and tide heights for time period: %s %s', date_ranges, str(list_high))
-
-        _LOG.info( "product %s and percentage received %d ", tide_class['product'], per)
-        ebb_flow = str([tt for tt in tmp_lt if (datetime.strptime(tt[0], "%Y-%m-%d") >= date_ranges[0][0]) & 
-                                               (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])])
-        #_LOG.info('\nCreated EBB FLOW for time period: %s %s', date_ranges, ebb_flow)
-        #print (" EBB FLOW for this epoch " + str([tt for tt in tmp_lt if (datetime.strptime(tt[0], "%Y-%m-%d") >= date_ranges[0][0]) & 
-        #         (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])]))
-        return dtlist, list_low, list_high, ebb_flow
-
-    def get_hydrologic_months():
-        year = tide_class['year']
-        months = tide_class.get('months')
-        if months is not None:
-            st_dt =  str(year+1)+str(months[0])+'01'
-            en_dt =  str(year+1)+str(months[1])+'30'
-        else:
-            st_dt = '01/07/' + str(year+1)
-            en_dt = '30/11/' + str(year+1)
-        date_list = pd.date_range(st_dt, en_dt)
-        date_list = date_list.to_datetime().astype(str).tolist()
-        return date_list
-        
-
     with fiona.open(input_region['from_file']) as input_region:
         crs = CRS(str(input_region.crs_wkt))
         if tide_class.get('product') == 'dry' or tide_class.get('product') == 'wet':
             for feature in input_region:
                 # get the year id and geometry
+                odict = feature['properties']
                 if tide_class.get('product') == 'dry':
-                    tide_class['year'] = int(feature['properties']['DN'])
+                    #tide_class['year'] = int(feature['properties']['DN'])
+                    tide_class['year'] = { k:v for k, v in odict.items() if "DY" in k.upper()}
                 else:
-                    tide_class['year'] = int(feature['properties']['WY1'])
+                    #tide_class['year'] = int(feature['properties']['WY1'])
+                    tide_class['year'] = { k:v for k, v in odict.items() if "WY" in k.upper()}
                 Id = feature['properties']['ID']
                 if Id in tide_class['feature_id']:
                     geom = feature['geometry']
                     boundary_polygon = Geometry(geom, crs)
                     tide_class['geom'] = boundary_polygon
-                    tile_index=(str(Id), tide_class['year'])
-                    list_time = get_hydrologic_months()  
+                    years = "_".join(x for x in [v for k, v in tide_class['year'].items()])
+                    tile_index=(str(Id), years)
+                    list_time = get_hydrologic_months(tide_class)  
                     for time_period in date_ranges:
                         task = StatsTask(time_period=time_period, tile_index=tile_index)
                         for source_spec in sources_spec:
@@ -903,11 +809,15 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                 _LOG.info("feature %d captured for longitude and latitude %.02f  %.02f", Id, lon, lat)
                 _LOG.info('Getting all dates corresponding to this polygon for all sensor data')
                 all_dates = list_poly_dates(boundary_polygon)
-                all_list, list_low, list_high, ebb_flow = extract_otps_computed_data(all_dates, date_ranges, 
+                if "item" in tide_class['product']:
+                    list_high = range_tidal_data(all_dates, date_ranges, tide_class, lon, lat)
+                    #_LOG.info("ITEM returns with median %s", range_value)
+                else:
+                    all_list, list_low, list_high, ebb_flow = extract_otps_computed_data(all_dates, date_ranges, 
                                                                                      tide_class['percent'], lon, lat)
                 # filter out dates as per sub classification of ebb flow
                 if tide_class.get('sub_class'):
-                    list_low, list_high, ebb_flow = filter_sub_class(list_low, list_high, ebb_flow)
+                    list_low, list_high, ebb_flow = filter_sub_class(tide_class, list_low, list_high, ebb_flow)
                     _LOG.info("SUB class dates extracted %s for list low %s  and for list high %s", tide_class['sub_class'] , list_low, list_high) 
                 prod = list()
                 if "low_high" in tide_class['product']:
@@ -916,6 +826,8 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                     prod = ['low']
                 elif "high" in tide_class['product']:
                     prod = ['high']
+                elif "item" in tide_class['product']:
+                    prod = ['item']
                 else:
                     prod = ['middle']
                 tile_index=(lon,lat)
@@ -925,14 +837,15 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                         nlon = tide_class.get('sub_class').upper() + "_" + pr.upper()
                     else:
                         nlon = pr.upper()
-                    nlon = nlon + "_" + str(lon)
+                    nlon = nlon + "_" + str(Id) + "_" + str(lon)
                     tile_index=(nlon,lat)
                     list_time = list_low if pr == 'low' else list_high
                     # Needs to update metadata for ebb flow classification
-                    key = set(e[0] for e in list_time)
-                    ebb_flow_class = [ff for ff in eval(ebb_flow) if ff[0] in key]
-                    tide_class['ebb_flow'] = {'ebb_flow':ebb_flow_class}
-                    _LOG.info('\nCreated EBB FLOW for feature %d , length %d, time period: %s \t%s', 
+                    if "item" not in tide_class['product']:  
+                        key = set(e[0] for e in list_time)
+                        ebb_flow_class = [ff for ff in eval(ebb_flow) if ff[0] in key]
+                        tide_class['ebb_flow'] = {'ebb_flow':ebb_flow_class}
+                        _LOG.info('\nCreated EBB FLOW for feature %d , length %d, time period: %s \t%s', 
                               Id, len(ebb_flow_class), date_ranges, str(ebb_flow_class))
                     _LOG.info('\n %s DATE LIST for feature %d length %d, time period: %s \t%s',
                               pr.upper(), Id, len(list_time), date_ranges, str(list_time))
@@ -956,7 +869,6 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                         masks = [make_tile(product=mask['product'], time=ep_range,
                                          group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon)
                                  for mask in source_spec.get('masks', [])]
-
                         if data is None:
                             continue
                         _LOG.info("source details for %s and values %s", pr, str(data.sources.time.values))  
