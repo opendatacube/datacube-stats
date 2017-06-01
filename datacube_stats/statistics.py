@@ -331,7 +331,7 @@ class WofsStats(Statistic):
         # 128 == clear and wet, 132 == clear and wet and masked for sea
         # The PQ sea mask that we use is dodgy and should be ignored. It excludes lots of useful data
         wet = ((data.water == 128) + (data.water == 132)).sum(dim='time')
-        dry = (data.water == 0).sum(dim='time')
+        dry = ((data.water == 0) + (data.water == 4)).sum(dim='time')
         clear = wet + dry
         frequency = wet / clear
         if self.freq_only:
