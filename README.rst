@@ -152,6 +152,24 @@ eliminating data which doesn't meet the minimum required spatial accuracy:
               swir2_saturated: False
 
 
+Discrete Values / No-Data Masking
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, null or no-data values are automatically masked out, according to their definition in the Data Cube Product they are loaded from. In some cases this doesn't make sense, and can be disabled by specifying ``mask_nodata: False``. For example bitfield data like PQ and WOfS Extents that have a more complicated representation of no-data, which will be handled by the *statistic* being run over them.
+
+
+
+.. code-block:: yaml
+
+    sources:
+      - product: ls5_pq_albers
+        group_by: solar_day
+        mask_nodata: False
+        fuse_func: datacube.helpers.ga_pq_fuser
+        group_by: solar_day
+
+
+
 Date ranges
 -----------
 
