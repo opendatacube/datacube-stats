@@ -316,13 +316,15 @@ def execute_task(task, output_driver, chunking, tide_class):
     :param chunking: dict of dimension sizes to chunk the computation by
     """
     timer = MultiTimer().start('total')
-    datacube.set_options(reproject_threads=1)
+    #datacube.set_options(reproject_threads=1)
     geom = None
     try:
         with output_driver(task=task) as output_files:
+            full_chunk = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]}
             geom =  tide_class.get('geom')
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-                load_process_save_chunk(output_files, sub_tile_slice, task, timer, geom)
+            #for sub_tile_slice in tile_iter(task.sample_tile, full_chunk):
+                load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer, geom)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
     except Exception as e:
@@ -335,35 +337,38 @@ def execute_task(task, output_driver, chunking, tide_class):
     return task
 
 
-def load_process_save_chunk(output_files, chunk, task, timer, geom):
+def load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer, geom):
     try:
         timer.start('loading_data')
-        data = _load_data(chunk, task.sources)
+        data = _load_data(sub_tile_slice, task.sources)
         timer.pause('loading_data')
-
-        for prod_name, stat in task.output_products.items():
-            _LOG.info("Computing %s in tile %s %s. Current timing: %s",
-                      prod_name, task.tile_index, chunk, timer)
-            timer.start(prod_name)
-            # scale it to represent in float32 for precise geomedian
-            data = data/10000 if stat.stat_name == 'precisegeomedian' else data
-            geobox = data.geobox
-            ndata = stat.compute(data)
-            # mask as per geometry now. Ideally Mask should have been done before computation
-            # But masking before computation is a problem as it gets 0 value
-            mask = geometry_mask([geom], geobox, invert=True)
-            ndata = ndata.where(mask)
-            timer.pause(prod_name)
-            # For each of the data variables, shove this chunk into the output results
-            timer.start('writing_data')
-            # Single variable dataset deals here
-            if stat.stat_name == "clearcount" or stat.stat_name == "medndwi" or stat.stat_name == "rel" \
-                   or stat.stat_name == "std":
-                output_files.write_data(prod_name, ndata.name, chunk, ndata.values)
-            else: 
-                for var_name, var in ndata.data_vars.items():  # TODO: Move this loop into output_files
-                    output_files.write_data(prod_name, var_name, chunk, var.values)
-            timer.pause('writing_data')
+        for chunk in tile_iter(task.sample_tile, chunking):
+            #for sub_tile_slice in tile_iter(task.sample_tile, chunking):
+            for prod_name, stat in task.output_products.items():
+                import pdb; pdb.set_trace()
+                _LOG.info("Computing %s in tile %s %s. Current timing: %s",
+                          prod_name, task.tile_index, chunk, timer)
+                timer.start(prod_name)
+                # scale it to represent in float32 for precise geomedian
+                data = data/10000 if stat.stat_name == 'precisegeomedian' else data
+                geobox = data.geobox
+                import pdb; pdb.set_trace()
+                ndata = stat.compute(data)
+                # mask as per geometry now. Ideally Mask should have been done before computation
+                # But masking before computation is a problem as it gets 0 value
+                mask = geometry_mask([geom], geobox, invert=True)
+                ndata = ndata.where(mask)
+                timer.pause(prod_name)
+                # For each of the data variables, shove this chunk into the output results
+                timer.start('writing_data')
+                # Single variable dataset deals here
+                if stat.stat_name == "clearcount" or stat.stat_name == "medndwi" or stat.stat_name == "rel" \
+                       or stat.stat_name == "std":
+                    output_files.write_data(prod_name, ndata.name, sub_tile_slice, ndata.values)
+                else: 
+                    for var_name, var in ndata.data_vars.items():  # TODO: Move this loop into output_files
+                        output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
+                timer.pause('writing_data')
     except EmptyChunkException:
         _LOG.info("CHUNK ERROR %s ", task.tile_index)
         _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
@@ -412,6 +417,7 @@ def _remove_emptys(datasets):
 
 
 def _load_masked_data(sub_tile_slice, source_prod):
+    import pdb; pdb.set_trace()
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
                              measurements=source_prod['spec'].get('measurements'),
                              skip_broken_datasets=True)
@@ -427,6 +433,7 @@ def _load_masked_data(sub_tile_slice, source_prod):
         return None
     if 'masks' in source_prod and 'masks' in source_prod['spec']:
         for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
+            import pdb; pdb.set_trace()
             if mask_tile is None:
                 # Discard data due to no mask data
                 return None

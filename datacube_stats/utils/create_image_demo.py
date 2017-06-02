@@ -26,7 +26,7 @@ import xarray as xr
 dc=datacube.Datacube(app='test')
 #product = ['ls5_nbar_albers', 'ls8_nbar_albers']
 product = ['ls5_nbar_albers', 'ls7_nbar_albers', 'ls8_nbar_albers']
-#filepath = '/g/data/u46/users/bxb547/otps/vector_data/GA_tidal_model.shp'
+#filepath = '/g/data/r78/intertidal/GA_tidal_model.shp'
 filepath = '/g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp'
 fildir = '/g/data/r78/bxb547/TIDE_MODEL/test_images/'
 
