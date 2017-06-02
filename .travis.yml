@@ -39,6 +39,8 @@ install:
 
   - pip freeze
 
+script:
+  - pytest
 
 after_success:
   - test $TRAVIS_PYTHON_VERSION = "3.6" && coveralls
