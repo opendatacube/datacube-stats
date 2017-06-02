@@ -7,6 +7,7 @@ This command is run as ``datacube-stats``, all operation are driven by a configu
 from __future__ import absolute_import, print_function
 
 import logging
+import copy
 from functools import partial
 from textwrap import dedent
 
@@ -448,6 +449,9 @@ def _source_measurement_defs(index, sources):
 
 
 def _get_app_metadata(config_file):
+    config = copy.deepcopy(config_file)
+    if 'global_attributes' in config:
+        del config['global_attributes']
     return {
         'lineage': {
             'algorithm': {
