@@ -330,22 +330,20 @@ def execute_task(task, output_driver, chunking):
 
 def load_process_save_chunk(output_files, chunk, task, timer):
     try:
-        timer.start('loading_data')
-        data = _load_data(chunk, task.sources)
-        timer.pause('loading_data')
+        with timer.time('loading_data'):
+            data = load_data(chunk, task.sources)
 
         for prod_name, stat in task.output_products.items():
             _LOG.info("Computing %s in tile %s %s. Current timing: %s",
                       prod_name, task.tile_index, chunk, timer)
-            timer.start(prod_name)
-            data = stat.compute(data)
-            timer.pause(prod_name)
+            with timer.time(prod_name):
+                data = stat.compute(data)
 
             # For each of the data variables, shove this chunk into the output results
-            timer.start('writing_data')
-            for var_name, var in data.data_vars.items():  # TODO: Move this loop into output_files
-                output_files.write_data(prod_name, var_name, chunk, var.values)
-            timer.pause('writing_data')
+            with timer.time('writing_data'):
+                for var_name, var in data.data_vars.items():  # TODO: Move this loop into output_files
+                    output_files.write_data(prod_name, var_name, chunk, var.values)
+
     except EmptyChunkException:
         _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
                    chunk, task)
@@ -355,7 +353,7 @@ class EmptyChunkException(Exception):
     pass
 
 
-def _load_data(sub_tile_slice, sources):
+def load_data(sub_tile_slice, sources):
     """
     Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
 
@@ -363,7 +361,7 @@ def _load_data(sub_tile_slice, sources):
     :param sources: a dictionary containing `data`, `spec` and `masks`
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
     """
-    datasets = [_load_masked_data(sub_tile_slice, source_prod)
+    datasets = [load_masked_data(sub_tile_slice, source_prod)
                 for source_prod in sources]  # list of datasets
     datasets = _mark_source_idx(datasets)
     datasets = _remove_emptys(datasets)
@@ -391,7 +389,7 @@ def _remove_emptys(datasets):
             if dataset is not None]
 
 
-def _load_masked_data(sub_tile_slice, source_prod):
+def load_masked_data(sub_tile_slice, source_prod):
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
                              measurements=source_prod['spec'].get('measurements'),
                              skip_broken_datasets=True)
@@ -500,7 +498,7 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None):
                                     output_location)  # Write files to current directory if not set in config
     stats_app.computation = config.get('computation', {})
     stats_app.date_ranges = _configure_date_ranges(index, config)
-    stats_app.task_generator = _create_task_generator(input_region, stats_app.storage)
+    stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
     stats_app.output_driver = _prepare_output_driver(stats_app.storage)
     stats_app.global_attributes = config.get('global_attributes', {})
     stats_app.process_completed = do_nothing  # TODO: Save dataset to database
@@ -550,7 +548,7 @@ def _configure_date_ranges(index, config):
                                       'type=find_daily_data')
 
 
-def _create_task_generator(input_region, storage):
+def _select_task_generator(input_region, storage):
     if input_region is None:
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return GriddedTaskGenerator(storage)
@@ -561,25 +559,32 @@ def _create_task_generator(input_region, storage):
     elif 'geometry' in input_region:  # Larger spatial region
         # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
         _LOG.info('Found geojson `input_region`, outputing tiles.')
-        geopolygon = Geometry(input_region['geometry'], CRS('EPSG:4326'))  # GeoJSON is always 4326
-        return GriddedTaskGenerator(storage, geopolygon=geopolygon)
+
+        bounds = Geometry(input_region['geometry'], CRS('EPSG:4326'))  # GeoJSON is always 4326
+        return GriddedTaskGenerator(storage, geopolygon=bounds)
 
     elif 'from_file' in input_region:
         _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])
-        import fiona
-        import shapely.ops
-        from shapely.geometry import shape, mapping
-        with fiona.open(input_region['from_file']) as input_region:
-            joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
-            final = joined.convex_hull
-            crs = CRS(input_region.crs_wkt)
-            boundary_polygon = Geometry(mapping(final), crs)
 
-        return GriddedTaskGenerator(storage, geopolygon=boundary_polygon)
+        bounds = boundary_polygon_from_file(input_region['from_file'])
+        return GriddedTaskGenerator(storage, geopolygon=bounds)
 
     else:
         _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
         return NonGriddedTaskGenerator(input_region=input_region, storage=storage)
+
+
+def boundary_polygon_from_file(filename):
+    # TODO: This should be refactored and moved into datacube.utils.geometry
+    import fiona
+    import shapely.ops
+    from shapely.geometry import shape, mapping
+    with fiona.open(filename) as input_region:
+        joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
+        final = joined.convex_hull
+        crs = CRS(input_region.crs_wkt)
+        boundary_polygon = Geometry(mapping(final), crs)
+    return boundary_polygon
 
 
 def do_nothing(*args, **varargs):
@@ -592,7 +597,7 @@ class GriddedTaskGenerator(object):
         self.geopolygon = geopolygon
         self.cell_index = cell_index
 
-    def __call__(self, index, sources_spec, date_ranges, ):
+    def __call__(self, index, sources_spec, date_ranges):
         """
         Generate the required tasks through time and across a spatial grid.
         

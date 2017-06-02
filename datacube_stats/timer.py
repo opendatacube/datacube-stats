@@ -1,5 +1,6 @@
 import time
 import psutil
+from contextlib import contextmanager
 from collections import defaultdict
 
 
@@ -25,6 +26,12 @@ class MultiTimer(object):
         self.run_times = defaultdict(int)
         self.max_rss = defaultdict(int)
         self._proc = psutil.Process()
+
+    @contextmanager
+    def time(self, name):
+        self.start(name)
+        yield
+        self.pause(name)
 
     def start(self, name):
         self._start_times[name] = time.time()
