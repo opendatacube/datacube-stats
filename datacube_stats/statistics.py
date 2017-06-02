@@ -47,6 +47,10 @@ class StatsConfigurationError(RuntimeError):
     pass
 
 
+class StatsProcessingError(RuntimeError):
+    pass
+
+
 def argnanmedoid(x, axis=1):
     """
     Return the indices of the medoid
@@ -328,10 +332,16 @@ class WofsStats(Statistic):
         self.freq_only = freq_only
 
     def compute(self, data):
+        is_integer_type = np.issubdtype(data.water.dtype, np.integer)
+
+        if not is_integer_type:
+            raise StatsProcessingError("Attempting to count bit flags on non-integer data. Provided data is: {}"
+                                       .format(data.water))
+
         # 128 == clear and wet, 132 == clear and wet and masked for sea
         # The PQ sea mask that we use is dodgy and should be ignored. It excludes lots of useful data
-        wet = ((data.water == 128) + (data.water == 132)).sum(dim='time')
-        dry = ((data.water == 0) + (data.water == 4)).sum(dim='time')
+        wet = ((data.water == 128) | (data.water == 132)).sum(dim='time')
+        dry = ((data.water == 0) | (data.water == 4)).sum(dim='time')
         clear = wet + dry
         frequency = wet / clear
         if self.freq_only:
@@ -633,7 +643,15 @@ class FlagCounter(Statistic):
         self.flags = flags
 
     def compute(self, data):
-        mask = make_mask(data[self.measurement], **self.flags)
+        datavar = data[self.measurement]
+
+        is_integer_type = np.issubdtype(datavar.dtype, np.integer)
+
+        if not is_integer_type:
+            raise StatsProcessingError("Attempting to count bit flags on non-integer data. Provided data is: {}"
+                                       .format(datavar))
+
+        mask = make_mask(datavar, **self.flags)
         count = mask.sum(dim='time')
         return count.to_dataset().rename({self.measurement: 'count'})
 
