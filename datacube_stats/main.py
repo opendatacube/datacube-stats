@@ -391,8 +391,10 @@ def _remove_emptys(datasets):
 
 
 def load_masked_data(sub_tile_slice, source_prod):
+    data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
                              measurements=source_prod['spec'].get('measurements'),
+                             fuse_func=data_fuse_func,
                              skip_broken_datasets=True)
 
     mask_nodata = source_prod['spec'].get('mask_nodata', True)
@@ -410,10 +412,10 @@ def load_masked_data(sub_tile_slice, source_prod):
             if mask_tile is None:
                 # Discard data due to no mask data
                 return None
-            fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
+            mask_fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
             mask = GridWorkflow.load(mask_tile[sub_tile_slice],
                                      measurements=[mask_spec['measurement']],
-                                     fuse_func=fuse_func,
+                                     fuse_func=mask_fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
             mask = make_mask(mask, **mask_spec['flags'])
             data = sensible_where(data, mask)
