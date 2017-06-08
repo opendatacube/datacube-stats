@@ -33,7 +33,7 @@ from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function
-from datacube.utils.dates import date_sequence
+from datacube_stats.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
 from datacube_stats.runner import run_tasks
@@ -537,16 +537,26 @@ def _configure_date_ranges(index, config):
         
         This will produce 4 x quarterly statistics from the year 2010.
         """))
-    date_ranges, sources = config['date_ranges'], config['sources']
+    date_ranges = config['date_ranges']
+    if 'start_date' not in date_ranges or 'end_date' not in date_ranges:
+        raise StatsConfigurationError("Must specified both `start_date` and `end_date`"
+                " in `date_ranges:` section of configuration")
 
     output = list()
 
-    if date_ranges.get('type', 'simple') == 'simple':
+    if 'stats_duration' not in date_ranges and 'step_size' not in date_ranges:
+        start = pd.to_datetime(date_ranges['start_date'])
+        end = pd.to_datetime(date_ranges['end_date'])
+        output = [(start, end)]
+
+
+    elif date_ranges.get('type', 'simple') == 'simple':
         output = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
                                   end=pd.to_datetime(date_ranges['end_date']),
                                   stats_duration=date_ranges['stats_duration'],
                                   step_size=date_ranges['step_size']))
     elif date_ranges['type'] == 'find_daily_data':
+        sources = config['sources']
         product_names = [source['product'] for source in sources]
         output = list(_find_periods_with_data(index, product_names=product_names,
                                             start_date=date_ranges['start_date'],
@@ -554,6 +564,7 @@ def _configure_date_ranges(index, config):
     else:
         raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
                                       'type=find_daily_data')
+    _LOG.debug("Selecting data for date ranges: %s", output)
 
     if not output:
         raise StatsConfigurationError('Time period configuration results in 0 periods of interest.')

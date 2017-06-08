@@ -173,19 +173,23 @@ By default, null or no-data values are automatically masked out, according to th
 Date ranges
 -----------
 
-Perform statistics over a single time range. For now it is required to specify
-``stats_duration`` and ``step_size`` to cover the entire period.
+Single duration
+~~~~~~~~~~~~~~~
+
+Perform statistics over a single time range. The first date is inclusive and
+the last date is exclusive.
 
 .. code-block:: yaml
 
     date_ranges:
       start_date: 2000-01-01
       end_date: 2016-01-01
-      stats_duration: 15y
-      step_size: 15y
 
+Multiple durations
+~~~~~~~~~~~~~~~~~~
 
-Or over a sequence of time steps, for example, an output for each year over a 15 year period:
+Or over a sequence of time steps, for example, an output for each year over
+a 15 year period:
 
 .. code-block:: yaml
 
