@@ -254,7 +254,7 @@ class Statistic(object):
         """
         output_measurements = [
             {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
-            for measurement in input_measurements.values()]
+            for measurement in input_measurements]
         return output_measurements
 
 
@@ -352,7 +352,7 @@ class WofsStats(Statistic):
                                    'frequency': frequency}, attrs=dict(crs=data.crs))
 
     def measurements(self, input_measurements):
-        measurement_names = set(m['name'] for m in input_measurements.values())
+        measurement_names = set(m['name'] for m in input_measurements)
         assert 'water' in measurement_names
 
         wet = {'name': 'count_wet',
@@ -397,7 +397,7 @@ class NormalisedDifferenceStats(Statistic):
                               attrs=dict(crs=data.crs))
 
     def measurements(self, input_measurements):
-        measurement_names = [m['name'] for m in input_measurements.values()]
+        measurement_names = [m['name'] for m in input_measurements]
         if self.band1 not in measurement_names or self.band2 not in measurement_names:
             raise StatsConfigurationError('Input measurements for %s must include "%s" and "%s"',
                                           self.name, self.band1, self.band2)
@@ -656,7 +656,7 @@ class FlagCounter(Statistic):
         return count.to_dataset().rename({self.measurement: 'count'})
 
     def measurements(self, input_measurements):
-        measurement_names = set(m['name'] for m in input_measurements.values())
+        measurement_names = set(m['name'] for m in input_measurements)
         assert self.measurement in measurement_names
 
         return [{'name': 'count',
