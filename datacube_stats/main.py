@@ -539,19 +539,25 @@ def _configure_date_ranges(index, config):
         """))
     date_ranges, sources = config['date_ranges'], config['sources']
 
+    output = list()
+
     if date_ranges.get('type', 'simple') == 'simple':
-        return list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
+        output = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
                                   end=pd.to_datetime(date_ranges['end_date']),
                                   stats_duration=date_ranges['stats_duration'],
                                   step_size=date_ranges['step_size']))
     elif date_ranges['type'] == 'find_daily_data':
         product_names = [source['product'] for source in sources]
-        return list(_find_periods_with_data(index, product_names=product_names,
+        output = list(_find_periods_with_data(index, product_names=product_names,
                                             start_date=date_ranges['start_date'],
                                             end_date=date_ranges['end_date']))
     else:
         raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
                                       'type=find_daily_data')
+
+    if not output:
+        raise StatsConfigurationError('Time period configuration results in 0 periods of interest.')
+    return output
 
 
 def _select_task_generator(input_region, storage):
