@@ -369,6 +369,8 @@ def load_data(sub_tile_slice, sources):
     if len(datasets) == 0:
         raise EmptyChunkException()
 
+    # TODO: Add check for compatible data variable attributes
+    # flags_definition between pq products is different and is silently dropped
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
     if len(datasets.time) == 0:
         raise EmptyChunkException()

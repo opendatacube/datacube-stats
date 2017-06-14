@@ -60,3 +60,20 @@ def _convert_to_floats(data):
         if dataarray.dtype != np.int16:
             return data
     return data.apply(lambda d: d.astype(np.float32), keep_attrs=True)
+
+
+def is_wet(data):
+    """
+    :rtype: np.ndarray
+    """
+    d = data & ~4  # unset land/sea flag
+    return d == 128
+
+
+def wofs_fuser(dest, src):
+    mismatched = (is_wet(dest) & ~is_wet(src)) | (is_wet(src) & ~is_wet(dest))
+
+    np.copyto(dest, dest | src)
+
+    np.copyto(dest, 2, where=mismatched)  # Set to non-contiguous
+    return dest

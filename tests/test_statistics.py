@@ -77,3 +77,10 @@ def test_masked_count():
     result = mc.compute(dataarray)
 
     assert result
+
+
+def wofs_fuser(dest, src):
+    pass
+
+def test_fuse_wofs(val1, val2):
+    pass
