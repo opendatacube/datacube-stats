@@ -6,7 +6,7 @@ import itertools
 import numpy as np
 import xarray
 
-from datacube.storage.masking import mask_invalid_data
+from datacube.storage.masking import mask_invalid_data, create_mask_value
 
 
 def tile_iter(tile, chunk_size):
@@ -62,18 +62,50 @@ def _convert_to_floats(data):
     return data.apply(lambda d: d.astype(np.float32), keep_attrs=True)
 
 
-def is_wet(data):
-    """
-    :rtype: np.ndarray
-    """
-    d = data & ~4  # unset land/sea flag
-    return d == 128
+wofs_flag_defs = {'cloud': {'bits': 6, 'description': 'Cloudy', 'values': {0: False, 1: True}},
+                  'cloud_shadow': {'bits': 5,
+                                   'description': 'Cloud shadow',
+                                   'values': {0: False, 1: True}},
+                  'dry': {'bits': [7, 6, 5, 4, 3, 1, 0],
+                          'description': 'No water detected',
+                          'values': {0: True}},
+                  'high_slope': {'bits': 4,
+                                 'description': 'High slope',
+                                 'values': {0: False, 1: True}},
+                  'nodata': {'bits': 0, 'description': 'No data', 'values': {1: True}},
+                  'noncontiguous': {'bits': 1,
+                                    'description': 'At least one EO band is missing over over/undersaturated',
+                                    'values': {0: False, 1: True}},
+                  'sea': {'bits': 2, 'description': 'Sea', 'values': {0: False, 1: True}},
+                  'terrain_or_low_angle': {'bits': 3,
+                                           'description': 'terrain shadow or low solar angle',
+                                           'values': {0: False, 1: True}},
+                  'wet': {'bits': [7, 6, 5, 4, 3, 1, 0],
+                          'description': 'Clear and Wet',
+                          'values': {128: True}}}
+
+
+def make_numpy_mask(defn):
+    def numpy_mask(variable, **flags):
+        """
+        :rtype: ndarray
+        """
+        mask, mask_value = create_mask_value(defn, **flags)
+
+        return variable & mask == mask_value
+
+    return numpy_mask
+
+
+wofs_mask = make_numpy_mask(wofs_flag_defs)
 
 
 def wofs_fuser(dest, src):
-    mismatched = (is_wet(dest) & ~is_wet(src)) | (is_wet(src) & ~is_wet(dest))
+    valid = wofs_mask(src, noncontiguous=False)
 
-    np.copyto(dest, dest | src)
+    np.copyto(dest, src, where=valid)
 
-    np.copyto(dest, 2, where=mismatched)  # Set to non-contiguous
+    invalid = (wofs_mask(dest, wet=True) & wofs_mask(src, dry=True)) | (
+        wofs_mask(src, wet=True) & wofs_mask(dest, dry=True))
+    np.copyto(dest, 2, where=invalid)
     return dest
