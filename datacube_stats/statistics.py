@@ -763,12 +763,32 @@ try:
             :param xarray.Dataset data:
             :return: xarray.Dataset
             """
+            from_, to = self._vars_to_transpose(data)
             # Assert data shape/dims
-            data = data.to_array(dim='variable').transpose('x', 'y', 'variable', 'time').copy()
+            data = data.to_array(dim='variable').transpose(*from_).copy()
 
             data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
 
-            return data.transpose('variable', 'y', 'x').to_dataset(dim='variable')
+            return data.transpose(*to).to_dataset(dim='variable')
+
+        @staticmethod
+        def _vars_to_transpose(data):
+            """
+            We need to be able to handle data given to use in either Geographic or Projected form.
+
+            The Data Cube provided xarrays will contain different dimensions, latitude/longitude or x/y, which means
+            the array reshaping takes different arguments.
+            """
+            is_proj = 'x' in data and 'y' in data
+            is_geo = 'longitude' in data and 'latitude' in data
+            if is_proj and is_geo:
+                raise StatsProcessingError('Data to process contains both geographic and projected dimensions, unable to proceed')
+            elif not is_proj and not is_geo:
+                raise StatsProcessingError('Data to process contains neither geographic nor projected dimensions, unable to proceed')
+            elif is_proj:
+                return ('x', 'y', 'variable', 'time'), ('variable', 'y', 'x')
+            else:
+                return ('longitude', 'latitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
 
 
     STATS['geomedian'] = GeoMedian
