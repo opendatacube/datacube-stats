@@ -551,18 +551,17 @@ def _configure_date_ranges(index, config):
         end = pd.to_datetime(date_ranges['end_date'])
         output = [(start, end)]
 
-
     elif date_ranges.get('type', 'simple') == 'simple':
         output = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
-                                  end=pd.to_datetime(date_ranges['end_date']),
-                                  stats_duration=date_ranges['stats_duration'],
-                                  step_size=date_ranges['step_size']))
+                                    end=pd.to_datetime(date_ranges['end_date']),
+                                    stats_duration=date_ranges['stats_duration'],
+                                    step_size=date_ranges['step_size']))
     elif date_ranges['type'] == 'find_daily_data':
         sources = config['sources']
         product_names = [source['product'] for source in sources]
         output = list(_find_periods_with_data(index, product_names=product_names,
-                                            start_date=date_ranges['start_date'],
-                                            end_date=date_ranges['end_date']))
+                                              start_date=date_ranges['start_date'],
+                                              end_date=date_ranges['end_date']))
     else:
         raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
                                       'type=find_daily_data')
