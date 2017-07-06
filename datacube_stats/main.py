@@ -502,8 +502,8 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None):
     stats_app.storage = config['storage']
     stats_app.sources = config['sources']
     stats_app.output_product_specs = config['output_products']
-    stats_app.location = config.get('location',
-                                    output_location)  # Write files to current directory if not set in config
+    stats_app.location = output_location or config.get('location',
+                                                       '') # Write files to current directory if not set in config or command line
     stats_app.computation = config.get('computation', {})
     stats_app.date_ranges = _configure_date_ranges(index, config)
     stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
