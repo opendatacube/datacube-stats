@@ -271,7 +271,7 @@ class ClearCount(Statistic):
             {
                 'name': 'count_observations',
                 'dtype': 'int16',
-                'nodata': -1,
+                'nodata': 0,
                 'units': '1'
             }
         ]
