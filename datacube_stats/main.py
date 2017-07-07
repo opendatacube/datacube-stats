@@ -427,7 +427,10 @@ def load_masked_data(sub_tile_slice, source_prod):
 
 def _source_measurement_defs(index, sources):
     """
-    Look up desired measurements from sources in the database index
+
+    Look up desired measurements from sources in the database index. Note that
+    multiple sources are meant to be of the same shape, we only support
+    combining equivalent products from different sensors.
 
     :return: list of measurement definitions
     """
@@ -442,14 +445,15 @@ def _source_measurement_defs(index, sources):
                                           'are %s' % (first_source['product'], first_source['measurements'],
                                                       other_source['product'], other_source['measurements']))
 
-    source_measurements = index.products.get_by_name(first_source['product']).measurements
+    #TODO: should probably check that all products exist and are of compatible shape
+
+    available_measurements = index.products.get_by_name(first_source['product']).measurements
+    requested_measurements = first_source.get('measurements', available_measurements.keys())
 
     try:
-        measurements = [source_measurements[name] for name in first_source['measurements']]
+        return [available_measurements[name] for name in requested_measurements]
     except KeyError:
-        measurements = source_measurements
-
-    return measurements
+        raise StatsConfigurationError('Some of the requested measurements were not present in the product definition')
 
 
 def _get_app_metadata(config_file):
