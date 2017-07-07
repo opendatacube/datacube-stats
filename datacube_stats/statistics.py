@@ -33,6 +33,8 @@ from pkg_resources import iter_entry_points
 
 from datacube.storage.masking import make_mask
 
+#np.seterr(divide='ignore', invalid='ignore')
+
 try:
     from bottleneck import anynan, nansum
 except ImportError:
@@ -279,8 +281,12 @@ class MedNdwi(Statistic):
     """Calculate ndwi out of median image through time"""
 
     def compute(self, data):
-        # TODO Fix Hardcoded 'time' and pulling out median value then calculate ndwi 
+        # This is a special case to implement calculating ndwi for ITEM product 
         med = (data.green-data.nir)/(data.green+data.nir)
+        # stop all bad data and reset to the following
+        med.values[med.values<-1] = np.nan 
+        med.values[med.values>1] = np.nan
+        med.values[med.values==10] = np.nan
         med = med.median(dim='time', keep_attrs=True, skipna=True)
         return med.rename('ndwi')
 
@@ -294,34 +300,17 @@ class MedNdwi(Statistic):
             }
         ]
 
-class RelNdwi(Statistic):
-    """Calculate relative binary image out of ndwi median """
-
-    def compute(self, data):
-        # TODO Fix Hardcoded 'time' and pulling out median value then calculate ndwi 
-        med = (data.green-data.nir)/(data.green+data.nir)
-        med = med.median(dim='time', keep_attrs=True, skipna=True)
-        med = med.rename('rel')
-        med.values[med.values > 0] = 0
-        med.values[med.values <= 0] = 1
-        return med
-
-    def measurements(self, input_measurements):
-        return [
-            {
-                'name': 'rel',
-                'dtype': 'int8',
-                'nodata': -9,
-                'units': '1'
-            }
-        ]
 
 class StdNdwi(Statistic):
     """ Calculate standard deviation on NDWI values """
 
     def compute(self, data):
         med = (data.green-data.nir)/(data.green+data.nir)
-        med =  med.std(dim='time', keep_attrs=True, skipna=True)
+        # stop all bad data and reset to the following
+        med.values[med.values<-1] = np.nan
+        med.values[med.values>1] = np.nan
+        med.values[med.values==10] = np.nan
+        med = med.std(dim='time', keep_attrs=True, skipna=True)
         return med.rename('std')
 
     def measurements(self, input_measurements):

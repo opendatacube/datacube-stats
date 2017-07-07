@@ -81,22 +81,23 @@ sources:
 
 ## Define whether and how to chunk over time
 date_ranges:
-  start_date: 2010-01-01
+  start_date: 2005-01-01
   end_date: 2017-01-01
-  stats_duration: 7y
-  step_size: 7y
+  stats_duration: 12y
+  step_size: 12y
   type: simple
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
 #location: '/g/data/r78/bxb547/TIDE_MODEL/output_low'
 #location: '/g/data/r78/intertidal/big_poly_data'
-#location: '/g/data/r78/intertidal/output_low_3'
-location: '/g/data/v10/intertidal/low_composite'
+location: '/g/data/r78/intertidal/PRODUCT_LOW'
+#location: '/g/data/v10/intertidal/low_composite'
 
 input_region:
 #  tile: [12, -43]
-  from_file: /g/data/r78/intertidal/GA_tidal_model.shp
+#  from_file: /g/data/r78/intertidal/GA_tidal_model.shp
+  from_file: /g/data/r78/ITEM/TM_compute.shp
 #  from_file: /g/data/r78/intertidal/low_composite_20.shp
 #
 storage:
@@ -119,8 +120,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 400
-    y: 400
+    x: 800
+    y: 800
 
 ## Define statistics to perform and how to store the data
 
@@ -149,7 +150,7 @@ tide_class:
   #In case we need all data just set this parameter or comment it out in case of we don't need post SLC dates
   #  ls7_slc_off: False
   # This is for deciding low high percentile based on global dates
-  global_epoch_start: 2010-01-01
+  global_epoch_start: 2005-01-01
   global_epoch_end: 2017-01-01
   #Needs sub composite then chose one of these now
   #e, f, ph, pl

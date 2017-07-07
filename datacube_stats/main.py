@@ -316,13 +316,13 @@ def execute_task(task, output_driver, chunking, tide_class):
     :param chunking: dict of dimension sizes to chunk the computation by
     """
     timer = MultiTimer().start('total')
-    #datacube.set_options(reproject_threads=1)
+    datacube.set_options(reproject_threads=1)
     geom = None
     try:
         with output_driver(task=task) as output_files:
-            full_chunk = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]}
+            full_chunk = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]} 
             geom =  tide_class.get('geom')
-            for sub_tile_slice in tile_iter(task.sample_tile, chunking):
+            for sub_tile_slice in tile_iter(task.sample_tile, full_chunk):
             #for sub_tile_slice in tile_iter(task.sample_tile, full_chunk):
                 load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer, geom)
     except OutputFileAlreadyExists as e:
@@ -342,21 +342,23 @@ def load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer,
         timer.start('loading_data')
         data = _load_data(sub_tile_slice, task.sources)
         timer.pause('loading_data')
-        for chunk in tile_iter(task.sample_tile, chunking):
-            #for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-            for prod_name, stat in task.output_products.items():
-                import pdb; pdb.set_trace()
+        #for sub_tile_slice in tile_iter(task.sample_tile, chunking):
+        _LOG.info("geobox received %s", data.geobox)
+        for prod_name, stat in task.output_products.items():
+            _LOG.info("Doing for stat %s", stat.stat_name)
+            for chunk in tile_iter(task.sample_tile, chunking):
                 _LOG.info("Computing %s in tile %s %s. Current timing: %s",
                           prod_name, task.tile_index, chunk, timer)
                 timer.start(prod_name)
                 # scale it to represent in float32 for precise geomedian
-                data = data/10000 if stat.stat_name == 'precisegeomedian' else data
+                ndata = data/10000 if stat.stat_name == 'precisegeomedian' else data
                 geobox = data.geobox
-                import pdb; pdb.set_trace()
-                ndata = stat.compute(data)
+                ndata = stat.compute(ndata.isel(x=slice(chunk[2].start, chunk[2].stop), 
+                        y=slice(chunk[1].start, chunk[1].stop)))
                 # mask as per geometry now. Ideally Mask should have been done before computation
                 # But masking before computation is a problem as it gets 0 value
                 mask = geometry_mask([geom], geobox, invert=True)
+                mask = mask[chunk[1].start:chunk[1].stop, chunk[2].start:chunk[2].stop]
                 ndata = ndata.where(mask)
                 timer.pause(prod_name)
                 # For each of the data variables, shove this chunk into the output results
@@ -364,10 +366,10 @@ def load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer,
                 # Single variable dataset deals here
                 if stat.stat_name == "clearcount" or stat.stat_name == "medndwi" or stat.stat_name == "rel" \
                        or stat.stat_name == "std":
-                    output_files.write_data(prod_name, ndata.name, sub_tile_slice, ndata.values)
+                    output_files.write_data(prod_name, ndata.name, chunk, ndata.values)
                 else: 
                     for var_name, var in ndata.data_vars.items():  # TODO: Move this loop into output_files
-                        output_files.write_data(prod_name, var_name, sub_tile_slice, var.values)
+                        output_files.write_data(prod_name, var_name, chunk, var.values)
                 timer.pause('writing_data')
     except EmptyChunkException:
         _LOG.info("CHUNK ERROR %s ", task.tile_index)
@@ -417,7 +419,6 @@ def _remove_emptys(datasets):
 
 
 def _load_masked_data(sub_tile_slice, source_prod):
-    import pdb; pdb.set_trace()
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
                              measurements=source_prod['spec'].get('measurements'),
                              skip_broken_datasets=True)
@@ -433,7 +434,6 @@ def _load_masked_data(sub_tile_slice, source_prod):
         return None
     if 'masks' in source_prod and 'masks' in source_prod['spec']:
         for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
-            import pdb; pdb.set_trace()
             if mask_tile is None:
                 # Discard data due to no mask data
                 return None
@@ -745,7 +745,8 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                 group_by = query_group_by(group_by=group_by_name)
                 sources = dc.group_datasets(ds, group_by)
                 if len(ds) > 0 :
-                    all_times = all_times + [dd for dd in sources.time.data.astype('M8[s]').astype('O').tolist()]    
+                    all_times = all_times + [dd for dd in sources.time.data.astype('M8[s]').astype('O').tolist()
+                                 if dd.strftime("%Y-%m-%dT%H:%M:%S") != '2015-11-26T01:29:55']
         return sorted(all_times)
 
     with fiona.open(input_region['from_file']) as input_region:
@@ -764,6 +765,7 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                 if Id in tide_class['feature_id']:
                     geom = feature['geometry']
                     boundary_polygon = Geometry(geom, crs)
+                    boundary_polygon = boundary_polygon.to_crs(CRS('EPSG:3577'))
                     tide_class['geom'] = boundary_polygon
                     years = "_".join(x for x in [v for k, v in tide_class['year'].items()])
                     tile_index=(str(Id), years)
@@ -812,6 +814,7 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
             #if Id < 10:
                 geom = feature['geometry']
                 boundary_polygon = Geometry(geom, crs)
+                boundary_polygon = boundary_polygon.to_crs(CRS('EPSG:3577')) 
                 tide_class['geom'] = boundary_polygon
                 _LOG.info("feature %d captured for longitude and latitude %.02f  %.02f", Id, lon, lat)
                 _LOG.info('Getting all dates corresponding to this polygon for all sensor data')

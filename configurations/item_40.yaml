@@ -1,9 +1,9 @@
 ## Define inputs to perform statistics on
 global_attributes:
-  title: HIGH composite 
+  title: ITEM 
 sources:
   - product: ls5_nbar_albers
-    name: intertidal_high
+    name: ITEM 
     measurements: [blue, green, red, nir, swir1, swir2]
     group_by: solar_day
 #    source_filter:
@@ -28,7 +28,7 @@ sources:
           swir2_saturated: False
 
   - product: ls7_nbar_albers
-    name: intertidal_high
+    name: ITEM
     measurements: [blue, green, red, nir, swir1, swir2]
     group_by: solar_day
 #    source_filter:
@@ -54,7 +54,7 @@ sources:
 
 
   - product: ls8_nbar_albers
-    name: intertidal_high
+    name: ITEM
     measurements: [blue, green, red, nir, swir1, swir2]
     group_by: solar_day
 #    source_filter:
@@ -81,23 +81,27 @@ sources:
 
 ## Define whether and how to chunk over time
 date_ranges:
-  start_date: 1995-01-01
+  start_date: 1986-01-01
   end_date: 2017-01-01
-  stats_duration: 22y
-  step_size: 22y
+  stats_duration: 31y
+  step_size: 31y
   type: simple
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
-#location: '/g/data/r78/bxb547/TIDE_MODEL/output_high'
-location: '/g/data/r78/intertidal/PRODUCT_HIGH'
+#location: '/g/data/r78/bxb547/TIDE_MODEL/output_low'
+#location: '/g/data/r78/ITEM/MERGE_POLY'
+location: '/g/data/r78/ITEM/OUTPUT_GA'
+#location: '/g/data/v10/intertidal/output_data'
 
 input_region:
 #  tile: [12, -43]
-  from_file: '/g/data/r78/intertidal/GA_tidal_model.shp' 
+  from_file: /g/data/r78/ITEM/TM_compute.shp
+#  from_file: /g/data/r78/intertidal/low_composite_20.shp
 #
 storage:
   driver: NetCDFCF
+  #driver: Geotiff
 
   crs: EPSG:3577
   tile_size:
@@ -121,32 +125,44 @@ computation:
 ## Define statistics to perform and how to store the data
 
 output_products:
- - name: tidal_high
-   statistic: precisegeomedian
+ - name: med_ndwi
+   statistic: medndwi
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'COMPOSITE_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
-   product_type: COMPOSITE HIGH
+   file_path_template: '{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}_PER_{percent}.nc'
+   product_type: ITEM
 
- - name: tidal_count
-   statistic: clearcount
-   output_params:
-      zlib: True
-      fletcher32: True
-   file_path_template: 'COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
-   product_type: COMPOSITE HIGH 
+# - name: standard_deviation 
+#   statistic: std
+#   output_params:
+#      zlib: True
+#      fletcher32: True
+#   file_path_template: '{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}_PER_{percent}.nc'
+#   product_type: ITEM
+
+# - name: relative
+#   statistic: rel
+#   output_params:
+#      zlib: True
+#      fletcher32: True
+#   file_path_template: '{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}_PER_{percent}.nc'
+#   product_type: ITEM
+# - name: tidal_count
+#   statistic: clearcount
+#   output_params:
+#      zlib: True
+#      fletcher32: True
+#   file_path_template: 'PIXEL_COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
+#   product_type: ITEM
 
 tide_class:
-  product: high
-#Filter in/out LS7 data By default ls7_slc_off is set meaning datasets not included after 2003-05-01
-#In case we need all data just set this parameter or comment it out in case of we don't need post SLC dates
-#  ls7_slc_off: False
-# This is for deciding low high percentile based on global dates
-  global_epoch_start: 1995-01-01
+  product: item
+  range_percent: 10
+  percent: 40
+  #Filter in/out LS7 data By default ls7_slc_off is set meaning datasets not included after 2003-05-01
+  #In case we need all data just set this parameter or comment it out in case of we don't need post SLC dates
+  ls7_slc_off: False
+  # This is for deciding low high percentile based on global dates
+  global_epoch_start: 1986-01-01
   global_epoch_end: 2017-01-01
-  percent: 20 
-  #feature_id: [28, 108, 178, 221, 239] To run only of interest of the polygon
-  #Needs sub composite then chose one of these now
-  #e, f, ph, pl
-  #sub_class: e 
