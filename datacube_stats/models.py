@@ -65,7 +65,7 @@ class OutputProduct(object):
       - Input measurements
     """
 
-    def __init__(self, metadata_type, input_measurements, storage, name, file_path_template,
+    def __init__(self, metadata_type, product_type, input_measurements, storage, name, file_path_template,
                  stat_name, statistic, output_params=None, extras=None):
         #: The product name.
         self.name = name
@@ -81,7 +81,7 @@ class OutputProduct(object):
 
         self.data_measurements = statistic.measurements(input_measurements)
 
-        self.product = self._create_product(metadata_type, self.data_measurements, storage)
+        self.product = self._create_product(metadata_type, product_type, self.data_measurements, storage)
         self.output_params = output_params
 
         #: A dictionary of extra arguments to be used through the processing chain
@@ -90,7 +90,9 @@ class OutputProduct(object):
 
     @classmethod
     def from_json_definition(cls, metadata_type, input_measurements, storage, definition):
-        return cls(metadata_type, input_measurements, storage,
+        return cls(metadata_type,
+                   definition.get('product_type', '!!NOTSET!!'),
+                   input_measurements, storage,
                    name=definition['name'],
                    file_path_template=definition.get('file_path_template'),
                    stat_name=definition['statistic'],
@@ -101,14 +103,14 @@ class OutputProduct(object):
     def compute(self):
         return self.statistic.compute
 
-    def _create_product(self, metadata_type, data_measurements, storage):
+    def _create_product(self, metadata_type, product_type, data_measurements, storage):
         product_definition = {
             'name': self.name,
             'description': 'Description for ' + self.name,
             'metadata_type': 'eo',
             'metadata': {
                 'format': 'NetCDF',
-                'product_type': self.stat_name,
+                'product_type': product_type,
             },
             'storage': storage,
             'measurements': data_measurements

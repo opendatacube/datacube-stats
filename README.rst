@@ -408,6 +408,19 @@ Will output filenames similar to:
 
     10_15/LS_PQ_COUNT_3577_10_15_2010-01-01_2011-01-01.nc
 
+
+Product type
+~~~~~~~~~~~~
+
+Optional field allows to specify `product_type` field of the output product.
+Defaults to `!!NOTSET!!`. This is needed when output is to be indexed into the
+data cube.
+
+.. code-block:: yaml
+
+        product_type: seasonal_stats
+
+
 Complete example
 ~~~~~~~~~~~~~~~~
 
@@ -415,6 +428,7 @@ Complete example
 
     output_products:
      - name: landsat_seasonal_mean
+       product_type: seasonal_stats
        statistic: mean
        output_params:
          zlib: True
@@ -422,6 +436,7 @@ Complete example
        file_path_template: 'SR_N_MEAN/SR_N_MEAN_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
 
      - name: landsat_seasonal_medoid
+       product_type: seasonal_stats
        statistic: medoid
        output_params:
          zlib: True
@@ -429,6 +444,7 @@ Complete example
        file_path_template: 'SR_N_MEDOID/SR_N_MEDOID_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
 
      - name: landsat_seasonal_percentile_10
+       product_type: seasonal_stats
        statistic: percentile_10
        statistic_args:
          q: 10
