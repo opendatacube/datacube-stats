@@ -360,8 +360,8 @@ Define the name of the output product. eg:
 Product type
 ~~~~~~~~~~~~
 
-Optional field allows to specify `product_type`_ field of the output product.
-Defaults to `!!NOTSET!!`_. This is needed when output is to be indexed into the
+Optional field allows to specify ``product_type`` field of the output product.
+Defaults to ``!!NOTSET!!``. This is needed when output is to be indexed into the
 data cube.
 
 .. code-block:: yaml
