@@ -357,6 +357,18 @@ Define the name of the output product. eg:
 
     name: landsat_yearly_mean
 
+Product type
+~~~~~~~~~~~~
+
+Optional field allows to specify `product_type`_ field of the output product.
+Defaults to `!!NOTSET!!`_. This is needed when output is to be indexed into the
+data cube.
+
+.. code-block:: yaml
+
+        product_type: seasonal_stats
+
+
 Statistic/calculation
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -408,17 +420,6 @@ Will output filenames similar to:
 
     10_15/LS_PQ_COUNT_3577_10_15_2010-01-01_2011-01-01.nc
 
-
-Product type
-~~~~~~~~~~~~
-
-Optional field allows to specify `product_type` field of the output product.
-Defaults to `!!NOTSET!!`. This is needed when output is to be indexed into the
-data cube.
-
-.. code-block:: yaml
-
-        product_type: seasonal_stats
 
 
 Complete example
