@@ -309,7 +309,7 @@ The tiling regime is determined by the ``tile_size`` parameter of the `Output st
 .. code-block:: yaml
 
     input_region:
-      tile: [16, -39]
+      tile: '[16, -39]'
 
 Spatial extents
 ~~~~~~~~~~~~~~~
