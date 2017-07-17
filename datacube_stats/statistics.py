@@ -686,6 +686,28 @@ class MaskedCount(Statistic):
                  'nodata': 65536}]  # No Data is required somewhere, but doesn't really make sense
 
 
+class ExternalPlugin(Statistic):
+    """
+    Run externally defined plugin.
+
+    """
+    def __init__(self, impl, *args, **kwargs):
+        from pydoc import locate  # TODO: probably should use importlib, but this works so easily
+
+        impl_class = locate(impl)
+
+        if impl_class is None:
+            raise StatsProcessingError("Failed to load external plugin: '{}'".format(impl))
+
+        self._impl = impl_class(*args, **kwargs)
+
+    def compute(self, data):
+        return self._impl.compute(data)
+
+    def measurements(self, input_measurements):
+        return self._impl.measurements(input_measurements)
+
+
 STATS = {
     'simple': ReducingXarrayStatistic,
     # 'min': SimpleXarrayReduction('min'),
@@ -707,6 +729,7 @@ STATS = {
     'clear_count': ClearCount,
     'masked_count': MaskedCount,
     'flag_counter': FlagCounter,
+    'external': ExternalPlugin,
 }
 
 
