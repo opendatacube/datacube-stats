@@ -109,7 +109,9 @@ class OutputProduct(object):
             'description': 'Description for ' + self.name,
             'metadata_type': 'eo',
             'metadata': {
-                'format': 'NetCDF',
+                'format': {
+                    'name': 'NetCDF'
+                },
                 'product_type': product_type,
             },
             'storage': storage,
