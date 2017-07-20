@@ -578,7 +578,7 @@ class PerStatIndexStat(SimpleStatistic):
 
         for metadata_producer in self._metadata_producers:
             var_name, var_data = metadata_producer.compute(data, index)
-            data_values[var_data] = var_data
+            data_values[var_name] = var_data
 
         return data_values
 
