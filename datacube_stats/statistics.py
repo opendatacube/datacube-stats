@@ -31,7 +31,7 @@ import numpy as np
 import xarray
 from pkg_resources import iter_entry_points
 
-from datacube.storage.masking import make_mask
+from datacube.storage.masking import make_mask, create_mask_value
 
 try:
     from bottleneck import anynan, nansum
@@ -708,6 +708,81 @@ class ExternalPlugin(Statistic):
         return self._impl.measurements(input_measurements)
 
 
+class MaskMultiCounter(Statistic):
+    def __init__(self, vars, nodata_flags=None):
+        """
+
+        vars:
+           - name: <output_variable_name: String>
+             flags:
+               field_name1: expected_value1
+               field_name2: expected_value2
+
+        # optional, define input nodata as a mask
+        # when all inputs match this, then output will be set to nodata
+        # this allows to distinguish 0 from nodata
+
+        nodata_flags:
+           contiguous: False
+        """
+        self._vars = vars
+        self._nodata_flags = nodata_flags
+        self._nodata_mask = None
+
+    def measurements(self, input_measurements):
+        nodata = 0xFFFF
+        bit_defs = input_measurements[0]['flags_definition']
+
+        if self._nodata_flags is not None:
+            self._nodata_mask = create_mask_value(bit_defs, **self._nodata_flags)
+
+        for v in self._vars:
+            flags = v['flags']
+            v['mask'] = create_mask_value(bit_defs, **flags)
+
+        return [dict(name=v['name'],
+                     dtype='uint16',
+                     units='1',
+                     nodata=nodata) for v in self._vars]
+
+    def compute(self, ds):
+        print('::compute t:{} {}x{}'.format(ds.dims['time'], ds.dims['x'], ds.dims['y']))
+
+        def build_invalid_mask(pq):
+            if self._nodata_mask is None:
+                return None
+
+            m, v = self._nodata_mask
+            invalid_data_mask = ((pq & m) != v).sum(dim='time') == 0
+
+            if invalid_data_mask.values.any():  # some missing data
+                return invalid_data_mask
+            return None
+
+        nodata = 0xFFFF
+        pq = list(ds.data_vars.values())[0]
+
+        invalid_data_mask = build_invalid_mask(pq)
+
+        def process_var(var):
+            name = var['name']
+            m, v = var['mask']
+
+            cc = ((pq & m) == v).sum(dim='time').astype('uint16')
+
+            if invalid_data_mask is not None:
+                cc.values[invalid_data_mask] = nodata
+
+            return (name, cc)
+
+        vars = dict(process_var(v) for v in self._vars)
+
+        return xarray.Dataset(vars, attrs=dict(crs=ds.crs))
+
+    def __repr__(self):
+        return 'MaskMultiCounter<{}>'.format(','.join([v['name'] for v in self._vars]))
+
+
 STATS = {
     'simple': ReducingXarrayStatistic,
     # 'min': SimpleXarrayReduction('min'),
@@ -728,6 +803,7 @@ STATS = {
     'wofs_summary': WofsStats,
     'clear_count': ClearCount,
     'masked_count': MaskedCount,
+    'masked_multi_count': MaskMultiCounter,
     'flag_counter': FlagCounter,
     'external': ExternalPlugin,
 }
