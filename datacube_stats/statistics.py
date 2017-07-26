@@ -714,6 +714,7 @@ class MaskMultiCounter(Statistic):
 
         vars:
            - name: <output_variable_name: String>
+             simple: <optional Bool, default: False>
              flags:
                field_name1: expected_value1
                field_name2: expected_value2
@@ -724,6 +725,8 @@ class MaskMultiCounter(Statistic):
 
         nodata_flags:
            contiguous: False
+
+        If variable is marked simple, then there is no distinction between 0 and nodata.
         """
         self._vars = vars
         self._nodata_flags = nodata_flags
@@ -767,10 +770,11 @@ class MaskMultiCounter(Statistic):
         def process_var(var):
             name = var['name']
             m, v = var['mask']
+            simple = var.get('simple', False)
 
             cc = ((pq & m) == v).sum(dim='time').astype('uint16')
 
-            if invalid_data_mask is not None:
+            if not simple and invalid_data_mask is not None:
                 cc.values[invalid_data_mask] = nodata
 
             return (name, cc)
