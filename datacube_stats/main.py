@@ -502,6 +502,9 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None, 
         input_region = {'tile': tile_index}
 
     if year is not None:
+        if 'date_ranges' not in config:
+            config['date_ranges'] = {}
+
         config['date_ranges']['start_date'] = '{}-01-01'.format(year)
         config['date_ranges']['end_date'] = '{}-01-01'.format(year+1)
 
