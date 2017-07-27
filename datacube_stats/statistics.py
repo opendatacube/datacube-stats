@@ -38,7 +38,6 @@ try:
 except ImportError:
     nansum = np.nansum
 
-
     def anynan(x, axis=None):
         return np.isnan(x).any(axis=axis)
 
@@ -668,7 +667,7 @@ class FlagCounter(Statistic):
 class MaskedCount(Statistic):
     """
     Use the provided flags to count the number of True values through time.
-    
+
     """
 
     def __init__(self, flags):
@@ -749,7 +748,7 @@ class MaskMultiCounter(Statistic):
                      nodata=nodata) for v in self._vars]
 
     def compute(self, ds):
-        print('::compute t:{} {}x{}'.format(ds.dims['time'], ds.dims['x'], ds.dims['y']))
+        # print('::compute t:{} {}x{}'.format(ds.dims['time'], ds.dims['x'], ds.dims['y']))
 
         def build_invalid_mask(pq):
             if self._nodata_mask is None:
@@ -838,7 +837,6 @@ try:
     from hdmedians import nangeomedian
     import warnings
 
-
     def apply_geomedian(inarray, f, axis=3, eps=1e-3, **kwargs):
         assert len(inarray.shape) == 4
         assert axis == 3
@@ -854,7 +852,6 @@ try:
                     except ValueError:
                         output[ix, iy, :] = np.nan
         return output
-
 
     class GeoMedian(Statistic):
         def __init__(self, eps=1e-3):
@@ -892,7 +889,6 @@ try:
                 return ('x', 'y', 'variable', 'time'), ('variable', 'y', 'x')
             else:
                 return ('longitude', 'latitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
-
 
     STATS['geomedian'] = GeoMedian
 except ImportError:
