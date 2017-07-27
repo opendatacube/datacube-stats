@@ -92,19 +92,20 @@ def list_statistics(ctx, param, value):
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
                                                       'single tile_index specified as [X] [Y]')
 @click.option('--output-location', help='Override output location in configuration file')
+@click.option('--year', type=int, help='Override time period in configuration file')
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
 @ui.global_cli_options
 @ui.executor_cli_options
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index, output_location):
+def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index, output_location, year):
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = create_stats_app(config, index, tile_index, output_location)
+    app = create_stats_app(config, index, tile_index, output_location, year)
     app.queue_size = queue_size
     app.validate()
 
@@ -487,7 +488,7 @@ def _find_periods_with_data(index, product_names, period_duration='1 day',
         yield time_range.begin, time_range.end
 
 
-def create_stats_app(config, index=None, tile_index=None, output_location=None):
+def create_stats_app(config, index=None, tile_index=None, output_location=None, year=None):
     """
     Create a StatsApp to run a processing job, based on a configuration file
 
@@ -499,6 +500,10 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None):
     input_region = config.get('input_region')
     if tile_index and not input_region:
         input_region = {'tile': tile_index}
+
+    if year is not None:
+        config['date_ranges']['start_date'] = '{}-01-01'.format(year)
+        config['date_ranges']['end_date'] = '{}-01-01'.format(year+1)
 
     stats_app = StatsApp()
     stats_app.index = index
