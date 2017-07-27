@@ -1,7 +1,6 @@
 #TODO:
 #  - summary
 #  - location
-#  - dates
 
 sources:
   - product: ls5_pq_albers
@@ -96,8 +95,8 @@ output_products:
 
 
 date_ranges:
-  #start_date: 2014-01-01
-  #end_date: 2015-01-01
+  start_date: 1986-01-01
+  end_date: 2017-01-01
   stats_duration: 12m
   step_size: 12m
 
