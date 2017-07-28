@@ -92,19 +92,20 @@ def list_statistics(ctx, param, value):
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
                                                       'single tile_index specified as [X] [Y]')
 @click.option('--output-location', help='Override output location in configuration file')
+@click.option('--year', type=int, help='Override time period in configuration file')
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
 @ui.global_cli_options
 @ui.executor_cli_options
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index, output_location):
+def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index, output_location, year):
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = create_stats_app(config, index, tile_index, output_location)
+    app = create_stats_app(config, index, tile_index, output_location, year)
     app.queue_size = queue_size
     app.validate()
 
@@ -445,7 +446,7 @@ def _source_measurement_defs(index, sources):
                                           'are %s' % (first_source['product'], first_source['measurements'],
                                                       other_source['product'], other_source['measurements']))
 
-    #TODO: should probably check that all products exist and are of compatible shape
+    # TODO: should probably check that all products exist and are of compatible shape
 
     available_measurements = index.products.get_by_name(first_source['product']).measurements
     requested_measurements = first_source.get('measurements', available_measurements.keys())
@@ -487,7 +488,7 @@ def _find_periods_with_data(index, product_names, period_duration='1 day',
         yield time_range.begin, time_range.end
 
 
-def create_stats_app(config, index=None, tile_index=None, output_location=None):
+def create_stats_app(config, index=None, tile_index=None, output_location=None, year=None):
     """
     Create a StatsApp to run a processing job, based on a configuration file
 
@@ -500,14 +501,21 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None):
     if tile_index and not input_region:
         input_region = {'tile': tile_index}
 
+    if year is not None:
+        if 'date_ranges' not in config:
+            config['date_ranges'] = {}
+
+        config['date_ranges']['start_date'] = '{}-01-01'.format(year)
+        config['date_ranges']['end_date'] = '{}-01-01'.format(year+1)
+
     stats_app = StatsApp()
     stats_app.index = index
     stats_app.config_file = config
     stats_app.storage = config['storage']
     stats_app.sources = config['sources']
     stats_app.output_product_specs = config['output_products']
-    stats_app.location = output_location or config.get('location',
-                                                       '') # Write files to current directory if not set in config or command line
+    # Write files to current directory if not set in config or command line
+    stats_app.location = output_location or config.get('location', '')
     stats_app.computation = config.get('computation', {})
     stats_app.date_ranges = _configure_date_ranges(index, config)
     stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
@@ -534,19 +542,19 @@ def _configure_date_ranges(index, config):
     if 'date_ranges' not in config:
         raise StatsConfigurationError(dedent("""\
         No Date Range specification was found in the stats configuration file, please add a section similar to:
-        
+
         date_ranges:
           start_date: 2010-01-01
           end_date: 2011-01-01
           stats_duration: 3m
           step_size: 3m
-        
+
         This will produce 4 x quarterly statistics from the year 2010.
         """))
     date_ranges = config['date_ranges']
     if 'start_date' not in date_ranges or 'end_date' not in date_ranges:
         raise StatsConfigurationError("Must specified both `start_date` and `end_date`"
-                " in `date_ranges:` section of configuration")
+                                      " in `date_ranges:` section of configuration")
 
     output = list()
 
@@ -628,10 +636,10 @@ class GriddedTaskGenerator(object):
     def __call__(self, index, sources_spec, date_ranges):
         """
         Generate the required tasks through time and across a spatial grid.
-        
+
         Input region can be limited by specifying either/or both of `geopolygon` and `cell_index`, which
         will both result in only datasets covering the poly or cell to be included.
-    
+
         :param index: Datacube Index
         :return:
         """
@@ -688,7 +696,7 @@ class NonGriddedTaskGenerator(object):
     def __call__(self, index, sources_spec, date_ranges):
         """
         Make stats tasks for a single defined spatial region, not part of a grid.
-    
+
         :param index: database index
         :param input_region: dictionary of query parameters defining the target input region. Usually
                              x/y spatial boundaries.
@@ -725,7 +733,7 @@ class NonGriddedTaskGenerator(object):
 class ArbitraryTileMaker(object):
     """
     Create a :class:`Tile` which can be used by :class:`GridWorkflow` to later load the required data.
-    
+
     """
     def __init__(self, index, input_region, storage):
         self.dc = Datacube(index=index)

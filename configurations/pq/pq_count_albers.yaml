@@ -1,0 +1,111 @@
+#TODO:
+#  - summary
+#  - location
+
+sources:
+  - product: ls5_pq_albers
+    group_by: solar_day
+    fuse_func: datacube.helpers.ga_pq_fuser
+    mask_nodata: False
+    measurements: [ pixelquality ]
+
+  - product: ls7_pq_albers
+    group_by: solar_day
+    fuse_func: datacube.helpers.ga_pq_fuser
+    mask_nodata: False
+    measurements: [ pixelquality ]
+
+  - product: ls8_pq_albers
+    group_by: solar_day
+    fuse_func: datacube.helpers.ga_pq_fuser
+    mask_nodata: False
+    measurements: [ pixelquality ]
+
+
+global_attributes:
+  title: Pixel Quality Statistics 25 v2
+  description: Count of clear surface observations 25 metre, 100km tile, Australian Albers Equal Area projection (EPSG:3577)
+  summary: TODO
+  institution: Commonwealth of Australia (Geoscience Australia)
+  keywords_vocabulary: GCMD
+  keywords: AU/GA,NASA/GSFC/SED/ESD/LANDSAT,ETM+,TM,OLI,EARTH SCIENCE
+  platform: LANDSAT-5,LANDSAT-7,LANDSAT-8
+  instrument: TM,ETM+,OLI
+  publisher_email: earth.observation@ga.gov.au
+  publisher_name: Section Leader, Operations Section, NEMO, Geoscience Australia
+  publisher_url: http://www.ga.gov.au
+  license: CC BY Attribution 4.0 International License
+  cdm_data_type: Grid
+  product_version: 2
+  product_suite: Pixel Quality 25m
+  acknowledgment: Landsat data is provided by the United States Geological Survey (USGS) through direct reception of the data at Geoscience Australias satellite reception facility or download.
+  coverage_content_type: physicalMeasurement
+  cdm_data_type: Grid
+  product_suite: Clear Observation Count - 25
+
+storage:
+  driver: NetCDFCF
+
+  crs: EPSG:3577
+  tile_size:
+          x: 100000.0
+          y: 100000.0
+  resolution:
+          x: 25
+          y: -25
+  chunking:
+      x: 200
+      y: 200
+      time: 1
+  dimension_order: [time, y, x]
+
+
+## Define statistics to perform and how to store the data
+output_products:
+ - name: pq_count_albers
+   product_type: pixel_quality_statistical_summary
+
+   statistic: masked_multi_count
+   statistic_args:
+     nodata_flags:
+       contiguous: False
+     vars:
+       - name: clear_observation_count
+         flags:
+           contiguous: True
+           cloud_acca: no_cloud
+           cloud_fmask: no_cloud
+           cloud_shadow_acca: no_cloud_shadow
+           cloud_shadow_fmask: no_cloud_shadow
+           blue_saturated: False
+           green_saturated: False
+           red_saturated: False
+           nir_saturated: False
+           swir1_saturated: False
+           swir2_saturated: False
+       - name: total_observation_count
+         simple: True
+         flags:
+           contiguous: True
+
+   output_params:
+     zlib: True
+     fletcher32: True
+   file_path_template: 'LS_PQ_COUNT/{x}_{y}/LS_PQ_COUNT_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+
+
+date_ranges:
+  start_date: 1986-01-01
+  end_date: 2017-01-01
+  stats_duration: 12m
+  step_size: 12m
+
+#location: '/g/data/u46/users/kk7182/PQ2/'
+
+## Computational
+# Decide based on how much can fit into memory on the node that is running the job.
+computation:
+  chunking:
+    x: 2000
+    y: 2000
+
