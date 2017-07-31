@@ -100,7 +100,9 @@ def list_statistics(ctx, param, value):
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index, output_location, year, pbs_celery):
+def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks,
+         tile_index, output_location, year,
+         pbs_celery):
     _log_setup()
 
     timer = MultiTimer().start('main')
