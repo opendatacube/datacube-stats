@@ -100,12 +100,12 @@ date_ranges:
   stats_duration: 12m
   step_size: 12m
 
-#location: '/g/data/u46/users/kk7182/PQ2/'
+location: '/g/data/u46/users/kk7182/PQ/'
 
 ## Computational
 # Decide based on how much can fit into memory on the node that is running the job.
 computation:
   chunking:
-    x: 2000
-    y: 2000
+    x: 1000
+    y: 1000
 
