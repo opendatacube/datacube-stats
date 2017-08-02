@@ -94,12 +94,15 @@ def list_statistics(ctx, param, value):
 @click.option('--output-location', help='Override output location in configuration file')
 @click.option('--year', type=int, help='Override time period in configuration file')
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
+@click.option('--pbs-celery', is_flag=True, help='Launch worker pool when running on PBS')
 @ui.global_cli_options
 @ui.executor_cli_options
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index, output_location, year):
+def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks,
+         tile_index, output_location, year,
+         pbs_celery):
     _log_setup()
 
     timer = MultiTimer().start('main')
@@ -109,6 +112,16 @@ def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks,
     app.queue_size = queue_size
     app.validate()
 
+    shutdown = None
+
+    if pbs_celery:
+        from .utils import pbs
+        click.echo('Launching Redis worker pool')
+        try:
+            executor, shutdown = pbs.launch_redis_worker_pool()
+        except RuntimeError:
+            raise click.ClickException('Failed to launch redis worker pool')
+
     if save_tasks:
         app.save_tasks_to_file(save_tasks)
         failed = 0
@@ -116,6 +129,10 @@ def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks,
         successful, failed = app.run(executor, load_tasks)
     else:
         successful, failed = app.run(executor)
+
+    if shutdown is not None:
+        click.echo('Calling shutdown hook')
+        shutdown()
 
     timer.pause('main')
     _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
