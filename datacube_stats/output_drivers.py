@@ -309,12 +309,11 @@ class NetCDFCFOutputDriver(OutputDriver):
         return nco
 
     def _create_netcdf_var_params(self, stat):
-        def build_attrs(var):
-            name = var['name']
+        def build_attrs(name, attrs):
             return pydash.assign(dict(long_name=name,
                                       coverage_content_type='modelResult'),  # defaults
-                                 var.get('attrs', {}),                       # Defined by plugin
-                                 self.var_attributes.get(name, {}))          # <- From config, highest priority
+                                 attrs,                                      # Defined by plugin
+                                 self.var_attributes.get(name, {}))          # From config, highest priority
 
         chunking = self._storage['chunking']
         chunking = [chunking[dim] for dim in self._storage['dimension_order']]
@@ -322,11 +321,15 @@ class NetCDFCFOutputDriver(OutputDriver):
         variable_params = {}
         for measurement in stat.data_measurements:
             name = measurement['name']
-            variable_params[name] = stat.output_params.copy()
-            variable_params[name]['chunksizes'] = chunking
-            variable_params[name]['attrs'] = build_attrs(measurement)
-            variable_params[name].update(
+
+            v_params = stat.output_params.copy()
+            v_params['chunksizes'] = chunking
+            v_params.update(
                 {k: v for k, v in measurement.items() if k in _NETCDF_VARIABLE__PARAMETER_NAMES})
+
+            v_params['attrs'] = build_attrs(name, v_params.get('attr', {}))
+
+            variable_params[name] = v_params
         return variable_params
 
     def _nco_from_sources(self, sources, geobox, measurements, variable_params, filename):
