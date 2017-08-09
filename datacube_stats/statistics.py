@@ -72,6 +72,30 @@ def argnanmedoid(x, axis=1):
     return i
 
 
+def medoid_indices(arr, invalid=None):
+    """
+    The indices of the medoid.
+
+    :arg arr: input array
+    :arg invalid: mask for invalid data containing NaNs
+    """
+    # vectorized version of `argnanmedoid`
+    bands, times, ys, xs = arr.shape
+
+    diff = (arr.reshape(bands, times, 1, ys, xs) -
+            arr.reshape(bands, 1, times, ys, xs))
+
+    dist = np.linalg.norm(diff, axis=0)
+    dist_sum = nansum(dist, axis=0)
+
+    if invalid is None:
+        # compute it in case it's not already available
+        invalid = anynan(arr, axis=0)
+
+    dist_sum[invalid] = np.inf
+    return np.argmin(dist_sum, axis=0)
+
+
 def nanmedoid(x, axis=1):
     i = argnanmedoid(x, axis)
 
@@ -149,6 +173,28 @@ def axisindex(a, index, axis=0):
     step = prod(shape[axis:])
     idx = _blah(lshape, step * a.shape[axis]) + _blah(rshape) + index * step
     return a.take(idx)
+
+
+def section_by_index(array, axis, index):
+    """
+    Take the slice of `array` indexed by entries of `index`
+    along the specified `axis`.
+    """
+    # alternative `axisindex` implementation
+    # that avoids the index arithmetic
+    # uses `numpy` fancy indexing instead
+
+    # possible index values for each dimension represented
+    # as `numpy` arrays all having the shape of `index`
+    indices = np.ix_(*[np.arange(dim) for dim in index.shape])
+
+    # the slice is taken along `axis`
+    # except for the array `index` itself, the other indices
+    # do nothing except trigger `numpy` fancy indexing
+    fancy_index = indices[:axis] + (index,) + indices[axis:]
+
+    # result has the same shape as `index`
+    return array[fancy_index]
 
 
 def argpercentile(a, q, axis=0):
@@ -618,9 +664,10 @@ class PercentileNoProv(Statistic):
         return data_values
 
 
-class Medoid(PerStatIndexStat):
+class MedoidSimple(PerStatIndexStat):
     def __init__(self):
-        super(Medoid, self).__init__(stat_func=_compute_medoid, extra_metadata_producers=[ObservedDaysSince()])
+        super(MedoidSimple, self).__init__(stat_func=_compute_medoid,
+                                           extra_metadata_producers=[ObservedDaysSince()])
 
 
 class MedoidNoProv(PerStatIndexStat):
@@ -628,20 +675,43 @@ class MedoidNoProv(PerStatIndexStat):
         super(MedoidNoProv, self).__init__(stat_func=_compute_medoid)
 
 
-class FCMedoid(Statistic):
+def select_names(wanted_names, all_names):
+    """ Only select the measurements names in the wanted list. """
+    if wanted_names is None:
+        # default: include everything
+        return all_names
+
+    invalid = [name
+               for name in wanted_names
+               if name not in all_names]
+
+    if invalid:
+        msg = 'Specified measurements not found: {}'
+        raise StatsConfigurationError(msg.format(invalid))
+
+    return wanted_names
+
+
+class Medoid(Statistic):
+    """
+    Medoid (a multi-dimensional generalization of median) of a set of
+    observations through time.
+
+    :arg minimum_valid_observations: if not enough observations are available,
+                                     medoid will return `nodata` (default 0)
+    :arg input_measurements: list of measurements that contribute to medoid
+                             calculation
+    :arg output_measurements: list of reported measurements
+    :arg metadata_producers: list of additional metadata producers
+    """
     def __init__(self,
-                 minimum_valid_observations=3,
+                 minimum_valid_observations=0,
                  input_measurements=None,
                  output_measurements=None,
                  metadata_producers=None):
 
-        # if not enough observations, will fill with no data
         self.minimum_valid_observations = minimum_valid_observations
-
-        # list of measurements that contribute to medoid calculation
         self.input_measurements = input_measurements
-
-        # list of reported measurements
         self.output_measurements = output_measurements
 
         # attach observation time (in days) if no other metadata requested
@@ -650,27 +720,11 @@ class FCMedoid(Statistic):
         else:
             self._metadata_producers = metadata_producers
 
-    def select_names(self, wanted_names, all_names):
-        """ Only select the measurements names in the wanted list. """
-        if wanted_names is None:
-            # default: include everything
-            return all_names
-
-        invalid = [name
-                   for name in wanted_names
-                   if name not in all_names]
-
-        if invalid:
-            msg = 'Specified measurements not found: {}'
-            raise StatsConfigurationError(msg.format(invalid))
-
-        return wanted_names
-
     def measurements(self, input_measurements):
-        base = super(FCMedoid, self).measurements(input_measurements)
+        base = super(Medoid, self).measurements(input_measurements)
 
-        selected_names = self.select_names(self.output_measurements,
-                                           [m['name'] for m in base])
+        selected_names = select_names(self.output_measurements,
+                                      [m['name'] for m in base])
 
         selected = [m for m in base if m['name'] in selected_names]
 
@@ -679,65 +733,34 @@ class FCMedoid(Statistic):
 
         return selected + extra
 
-    def medoid_indices(self, arr, invalid):
-        # vectorized version of `argnanmedoid`
-        bands, times, ys, xs = arr.shape
-
-        diff = (arr.reshape(bands, times, 1, ys, xs) -
-                arr.reshape(bands, 1, times, ys, xs))
-
-        dist = np.linalg.norm(diff, axis=0)
-        dist_sum = nansum(dist, axis=0)
-
-        dist_sum[invalid] = np.inf
-        return np.argmin(dist_sum, axis=0)
-
     def compute(self, data):
         # calculate medoid using only the fields in `input_measurements`
-        input_data = data[self.select_names(self.input_measurements,
-                                            list(data.data_vars))]
+        input_data = data[select_names(self.input_measurements,
+                                       list(data.data_vars))]
 
         # calculate medoid indices
         arr = input_data.to_array().values
         invalid = anynan(arr, axis=0)
-        index = self.medoid_indices(arr, invalid)
+        index = medoid_indices(arr, invalid)
 
         # pixels for which there is not enough data
         count_valid = np.count_nonzero(~invalid, axis=0)
         not_enough = count_valid < self.minimum_valid_observations
 
         # only report the measurements requested
-        output_data = data[self.select_names(self.output_measurements,
-                                             list(data.data_vars))]
-
-        def section_by_index(array, axis, index):
-            """
-            Take the slice of `var` indexed by entries of `index`
-            along the specified `axis`.
-            """
-            # alternative `axisindex` implementation
-
-            # possible index values for each dimension represented
-            # as numpy arrays all having the shape of `index`
-            indices = np.ix_(*[np.arange(dim) for dim in index.shape])
-
-            # the slice is taken along `axis`
-            # except for the array `index` itself, the other indices
-            # do nothing except trigger `numpy` fancy indexing
-            fancy_index = indices[:axis] + (index,) + indices[axis:]
-
-            # result has the same shape as `index`
-            return array[fancy_index]
-
-        def masked_section(var, axis, nodata):
-            """ Extracts data at `index` for a `var` of type `ndarray`. """
-            result = section_by_index(var, axis, index)
-            result[not_enough] = nodata
-            return result
+        output_data = data[select_names(self.output_measurements,
+                                        list(data.data_vars))]
 
         def reduction(var):
             """ Extracts data at `index` for a `var` of type `DataArray`. """
-            return var.reduce(masked_section, dim='time', nodata=var.nodata)
+
+            def worker(var_array, axis, nodata):
+                # operates on the underlying `ndarray`
+                result = section_by_index(var_array, axis, index)
+                result[not_enough] = nodata
+                return result
+
+            return var.reduce(worker, dim='time', nodata=var.nodata)
 
         def attach_metadata(result):
             """ Attach additional metadata to the `result`. """
@@ -754,7 +777,10 @@ class FCMedoid(Statistic):
                                                  keep_attrs=True))
 
     def __repr__(self):
-        msg = 'FCMedoid<minimum_valid_observations={}>'
+        if self.minimum_valid_observations == 0:
+            msg = 'Medoid'
+        else:
+            msg = 'Medoid<minimum_valid_observations={}>'
         return msg.format(self.minimum_valid_observations)
 
 
@@ -925,7 +951,7 @@ STATS = {
     'percentile_no_prov': PercentileNoProv,
     'medoid': Medoid,
     'medoid_no_prov': MedoidNoProv,
-    'fc_medoid': FCMedoid,
+    'medoid_simple': MedoidSimple,
     'simple_normalised_difference': NormalisedDifferenceStats,
     # 'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
     #                                         stats=['min', 'mean', 'max']),
