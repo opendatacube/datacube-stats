@@ -10,6 +10,7 @@ import logging
 import operator
 import subprocess
 import tempfile
+import pydash
 from collections import OrderedDict
 from functools import reduce as reduce_
 from pathlib import Path
@@ -110,7 +111,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
     """
     valid_extensions = []
 
-    def __init__(self, task, storage, output_path, app_info=None, global_attributes=None):
+    def __init__(self, task, storage, output_path, app_info=None, global_attributes=None, var_attributes=None):
         self._storage = storage
 
         self._output_path = output_path
@@ -131,6 +132,9 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         #: dict of str to str
         self.global_attributes = global_attributes
+
+        #: dict of str to dict of str to str
+        self.var_attributes = var_attributes if var_attributes is not None else {}
 
     def close_files(self, completed_successfully):
         # Turn file_handles into paths
@@ -179,7 +183,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         make sure it is valid and doesn't already exist
         Make sure parent directories exist
         Switch it around for a temporary filename.
-        
+
         :return: Path to write output to
         """
         output_path = self._generate_output_filename(output_product, **kwargs)
@@ -227,7 +231,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         :return: (datasets, sources)
         datasets is a bunch of strings to dump, indexed on time
         sources is a more structured form. An x-array of lists of dataset sources, indexed on time
-        
+
 
         """
         task = self._task
@@ -305,19 +309,31 @@ class NetCDFCFOutputDriver(OutputDriver):
         return nco
 
     def _create_netcdf_var_params(self, stat):
+        def build_attrs(name, attrs):
+            return pydash.assign(dict(long_name=name,
+                                      coverage_content_type='modelResult'),  # defaults
+                                 attrs,                                      # Defined by plugin
+                                 self.var_attributes.get(name, {}))          # From config, highest priority
+
         chunking = self._storage['chunking']
         chunking = [chunking[dim] for dim in self._storage['dimension_order']]
 
         variable_params = {}
         for measurement in stat.data_measurements:
             name = measurement['name']
-            variable_params[name] = stat.output_params.copy()
-            variable_params[name]['chunksizes'] = chunking
-            variable_params[name].update(
+
+            v_params = stat.output_params.copy()
+            v_params['chunksizes'] = chunking
+            v_params.update(
                 {k: v for k, v in measurement.items() if k in _NETCDF_VARIABLE__PARAMETER_NAMES})
+
+            v_params['attrs'] = build_attrs(name, v_params.get('attr', {}))
+
+            variable_params[name] = v_params
         return variable_params
 
     def _nco_from_sources(self, sources, geobox, measurements, variable_params, filename):
+
         coordinates = OrderedDict((name, geometry.Coordinate(coord.values, coord.units))
                                   for name, coord in sources.coords.items())
         coordinates.update(geobox.coordinates)
@@ -451,9 +467,9 @@ class GeotiffOutputDriver(OutputDriver):
         dtype = self._get_dtype(prod_name, measurement_name)
         nodata = self._get_nodata(prod_name, measurement_name)
         x_block_size = self._storage['chunking']['x'] if 'x' in self._storage['chunking'] else \
-        self._storage['chunking']['longitude']
+            self._storage['chunking']['longitude']
         y_block_size = self._storage['chunking']['y'] if 'y' in self._storage['chunking'] else \
-        self._storage['chunking']['latitude']
+            self._storage['chunking']['latitude']
         profile.update({
             'blockxsize': x_block_size,
             'blockysize': y_block_size,

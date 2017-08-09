@@ -732,7 +732,7 @@ class MaskMultiCounter(Statistic):
         self._nodata_mask = None
 
     def measurements(self, input_measurements):
-        nodata = 0xFFFF
+        nodata = -1
         bit_defs = input_measurements[0]['flags_definition']
 
         if self._nodata_flags is not None:
@@ -743,7 +743,7 @@ class MaskMultiCounter(Statistic):
             v['mask'] = create_mask_value(bit_defs, **flags)
 
         return [dict(name=v['name'],
-                     dtype='uint16',
+                     dtype='int16',
                      units='1',
                      nodata=nodata) for v in self._vars]
 
@@ -761,7 +761,7 @@ class MaskMultiCounter(Statistic):
                 return invalid_data_mask
             return None
 
-        nodata = 0xFFFF
+        nodata = -1
         pq = list(ds.data_vars.values())[0]
 
         invalid_data_mask = build_invalid_mask(pq)
