@@ -150,7 +150,7 @@ def report_unmatched_datasets(co_unmatched, logger=None):
 
         n += len(dss)
 
-        logger('Skippping files in tile {},{}'.format(*cell_idx))
+        logger('Skipping files in tile {},{}'.format(*cell_idx))
 
         for ds in dss:
             logger(' {} {}'.format(ds.id, ds.local_path))
