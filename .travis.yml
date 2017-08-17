@@ -35,7 +35,8 @@ install:
 
   - conda create -n datacube datacube pytest mock
   - source activate datacube
-  - pip install . --upgrade
+  - pip install pydash boltons pylint yamllint pytest-cov pep8
+  - pip install . --no-deps --upgrade
 
   - pip freeze
 
