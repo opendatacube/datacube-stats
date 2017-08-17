@@ -12,7 +12,7 @@ from datacube_stats.models import StatsTask
 from datacube_stats.statistics import StatsConfigurationError, SimpleStatistic, ReducingXarrayStatistic
 
 from datacube_stats.main import create_stats_app
-from .main import StatsApp
+from datacube_stats.main import StatsApp
 
 
 @pytest.fixture

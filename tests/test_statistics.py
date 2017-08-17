@@ -4,7 +4,7 @@ Tests for the custom statistics functions
 """
 from __future__ import absolute_import
 
-from .statistics import nan_percentile, argpercentile, axisindex
+from datacube_stats.statistics import nan_percentile, argpercentile, axisindex
 import numpy as np
 import xarray as xr
 
