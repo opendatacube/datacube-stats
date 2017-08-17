@@ -35,8 +35,7 @@ install:
 
   - conda create -n datacube datacube pytest mock
   - source activate datacube
-  - pip install pydash
-  - pip install . --no-deps --upgrade
+  - pip install . --upgrade
 
   - pip freeze
 
