@@ -73,7 +73,8 @@ def multi_product_list_cells(products, gw, cell_index=None, product_query={}, **
 
         for i in range(len(products)):
             if cidx in obs[i]:
-                co_common[i][cidx] = common[i]
+                if not cell_is_empty(common[i]):
+                    co_common[i][cidx] = common[i]
 
                 if not cell_is_empty(unmatched[i]):
                     co_unmatched[i][cidx] = unmatched[i]
