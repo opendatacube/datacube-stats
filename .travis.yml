@@ -33,8 +33,9 @@ install:
   # print conda info
   - conda info -a
 
-  - conda create -n datacube datacube pytest mock pydash
+  - conda create -n datacube datacube pytest mock
   - source activate datacube
+  - pip install pydash
   - pip install . --no-deps --upgrade
 
   - pip freeze
