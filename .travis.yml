@@ -33,7 +33,7 @@ install:
   # print conda info
   - conda info -a
 
-  - conda create -n datacube datacube pytest
+  - conda create -n datacube datacube pytest mock
   - source activate datacube
   - pip install . --no-deps --upgrade
 
@@ -55,9 +55,9 @@ deploy:
   # For tags, the object will be GeoscienceAustralia/agdc_statistics/
   # For develop, the object will be GeoscienceAustralia/agdc_statistics/master/
   - provider: s3
-    access_key_id: ""
+    access_key_id: "AKIAJMZN4F5L5KXPQKVQ"
     secret_access_key:
-      secure:
+      secure: "Tdro0JnATrM7/5NPo88Ejf6sOPTT5uTESkyAnWskn7n6XSqcoyESj0BOz+C5puxoyh9OrEPOOOORYqyyawBe9FXVh9Ja3BweKN6mpOcbx87zA6DfEYS8/Nn1N0xtSIEsJBMOtcY+bWXPEMbhqqPNV4OFIAOJ8Abg1HjOI1/BFhEkeZk3gyLPfaRJqoXNNbtOFXItqVbnbNeiyWgIsrpnXs97gFk2WuE1wsYkB7ltrPe2TtyLlQPUfUq4F3nwvxb+7Kl7u7kjFIdvS2DMf8BA1cESOmxb+OnpCxA8GDp/MP9lGnSTwqrkv9s5QDxN9ndxwfpeq72gw1E77jMB9fYnGZoI+IDxI1X0fPM5nnmXyPClITv9IHRw/qNUFUXOGjSTLZwjLBy1HujEzKQzGmi1FZM7O1+lkEWAyOwTLoDBQwxpPeapHyKtLK3CD3gXR/dxqqIM5zckQvpHydR7NpMN1km+dO3+2/eptmpsy69/dCbLkOxYC/A7UriR8xD//EeCxw3xFdV0+JiGsA+8QsJij1mUCWY/TJdgCnO7tOAd76QZwf6v4bd0UwoS95wilY5I3dFR2T1BoQ+e43kfguW7rGN5ttakq7obWL6zMzVMULOYEhinFc2dehMeUCkE4cFzsk6bam5+QzoemXU8VBLiS4nCG0NP1phrDCvFNVdB5jo="
     bucket: "datacube-core-deployment"
     region: "ap-southeast-2"
     local_dir: dist
