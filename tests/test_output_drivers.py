@@ -23,6 +23,7 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
     size = 64
     chunk_size = int(size / 2)
     metadata_type = MetadataType({}, {})
+    product_type='product_type'
     storage = {'chunking': {'x': chunk_size, 'y': chunk_size}}
 
     input_measurement_1 = {'name': 'sample_input_measurement_1',
@@ -34,6 +35,7 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
                            'nodata': nodata,
                            'units': '1'}
     output_product = OutputProduct(metadata_type,
+                                   product_type,
                                    input_measurements=[input_measurement_1, input_measurement_2],
                                    storage=storage,
                                    name='test_product',
