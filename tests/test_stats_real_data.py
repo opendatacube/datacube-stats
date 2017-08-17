@@ -1,7 +1,9 @@
 from pathlib import Path
+import pytest
 
 from click.testing import CliRunner
 from datacube_stats.main import main
+
 
 CONFIG_TEMPLATE = """
 ## Define inputs to perform statistics on
@@ -93,25 +95,36 @@ def test_input_region_single_tile():
         assert outputfile.exists()
 
 
+@pytest.mark.xfail
 def test_input_region_from_shapefile():
     assert False
 
+
+@pytest.mark.xfail
 def test_input_region_from_geojson():
     assert False
 
+
+@pytest.mark.xfail
 def test_output_to_netcdf():
     assert False
 
+
+@pytest.mark.xfail
 def test_output_to_geotiff_single_band():
     assert False
 
 
+@pytest.mark.xfail
 def test_output_to_geotiff_multi_band():
     assert False
 
 
+@pytest.mark.xfail
 def test_output_to_geotiff_multi_file():
     assert False
 
+
+@pytest.mark.xfail
 def test_output_to_envibil():
     assert False

@@ -8,6 +8,8 @@ from datacube_stats.statistics import nan_percentile, argpercentile, axisindex
 import numpy as np
 import xarray as xr
 
+import pytest
+
 
 def test_nan_percentile():
     # create array of shape(5,100,100) - image of size 100x100 with 5 layers
@@ -82,5 +84,7 @@ def test_masked_count():
 def wofs_fuser(dest, src):
     pass
 
+
+@pytest.mark.xfail
 def test_fuse_wofs(val1, val2):
     pass
