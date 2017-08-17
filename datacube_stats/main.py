@@ -547,7 +547,7 @@ def create_stats_app(config, index=None, tile_index=None, output_location=None, 
 
 def _prepare_output_driver(storage):
     try:
-        return OUTPUT_DRIVERS[storage['driver']]
+        return OUTPUT_DRIVERS[storage['driver'].replace(' ', '')]
     except KeyError:
         if 'driver' in storage:
             msg = 'Invalid output driver "{}" specified.'
