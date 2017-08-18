@@ -65,6 +65,7 @@ def test_xarray_reduce():
     assert dataarray.dims == ('x', 'y')
 
 
+@pytest.mark.xfail(reason='Needs implementation')
 def test_masked_count():
 
     arr = np.random.random((100, 100, 5))

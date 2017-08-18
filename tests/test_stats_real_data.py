@@ -77,7 +77,7 @@ def sample_geometry():
     gb = geometry.GeoBox(40, 40, Affine(2500, 0.0, 1200000.0, 0.0, -2500, -4300000.0), geometry.CRS('EPSG:3577'))
     json = gb.extent.json
 
-
+@pytest.mark.xfail(reason='Needs implementation')
 def test_input_region_single_tile():
     runner = CliRunner()
     with runner.isolated_filesystem() as tmpdir:

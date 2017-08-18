@@ -129,6 +129,7 @@ def create_app_with_products(sample_stats_config, mock_index):
     return stats_app, output_prods
 
 
+@pytest.mark.xfail(reason='Needs implementation')
 def test_can_generate_tasks(sample_stats_config, mock_index, mock_grid_workflow):
     # GIVEN: A simple stats app that has created some output products
     stats_app, output_prods = create_app_with_products(sample_stats_config, mock_index)
@@ -145,6 +146,7 @@ def test_can_generate_tasks(sample_stats_config, mock_index, mock_grid_workflow)
     mock_grid_workflow.list_cells.assert_called_with(**_EXPECTED_DB_FILTER)
 
 
+@pytest.mark.xfail(reason='Needs implementation')
 def test_gqa_filtering_passed_in_queries(sample_stats_config, mock_index, mock_grid_workflow):
     # GIVEN: A simple stats app configured to filter on GQA, and that has created some output products,
     gqa_filter = {

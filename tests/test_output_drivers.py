@@ -12,6 +12,7 @@ import pytest
 import rasterio
 
 
+@pytest.mark.xfail(reason='Needs implementation')
 @pytest.mark.parametrize("dtype,nodata", [
     ("int8", -5),
     ("uint8", 254),
@@ -23,7 +24,7 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
     size = 64
     chunk_size = int(size / 2)
     metadata_type = MetadataType({}, {})
-    product_type='product_type'
+    product_type = 'product_type'
     storage = {'chunking': {'x': chunk_size, 'y': chunk_size}}
 
     input_measurement_1 = {'name': 'sample_input_measurement_1',
