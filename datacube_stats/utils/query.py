@@ -1,7 +1,9 @@
 def common_subset(sets, key_by=None):
     """ From a list of lists compute set common to all lists.
 
-        NOTE: list can also be a lazy i.e. and iterator
+    sets   -- List or iterator of collections of objects. (Example: [[a,b,c], [b,c,d]])
+    key_by -- Function that extracts/computes key from object, defaults to identity
+
     """
     def mk_get(key_by):
         if key_by is None:
@@ -22,6 +24,14 @@ def common_subset(sets, key_by=None):
 
 
 def common_obs_per_cell(*tile_obs):
+    """Given cell observations for one given tile, from two a more products, split them into two sets:
+
+    - First one contains observations present in all of the products
+    - Second one contains the leftovers
+
+    *tile_obs -- [{'datasets': [Dataset],
+                   'geobox': Geobox}]
+    """
 
     def ds_time(ds): return ds.center_time
 
@@ -41,10 +51,29 @@ def common_obs_per_cell(*tile_obs):
 
 
 def multi_product_list_cells(products, gw, cell_index=None, product_query={}, **query):
-    """
-    products list of product names
-    gw - GridWorkflow
-    product_query -- dict product_name => product specific query
+    """This is similar to GridWorkflow.list_cells but generalised to multiple
+    products. Only datasets that are available in all of the products are
+    reported.
+
+    Datasets that do not have a full set across all products are returned in a
+    separate group.
+
+
+    products      -- list of product names
+    gw            -- Preconfigured GridWorkflow object
+    cell_index    -- Limit search area to a single cell
+    product_query -- Product specific query, dict product_name => product specific query
+    **query       -- Common query parameters across all products
+
+    Returns:
+
+    co_common     -- Cell observation that have full set across products
+    co_unmatched  -- Cell observations where at least one product is missing
+
+    Type of `co_common, co_unmatched` is list of dictionaries of tiles.
+
+    `type(co_common[product_idx:Int][cell_idx:(Int,Int)]) == datacube.api.Tile`
+
     """
     from functools import reduce
     from datacube.api.query import query_group_by

@@ -24,11 +24,11 @@ def flat_foreach_ds(proc, obs):
         pass
 
 
-@click.command()
+@click.command(help='Given two products or more, report tiles present in one but not the other')
 @click.argument('products', nargs=-1, type=str)
-@click.option('--year', type=int)
-@click.option('--month', type=int)
-@click.option('--save', type=str, nargs=1)
+@click.option('--year', type=int, help='Limit processing to a single year')
+@click.option('--month', type=int, help='Limit processing to a single month, need to set year as well')
+@click.option('--save', type=str, nargs=1, help='Dump debug data into pickle file')
 def main(products, year, month, save):
     from datacube_stats.utils.query import multi_product_list_cells
     import datacube
