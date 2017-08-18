@@ -54,13 +54,46 @@ def sensible_where(data, mask):
     return data.where(mask)
 
 
+def da_is_float(da):
+    """
+    Check if DataArray is of floating point type
+    """
+    assert hasattr(da, 'dtype')
+
+    return da.dtype.kind is 'f'
+
+
+def ds_all_float(ds):
+    """
+    Check if dataset contains only floating point arrays
+    """
+    assert isinstance(ds, xarray.Dataset)
+
+    for da in ds.data_vars.values():
+        if not da_is_float(da):
+            return False
+    return True
+
+
 def _convert_to_floats(data):
-    # Use float32 instead of float64 if input dtype is int16
     assert isinstance(data, xarray.Dataset)
-    for name, dataarray in data.data_vars.items():
-        if dataarray.dtype != np.int16:
-            return data
-    return data.apply(lambda d: d.astype(np.float32), keep_attrs=True)
+
+    if ds_all_float(data):
+        return data
+
+    def to_float(da):
+        if da_is_float(da):
+            return da
+
+        out = da.astype(np.float32)
+
+        nodata = getattr(da, 'nodata', None)
+        if nodata is None:
+            return out
+
+        return out.where(da != nodata)
+
+    return data.apply(to_float, keep_attrs=True)
 
 
 wofs_flag_defs = {'cloud': {'bits': 6, 'description': 'Cloudy', 'values': {0: False, 1: True}},
