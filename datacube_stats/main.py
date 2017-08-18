@@ -651,6 +651,7 @@ class GriddedTaskGenerator(object):
         self.grid_spec = _make_grid_spec(storage)
         self.geopolygon = geopolygon
         self.cell_index = cell_index
+        self._total_unmatched = 0
 
     def __call__(self, index, sources_spec, date_ranges):
         """
@@ -662,6 +663,9 @@ class GriddedTaskGenerator(object):
         :param index: Datacube Index
         :return:
         """
+        from .utils.query import multi_product_list_cells
+        from .utils import report_unmatched_datasets
+
         workflow = GridWorkflow(index, grid_spec=self.grid_spec)
 
         for time_period in date_ranges:
@@ -674,13 +678,19 @@ class GriddedTaskGenerator(object):
             for source_spec in sources_spec:
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
                 source_filter = source_spec.get('source_filter', None)
-                data = workflow.list_cells(product=source_spec['product'], time=time_period,
-                                           group_by=group_by_name, geopolygon=self.geopolygon,
-                                           cell_index=self.cell_index, source_filter=source_filter)
-                masks = [workflow.list_cells(product=mask['product'], time=time_period,
-                                             group_by=group_by_name, geopolygon=self.geopolygon,
-                                             cell_index=self.cell_index)
-                         for mask in source_spec.get('masks', [])]
+
+                all_products = [source_spec['product']] + [m['product'] for m in source_spec.get('masks', [])]
+
+                product_query = {all_products[0]: {'source_filter': source_filter}}
+
+                (data, *masks), unmatched_ = multi_product_list_cells(all_products, workflow,
+                                                                      product_query=product_query,
+                                                                      cell_index=self.cell_index,
+                                                                      time=time_period,
+                                                                      group_by=group_by_name,
+                                                                      geopolygon=self.geopolygon)
+
+                self._total_unmatched += report_unmatched_datasets(unmatched_[0], lambda s: _LOG.warning(s))
 
                 for tile_index, sources in data.items():
                     task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
@@ -695,6 +705,11 @@ class GriddedTaskGenerator(object):
                 _LOG.info('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
             for task in tasks.values():
                 yield task
+
+    def __del__(self):
+        if self._total_unmatched > 0:
+            _LOG.warning('There were source datasets for which masks were not found, total: {}'.
+                         format(self._total_unmatched))
 
 
 def _make_grid_spec(storage):

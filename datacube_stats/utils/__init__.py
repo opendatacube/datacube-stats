@@ -1,6 +1,7 @@
 """
 Useful utilities used in Stats
 """
+from __future__ import print_function
 import itertools
 
 import numpy as np
@@ -109,3 +110,49 @@ def wofs_fuser(dest, src):
         wofs_mask(src, wet=True) & wofs_mask(dest, dry=True))
     np.copyto(dest, 2, where=invalid)
     return dest
+
+
+def tile_to_list(tile):
+    """
+    Extract tile sources xarray into a list of tuples of datasets
+    """
+    return [a.item() for a in tile.sources]
+
+
+def tile_flatten_sources(tile):
+    """
+    Extract sources from tile as a flat list of Dataset objects,
+    this removes any grouping that might have been applied to tile sources
+    """
+    from functools import reduce
+    return reduce(list.__add__, [list(a.item()) for a in tile.sources])
+
+
+def report_unmatched_datasets(co_unmatched, logger=None):
+    """ Printout in "human" format unmatched datasets
+
+    co_unmatched -- dict (int,int) => Tile
+    logger -- function that logs string, by default will print to stdout
+
+    returns number of datasets that were skipped
+    """
+    def default_logger(s):
+        print(s)
+
+    logger = default_logger if logger is None else logger
+    n = 0
+
+    for cell_idx, tile in co_unmatched.items():
+        dss = tile_flatten_sources(tile)
+
+        if len(dss) == 0:
+            continue
+
+        n += len(dss)
+
+        logger('Skipping files in tile {},{}'.format(*cell_idx))
+
+        for ds in dss:
+            logger(' {} {}'.format(ds.id, ds.local_path))
+
+    return n
