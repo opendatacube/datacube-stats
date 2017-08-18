@@ -683,17 +683,14 @@ class GriddedTaskGenerator(object):
 
                 product_query = {all_products[0]: {'source_filter': source_filter}}
 
-                all_data, unmatched_ = multi_product_list_cells(all_products, workflow,
-                                                                product_query=product_query,
-                                                                cell_index=self.cell_index,
-                                                                time=time_period,
-                                                                group_by=group_by_name,
-                                                                geopolygon=self.geopolygon)
+                (data, *masks), unmatched_ = multi_product_list_cells(all_products, workflow,
+                                                                      product_query=product_query,
+                                                                      cell_index=self.cell_index,
+                                                                      time=time_period,
+                                                                      group_by=group_by_name,
+                                                                      geopolygon=self.geopolygon)
 
                 self._total_unmatched += report_unmatched_datasets(unmatched_[0], lambda s: _LOG.warning(s))
-
-                data = all_data[0]
-                masks = all_data[1:]
 
                 for tile_index, sources in data.items():
                     task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
