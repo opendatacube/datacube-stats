@@ -51,6 +51,17 @@ def nodes():
     return _nodes
 
 
+def total_cores():
+    total = 0
+    for n in nodes():
+        total += n.num_cores
+    return total
+
+
+def preferred_queue_size():
+    return total_cores()*2
+
+
 def get_env(extras=[], **more_env):
     import os
     import re
