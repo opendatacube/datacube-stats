@@ -5,8 +5,8 @@ _nodes = None
 
 
 def _hostname():
-    import os
-    return os.environ.get('HOSTNAME', os.environ.get('HOST', 'localhost'))
+    import platform
+    return platform.node()
 
 
 def is_under_pbs():
@@ -127,6 +127,8 @@ def launch_redis_worker_pool(port=6379):
 
     redis_shutdown = cr.launch_redis(redis_port, redis_password)
 
+    print('Launched redis at {}:{}'.format(redis_host, redis_port))
+
     if not redis_shutdown:
         raise RuntimeError('Failed to launch Redis')
 
@@ -154,10 +156,14 @@ def launch_redis_worker_pool(port=6379):
 
     def shutdown():
         cr.app.control.shutdown()
-        redis_shutdown()
+
+        print('Waiting for workers to quit')
 
         # TODO: time limit followed by kill
         for p in worker_procs:
             p.wait()
+
+        print('Shutting down redis-server')
+        redis_shutdown()
 
     return executor, shutdown

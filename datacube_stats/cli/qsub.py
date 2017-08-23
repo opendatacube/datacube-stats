@@ -202,6 +202,7 @@ def qsub_self_launch(qsub_opts, *args):
     noask = qsub_opts.get('noask', False)
 
     if not noask:
+        click.echo('Args: ' + ' '.join(args))
         confirmed = click.confirm('Submit to pbs?')
         if not confirmed:
             return (0, 'Aborted by user')
