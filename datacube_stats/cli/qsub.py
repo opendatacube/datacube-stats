@@ -7,7 +7,7 @@ _pass_thru_keys = 'name project queue env_vars wd noask _internal'.split(' ')
 _valid_keys = _pass_thru_keys + 'walltime nodes mem extra_qsub_args'.split(' ')
 
 
-class QsubLauncher(object):
+class QSubLauncher(object):
     def __init__(self, params, internal_args=None):
         self._internal_args = internal_args
         self._params = params
@@ -15,6 +15,12 @@ class QsubLauncher(object):
     def __repr__(self):
         import yaml
         return yaml.dump(dict(qsub=self._params))
+
+    def add_internal_args(self, *args):
+        if self._internal_args is None:
+            self._internal_args = args
+        else:
+            self._internal_args = self._internal_args + args
 
     def __call__(self, *args):
         if self._internal_args is not None:
@@ -31,6 +37,29 @@ class QSubParamType(click.ParamType):
     def convert(self, value, param, ctx):
         from .qsub import norm_qsub_params, parse_comma_args
 
+        if value == 'help':
+            self.fail('''
+
+Following parameters are understood:
+
+   nodes    = <int> number of nodes
+   walltime = <string>, "10m" -- ten minutes, "5h" -- five hours
+   mem      = (small|medium|high) or 2G, 4G memory per core
+   name     = <string> Job name
+   project  = (u46|v10 etc.)
+   queue    = (normal|express)
+   noask do not ask for confirmation
+
+Put one pameter per line or use commas to separate parameters.
+
+Examples:
+   --qsub 'nodes=10,walltime=3h,project=v10'
+   --qsub 'name = my-task
+   nodes = 7
+   mem = medium
+   walltime = 30m'
+''', param, ctx)
+
         try:
             p = parse_comma_args(value, _valid_keys)
 
@@ -38,9 +67,34 @@ class QSubParamType(click.ParamType):
                 p['wd'] = True
 
             p = norm_qsub_params(p)
-            return QsubLauncher(p, ('--qsub', '_internal=celery'))
+            return QSubLauncher(p, ('--celery', 'pbs-launch'))
         except ValueError:
             self.fail('Failed to parse: {}'.format(value), param, ctx)
+
+
+class HostPort(click.ParamType):
+    name = 'host:port'
+
+    def __init__(self, default_port=None):
+        self._default_port = default_port
+
+    def convert(self, value, param, ctx):
+        if value is None:
+            return None
+        hp = value.split(':')
+        if len(hp) == 1:
+            return (value, self._default_port)
+
+        if len(hp) > 2:
+            self.fail('Expect value in <host:port> format')
+
+        host, port = hp
+        try:
+            port = int(port)
+        except ValueError:
+            self.fail('Expect value in <host:port> format, where port is an integer')
+
+        return (host, port)
 
 
 def parse_comma_args(s, valid_keys=None):
@@ -220,14 +274,21 @@ class TaskRunner(object):
         self._executor = None
         self._shutdown = None
         self._queue_size = None
+        self._user_queue_size = None
 
     def __repr__(self):
         args = '' if self._opts is None else '-{}'.format(str(self._opts))
         return '{}{}'.format(self._kind, args)
 
+    def set_qsize(self, qsize):
+        self._user_queue_size = qsize
+
     def start(self):
         from ..utils import pbs
-        from datacube.executor import SerialExecutor, _get_concurrent_executor
+        from datacube.executor import (SerialExecutor,
+                                       mk_celery_executor,
+                                       _get_concurrent_executor,
+                                       _get_distributed_executor)
 
         def noop():
             pass
@@ -236,6 +297,16 @@ class TaskRunner(object):
             qsize = pbs.preferred_queue_size()
             executor, shutdown = pbs.launch_redis_worker_pool()
             return (executor, qsize, shutdown)
+
+        def mk_dask():
+            qsize = 100
+            executor = _get_distributed_executor(self._opts)
+            return (executor, qsize, noop)
+
+        def mk_celery():
+            qsize = 100
+            executor = mk_celery_executor(*self._opts)
+            return (executor, qsize, noop)
 
         def mk_multiproc():
             qsize = 100
@@ -248,15 +319,22 @@ class TaskRunner(object):
             return (executor, qsize, noop)
 
         mk = dict(pbs_celery=mk_pbs_celery,
+                  celery=mk_celery,
+                  dask=mk_dask,
                   multiproc=mk_multiproc,
                   serial=mk_serial)
 
         try:
             (self._executor,
-             self._queue_size,
+             default_queue_size,
              self._shutdown) = mk.get(self._kind, mk_serial)()
         except RuntimeError:
             return False
+
+        if self._user_queue_size is not None:
+            self._queue_size = self._user_queue_size
+        else:
+            self._queue_size = default_queue_size
 
     def stop(self):
         if self._shutdown is not None:
@@ -289,37 +367,58 @@ def with_qsub_runner():
     Will add the following options
 
     --parallel <int>
+    --dask 'host:port'
+    --celery 'host:port'|'pbs-launch'
+    --queue-size <int>
     --qsub <qsub-params>
 
     Will populate variables
-      qsub   - None | QsubLauncher
+      qsub   - None | QSubLauncher
       runner - None | TaskRunner
     """
 
     from functools import update_wrapper
 
-    rkey = '_runner'
-    qkey = '_qsub'
-
     arg_name = 'runner'
+    o_key = '_qsub_state'
+
+    class State:
+        def __init__(self):
+            self.runner = None
+            self.qsub = None
+            self.qsize = None
+
+    def state(ctx=None):
+        obj = get_current_obj(ctx)
+        if o_key not in obj:
+            obj[o_key] = State()
+        return obj[o_key]
 
     def add_multiproc_executor(ctx, param, value):
         if value is None:
             return
-        obj = get_current_obj(ctx)
-        obj[rkey] = TaskRunner('multiproc', value)
+        state(ctx).runner = TaskRunner('multiproc', value)
 
-    def check_qsub(ctx, param, value):
+    def add_dask_executor(ctx, param, value):
         if value is None:
             return
+        state(ctx).runner = TaskRunner('dask', value)
 
-        obj = get_current_obj(ctx)
+    def add_celery_executor(ctx, param, value):
+        if value is None:
+            return
+        if value[0] == 'pbs-launch':
+            state(ctx).runner = TaskRunner('pbs_celery')
+        else:
+            state(ctx).runner = TaskRunner('celery', value)
 
-        if '_internal' in value._params:
-            obj[rkey] = TaskRunner('pbs_celery')
-            return None  # erase
+    def add_qsize(ctx, param, value):
+        if value is None:
+            return
+        state(ctx).qsize = value
 
-        obj[qkey] = value
+    def capture_qsub(ctx, param, value):
+        state(ctx).qsub = value
         return value
 
     def decorate(f):
@@ -327,29 +426,49 @@ def with_qsub_runner():
            click.option('--parallel',
                         type=int,
                         help='Run locally in parallel',
-                        callback=add_multiproc_executor,
-                        expose_value=False),
+                        expose_value=False,
+                        callback=add_multiproc_executor),
+           click.option('--dask',
+                        type=HostPort(),
+                        help='Use dask.distributed backend for parallel computation. Supply address of dask scheduler.',
+                        expose_value=False,
+                        callback=add_dask_executor),
+           click.option('--celery',
+                        type=HostPort(),
+                        help='Use celery backend for parallel computation. ' +
+                        'Supply redis server address, or "pbs-launch" to launch redis ' +
+                        'server and workers when running under pbs.',
+                        expose_value=False,
+                        callback=add_celery_executor),
+           click.option('--queue-size',
+                        type=int,
+                        help='Overwrite defaults for queue size',
+                        expose_value=False,
+                        callback=add_qsize),
            click.option('--qsub',
                         type=QSubParamType(),
-                        help='Launch via qsub',
-                        callback=check_qsub),
+                        callback=capture_qsub,
+                        help='Launch via qsub, supply comma or new-line separated list of parameters. Try --qsub=help.'
+                        ),
         ]
 
         for o in opts:
             f = o(f)
 
-        def get_runner():
-            obj = get_current_obj()
-            r = obj.get(rkey)
-            if r is None:
-                if qkey in obj:
-                    return None
+        def finalise_state():
+            s = state()
+            if s.runner is None and s.qsub is None:
+                s.runner = TaskRunner()
 
-                return TaskRunner()
-            return r
+            if s.runner is not None and s.qsize is not None:
+                s.runner.set_qsize(s.qsize)
+
+            if s.qsub is not None and s.qsize is not None:
+                s.qsub.add_internal_args('--queue-size', s.qsize)
 
         def extract_runner(*args, **kwargs):
-            kwargs.update({arg_name: get_runner()})
+            finalise_state()
+            kwargs.update({arg_name: state().runner})
             return f(*args, **kwargs)
 
         return update_wrapper(extract_runner, f)
