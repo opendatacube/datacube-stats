@@ -7,12 +7,10 @@ import pathlib
 
 import datacube
 import datacube_stats
-from datacube.executor import SerialExecutor, _get_concurrent_executor
-from datacube.ui.task_app import run_tasks, wrap_task
+from datacube.ui.task_app import wrap_task
 
-from .qsub import with_qsub
+from .qsub import with_qsub_runner
 from ..utils.pbs import _hostname
-from ..utils import pbs
 
 Task = namedtuple('Task', 'val'.split(' '))
 Result = namedtuple('Result', 'result val op worker'.split(' '))
@@ -68,60 +66,29 @@ def log_completed_task(result):
 
 
 @click.command(help='TODO')
-@click.argument('app_config', nargs=1, type=str)
+@click.argument('num_tasks', nargs=1, type=int)
 @click.option('--op', help='Configure dummy task: sqrt|pow2', default='sqrt')
-@with_qsub
-@click.option('--parallel', type=int, help='Run in parallel on local machine')
-@click.option('--pbs-celery', is_flag=True, help='Launch worker pool when running on PBS')
-def main(app_config, op, qsub=None, parallel=None, pbs_celery=False):
-    if qsub:
-        qsub.dump_options()
-        return qsub('--pbs-celery',
-                    '--op', op,
-                    app_config)
-
-    shutdown = None
-    executor = None
-    qsize = 100
-
-    if pbs.is_under_pbs():
-        qsize = pbs.preferred_queue_size()
-
-    try:
-        num_tasks = int(app_config)
-    except ValueError:
-        num_tasks = qsize*10
-
-    if pbs_celery:
-        click.echo('Launching Redis worker pool')
-        try:
-            executor, shutdown = pbs.launch_redis_worker_pool()
-        except RuntimeError:
-            raise click.ClickException('Failed to launch redis worker pool')
-    elif parallel is not None:
-        executor = _get_concurrent_executor(parallel, use_cloud_pickle=True)
-    else:
-        executor = SerialExecutor()
+@with_qsub_runner()
+def main(num_tasks, op, qsub=None, runner=None):
+    if qsub is not None:
+        click.echo(repr(qsub))
+        return qsub('--op', op, num_tasks)
 
     click.echo(datacube.__file__)
     click.echo(datacube_stats.__file__)
     click.echo('PWD:' + str(pathlib.Path('.').absolute()))
-    click.echo('celery_flag: {}'.format('Y' if pbs_celery else 'N'))
-    click.echo('queue size: {}'.format(qsize))
-    click.echo('cfg: ' + app_config)
+    click.echo('num_tasks: ' + str(num_tasks))
 
-    do_task = wrap_task(run_task, op)
+    if runner.start() is False:
+        click.echo('Failed to launch worker pool')
+        return 1
 
-    run_tasks(task_generator(num_tasks),
-              executor,
-              do_task,
-              log_completed_task,
-              qsize)
+    runner(task_generator(num_tasks),
+           wrap_task(run_task, op),
+           log_completed_task)
 
-    if shutdown is not None:
-        click.echo('Calling shutdown hook')
-        shutdown()
-
+    click.echo('Shutting down worker pool')
+    runner.stop()
     click.echo('All done!')
     return 0
 

@@ -3,27 +3,30 @@ import click
 NUM_CPUS_PER_NODE = 16
 _l_flags = 'mem ncpus walltime wd'.split(' ')
 
-_pass_thru_keys = 'name project queue env_vars wd noask'.split(' ')
+_pass_thru_keys = 'name project queue env_vars wd noask _internal'.split(' ')
 _valid_keys = _pass_thru_keys + 'walltime nodes mem extra_qsub_args'.split(' ')
 
 
 class QsubLauncher(object):
-    def __init__(self, params):
+    def __init__(self, params, internal_args=None):
+        self._internal_args = internal_args
         self._params = params
 
-    def dump_options(self):
+    def __repr__(self):
         import yaml
-        click.echo(yaml.dump(dict(qsub=self._params)))
+        return yaml.dump(dict(qsub=self._params))
 
     def __call__(self, *args):
-        from .qsub import qsub_self_launch
+        if self._internal_args is not None:
+            args = args + tuple(self._internal_args)
+
         r, output = qsub_self_launch(self._params, *args)
         click.echo(output)
         return r
 
 
 class QSubParamType(click.ParamType):
-    name = 'QSUB params'
+    name = 'opts'
 
     def convert(self, value, param, ctx):
         from .qsub import norm_qsub_params, parse_comma_args
@@ -35,15 +38,9 @@ class QSubParamType(click.ParamType):
                 p['wd'] = True
 
             p = norm_qsub_params(p)
-            return QsubLauncher(p)
+            return QsubLauncher(p, ('--qsub', '_internal=celery'))
         except ValueError:
             self.fail('Failed to parse: {}'.format(value), param, ctx)
-
-
-QSUB = QSubParamType()
-
-with_qsub = click.option('--qsub', type=QSUB,
-                         help='Launch via qsub')
 
 
 def parse_comma_args(s, valid_keys=None):
@@ -202,7 +199,7 @@ def qsub_self_launch(qsub_opts, *args):
     noask = qsub_opts.get('noask', False)
 
     if not noask:
-        click.echo('Args: ' + ' '.join(args))
+        click.echo('Args: ' + ' '.join(map(str, args)))
         confirmed = click.confirm('Submit to pbs?')
         if not confirmed:
             return (0, 'Aborted by user')
@@ -214,3 +211,146 @@ def qsub_self_launch(qsub_opts, *args):
     exit_code = proc.wait()
 
     return exit_code, out_txt
+
+
+class TaskRunner(object):
+    def __init__(self, kind='serial', opts=None):
+        self._kind = kind
+        self._opts = opts
+        self._executor = None
+        self._shutdown = None
+        self._queue_size = None
+
+    def __repr__(self):
+        args = '' if self._opts is None else '-{}'.format(str(self._opts))
+        return '{}{}'.format(self._kind, args)
+
+    def start(self):
+        from ..utils import pbs
+        from datacube.executor import SerialExecutor, _get_concurrent_executor
+
+        def noop():
+            pass
+
+        def mk_pbs_celery():
+            qsize = pbs.preferred_queue_size()
+            executor, shutdown = pbs.launch_redis_worker_pool()
+            return (executor, qsize, shutdown)
+
+        def mk_multiproc():
+            qsize = 100
+            executor = _get_concurrent_executor(self._opts)
+            return (executor, qsize, noop)
+
+        def mk_serial():
+            qsize = 10
+            executor = SerialExecutor()
+            return (executor, qsize, noop)
+
+        mk = dict(pbs_celery=mk_pbs_celery,
+                  multiproc=mk_multiproc,
+                  serial=mk_serial)
+
+        try:
+            (self._executor,
+             self._queue_size,
+             self._shutdown) = mk.get(self._kind, mk_serial)()
+        except RuntimeError:
+            return False
+
+    def stop(self):
+        if self._shutdown is not None:
+            self._shutdown()
+            self._executor = None
+            self._queue_size = None
+            self._shutdown = None
+
+    def __call__(self, tasks, run_task, on_task_complete=None):
+        from datacube.ui.task_app import run_tasks
+
+        if self._executor is None:
+            if self.start() is False:
+                raise RuntimeError('Failed to launch worker pool')
+
+        return run_tasks(tasks, self._executor, run_task, on_task_complete, self._queue_size)
+
+
+def get_current_obj(ctx=None):
+    if ctx is None:
+        ctx = click.get_current_context()
+
+    if ctx.obj is None:
+        ctx.obj = {}
+    return ctx.obj
+
+
+def with_qsub_runner():
+    """
+    Will add the following options
+
+    --parallel <int>
+    --qsub <qsub-params>
+
+    Will populate variables
+      qsub   - None | QsubLauncher
+      runner - None | TaskRunner
+    """
+
+    from functools import update_wrapper
+
+    rkey = '_runner'
+    qkey = '_qsub'
+
+    arg_name = 'runner'
+
+    def add_multiproc_executor(ctx, param, value):
+        if value is None:
+            return
+        obj = get_current_obj(ctx)
+        obj[rkey] = TaskRunner('multiproc', value)
+
+    def check_qsub(ctx, param, value):
+        if value is None:
+            return
+
+        obj = get_current_obj(ctx)
+
+        if '_internal' in value._params:
+            obj[rkey] = TaskRunner('pbs_celery')
+            return None  # erase
+
+        obj[qkey] = value
+        return value
+
+    def decorate(f):
+        opts = [
+           click.option('--parallel',
+                        type=int,
+                        help='Run locally in parallel',
+                        callback=add_multiproc_executor,
+                        expose_value=False),
+           click.option('--qsub',
+                        type=QSubParamType(),
+                        help='Launch via qsub',
+                        callback=check_qsub),
+        ]
+
+        for o in opts:
+            f = o(f)
+
+        def get_runner():
+            obj = get_current_obj()
+            r = obj.get(rkey)
+            if r is None:
+                if qkey in obj:
+                    return None
+
+                return TaskRunner()
+            return r
+
+        def extract_runner(*args, **kwargs):
+            kwargs.update({arg_name: get_runner()})
+            return f(*args, **kwargs)
+
+        return update_wrapper(extract_runner, f)
+    return decorate
