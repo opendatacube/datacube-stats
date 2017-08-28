@@ -22,9 +22,16 @@ class QSubLauncher(object):
         else:
             self._internal_args = self._internal_args + args
 
-    def __call__(self, *args):
+    def __call__(self, auto=False, *args):
+        if auto:
+            import sys
+            args = sys.argv[1:]
+            args = remove_args('--qsub', args, n=1)
+            args = remove_args('--queue-size', args, n=1)
+            args = tuple(args)
+
         if self._internal_args is not None:
-            args = args + tuple(self._internal_args)
+            args = tuple(self._internal_args) + args
 
         r, output = qsub_self_launch(self._params, *args)
         click.echo(output)
@@ -38,14 +45,13 @@ class QSubParamType(click.ParamType):
         from .qsub import norm_qsub_params, parse_comma_args
 
         if value == 'help':
-            self.fail('''
-
+            click.echo('''
 Following parameters are understood:
 
    nodes    = <int> number of nodes
-   walltime = <string>, "10m" -- ten minutes, "5h" -- five hours
+   walltime = <duration> e.g. "10m" -- ten minutes, "5h" -- five hours
    mem      = (small|medium|high) or 2G, 4G memory per core
-   name     = <string> Job name
+   name     = job name
    project  = (u46|v10 etc.)
    queue    = (normal|express)
    noask do not ask for confirmation
@@ -57,8 +63,10 @@ Examples:
    --qsub 'name = my-task
    nodes = 7
    mem = medium
-   walltime = 30m'
-''', param, ctx)
+   walltime = 30m
+   noask'
+''')
+            ctx.exit()
 
         try:
             p = parse_comma_args(value, _valid_keys)
@@ -70,6 +78,25 @@ Examples:
             return QSubLauncher(p, ('--celery', 'pbs-launch'))
         except ValueError:
             self.fail('Failed to parse: {}'.format(value), param, ctx)
+
+
+def remove_args(opt, args, n=1):
+    out = []
+    skip = 0
+
+    for a in args:
+        if skip > 0:
+            skip -= 1
+            continue
+
+        if a == opt:
+            skip = n
+        elif a.startswith(opt+'='):
+            skip = 0
+        else:
+            out.append(a)
+
+    return out
 
 
 class HostPort(click.ParamType):
@@ -344,7 +371,8 @@ class TaskRunner(object):
             self._shutdown = None
 
     def __call__(self, tasks, run_task, on_task_complete=None):
-        from datacube.ui.task_app import run_tasks
+        # from datacube.ui.task_app import run_tasks
+        from ..runner import run_tasks  # TODO: fix version in datacube and use it
 
         if self._executor is None:
             if self.start() is False:
