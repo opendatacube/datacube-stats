@@ -760,7 +760,9 @@ class Medoid(Statistic):
                 result[not_enough] = nodata
                 return result
 
-            return var.reduce(worker, dim='time', nodata=var.nodata)
+            from numpy import nan
+            nodata = getattr(var, 'nodata', nan)
+            return var.reduce(worker, dim='time', nodata=nodata)
 
         def attach_metadata(result):
             """ Attach additional metadata to the `result`. """
