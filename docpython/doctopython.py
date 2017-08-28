@@ -53,6 +53,9 @@ def deploypackage():
 
     if not os.path.isdir(install_root):
         os.makedirs(install_root)
+
+    if not os.path.isdir(pyhton_path):
+        os.makedirs(python_path)
     
     package = ("python setup.py clean && python setup.py install --prefix " + install_root)
     subprocess.run(package, shell=True)
@@ -79,4 +82,4 @@ def run(template, template_context, module_dest, module_dest_file):
 if __name__ == '__main__':
     deploypackage()
     run(template, template_context, module_dest, module_dest_file)
-    os.chmod(install_root, 0o555)
+    os.chmod(install_root, 0o755)
