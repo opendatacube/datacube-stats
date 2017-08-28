@@ -67,7 +67,7 @@ def get_env(extras=[], **more_env):
     import re
 
     pass_envs = set(['PATH', 'LANG', 'LD_LIBRARY_PATH', 'HOME', 'USER'])
-    REGEXES = ['^PYTHON.*', '^GDAL.*', '^LC.*']
+    REGEXES = ['^PYTHON.*', '^GDAL.*', '^LC.*', '^DATACUBE.*']
     rgxs = [re.compile(r) for r in REGEXES]
 
     def need_this_env(k):
