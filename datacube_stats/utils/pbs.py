@@ -5,8 +5,8 @@ _nodes = None
 
 
 def _hostname():
-    import os
-    return os.environ.get('HOSTNAME', os.environ.get('HOST', 'localhost'))
+    import platform
+    return platform.node()
 
 
 def is_under_pbs():
@@ -51,12 +51,23 @@ def nodes():
     return _nodes
 
 
+def total_cores():
+    total = 0
+    for n in nodes():
+        total += n.num_cores
+    return total
+
+
+def preferred_queue_size():
+    return total_cores()*2
+
+
 def get_env(extras=[], **more_env):
     import os
     import re
 
     pass_envs = set(['PATH', 'LANG', 'LD_LIBRARY_PATH', 'HOME', 'USER'])
-    REGEXES = ['^PYTHON.*', '^GDAL.*', '^LC.*']
+    REGEXES = ['^PYTHON.*', '^GDAL.*', '^LC.*', '^DATACUBE.*']
     rgxs = [re.compile(r) for r in REGEXES]
 
     def need_this_env(k):
@@ -116,6 +127,8 @@ def launch_redis_worker_pool(port=6379):
 
     redis_shutdown = cr.launch_redis(redis_port, redis_password)
 
+    print('Launched redis at {}:{}'.format(redis_host, redis_port))
+
     if not redis_shutdown:
         raise RuntimeError('Failed to launch Redis')
 
@@ -143,10 +156,14 @@ def launch_redis_worker_pool(port=6379):
 
     def shutdown():
         cr.app.control.shutdown()
-        redis_shutdown()
+
+        print('Waiting for workers to quit')
 
         # TODO: time limit followed by kill
         for p in worker_procs:
             p.wait()
+
+        print('Shutting down redis-server')
+        redis_shutdown()
 
     return executor, shutdown

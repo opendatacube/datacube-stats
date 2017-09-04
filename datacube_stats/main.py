@@ -10,6 +10,7 @@ import logging
 import copy
 from functools import partial
 from textwrap import dedent
+from .cli.qsub import with_qsub_runner
 
 try:
     import cPickle as pickle
@@ -36,7 +37,6 @@ from datacube.utils import read_documents, import_function
 from datacube_stats.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
-from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where
@@ -85,8 +85,6 @@ def list_statistics(ctx, param, value):
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
                 callback=to_pathlib)
-@click.option('--queue-size', type=click.IntRange(1, 100000), default=2000,
-              help='Number of tasks to queue at the start')
 @click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
@@ -94,45 +92,33 @@ def list_statistics(ctx, param, value):
 @click.option('--output-location', help='Override output location in configuration file')
 @click.option('--year', type=int, help='Override time period in configuration file')
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
-@click.option('--pbs-celery', is_flag=True, help='Launch worker pool when running on PBS')
 @ui.global_cli_options
-@ui.executor_cli_options
+@with_qsub_runner()
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks,
-         tile_index, output_location, year,
-         pbs_celery):
+def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
+         tile_index, output_location, year):
+    if qsub is not None:
+        # TODO: verify config before calling qsub submit
+        click.echo(repr(qsub))
+        return qsub(auto=True)
+
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
     app = create_stats_app(config, index, tile_index, output_location, year)
-    app.queue_size = queue_size
     app.validate()
-
-    shutdown = None
-
-    if pbs_celery:
-        from .utils import pbs
-        click.echo('Launching Redis worker pool')
-        try:
-            executor, shutdown = pbs.launch_redis_worker_pool()
-        except RuntimeError:
-            raise click.ClickException('Failed to launch redis worker pool')
 
     if save_tasks:
         app.save_tasks_to_file(save_tasks)
         failed = 0
     elif load_tasks:
-        successful, failed = app.run(executor, load_tasks)
+        successful, failed = app.run(runner, load_tasks)
     else:
-        successful, failed = app.run(executor)
-
-    if shutdown is not None:
-        click.echo('Calling shutdown hook')
-        shutdown()
+        successful, failed = app.run(runner)
 
     timer.pause('main')
     _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
@@ -191,8 +177,6 @@ class StatsApp(object):
         #: Takes a single argument of the task result
         self.process_completed = None
 
-        self.queue_size = 50
-
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
         self._ensure_unique_output_product_names()
@@ -237,7 +221,7 @@ class StatsApp(object):
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
 
-    def run(self, executor, task_file=None):
+    def run(self, runner, task_file=None):
         if task_file:
             tasks = unpickle_stream(task_file)
         else:
@@ -253,11 +237,9 @@ class StatsApp(object):
         task_runner = partial(execute_task,
                               output_driver=output_driver,
                               chunking=self.computation.get('chunking', {}))
-        return run_tasks(tasks,
-                         executor,
-                         task_runner,
-                         self.process_completed,
-                         queue_size=self.queue_size)
+        return runner(tasks,
+                      task_runner,
+                      self.process_completed)
 
     def save_tasks_to_file(self, filename):
         _LOG.debug('Saving tasks to %s.', filename)

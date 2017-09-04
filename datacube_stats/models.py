@@ -48,6 +48,9 @@ class StatsTask(object):
     def __getitem__(self, item):
         return getattr(self, item)
 
+    def get(self, item, default=None):
+        return getattr(self, item, default)
+
     def __str__(self):
         return "StatsTask(time_period={}, tile_index={})".format(self.time_period, self.tile_index)
 
