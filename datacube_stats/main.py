@@ -39,7 +39,7 @@ from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
-from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where
+from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils import cast_back
 
 __all__ = ['StatsApp', 'main']
@@ -406,7 +406,9 @@ def load_masked_data(sub_tile_slice, source_prod):
                              fuse_func=data_fuse_func,
                              skip_broken_datasets=True)
 
+    mask_inplace = source_prod['spec'].get('mask_inplace', False)
     mask_nodata = source_prod['spec'].get('mask_nodata', True)
+
     if mask_nodata:
         data = sensible_mask_invalid_data(data)
 
@@ -427,7 +429,10 @@ def load_masked_data(sub_tile_slice, source_prod):
                                      fuse_func=mask_fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
             mask = make_mask(mask, **mask_spec['flags'])
-            data = sensible_where(data, mask)
+            if mask_inplace:
+                data = sensible_where_inplace(data, mask)
+            else:
+                data = sensible_where(data, mask)
             del mask
     return data
 

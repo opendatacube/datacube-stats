@@ -32,6 +32,7 @@ import xarray
 from pkg_resources import iter_entry_points
 
 from datacube.storage.masking import make_mask, create_mask_value
+from .utils import da_nodata
 
 try:
     from bottleneck import anynan, nansum
@@ -760,9 +761,7 @@ class Medoid(Statistic):
                 result[not_enough] = nodata
                 return result
 
-            from numpy import nan
-            nodata = getattr(var, 'nodata', nan)
-            return var.reduce(worker, dim='time', nodata=nodata)
+            return var.reduce(worker, dim='time', nodata=da_nodata(var))
 
         def attach_metadata(result):
             """ Attach additional metadata to the `result`. """

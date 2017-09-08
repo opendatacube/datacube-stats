@@ -75,6 +75,61 @@ def ds_all_float(ds):
     return True
 
 
+def da_nodata(da, default=None):
+    from numpy import nan
+
+    nodata = getattr(da, 'nodata', None)
+    if nodata is not None:
+        return nodata
+
+    if default is not None:
+        return default
+
+    if da_is_float(da):
+        return nan
+
+    # integer like but has no 'nodata' attribute and default wasn't specified
+    return 0
+
+
+def sensible_where_inplace(data, mask):
+    """
+    Apply mask in-place without creating new storage or converting to float
+
+    data -- Dataset or DataArray, if dataset applies mask to all data variables
+    mask -- DataArray or ndarray of the same x,y shape as data
+
+    If mask has no time dimension and data does, it will be broadcast along time dimension
+
+    Does equivalent of:
+       `data[mask == False] = nodata` or `data[:, mask == False] = nodata`
+
+    """
+    mask = xarray.ufuncs.logical_not(mask)
+    mask = mask.values
+
+    def proc_var(a):
+        if a.shape == mask.shape:
+            a.values[mask] = da_nodata(a)
+        elif mask.shape == a.shape[1:]:
+            # note this assumes time dimension goes first
+            a.values[:, mask] = da_nodata(a)
+        else:
+            assert "Incompatible mask shape"
+
+        return a
+
+    if isinstance(data, xarray.DataArray):
+        return proc_var(data)
+
+    assert isinstance(data, xarray.Dataset)
+
+    for a in data.data_vars.values():
+        proc_var(a)
+
+    return data
+
+
 def _convert_to_floats(data):
     assert isinstance(data, xarray.Dataset)
 
