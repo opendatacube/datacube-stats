@@ -282,6 +282,16 @@ def report_unmatched_datasets(co_unmatched, logger=None):
     return n
 
 
+def bunch(**kw):
+    """
+    Create object with given attributes
+    """
+    x = type('bunch', (object, ), {})()
+    for k, v in kw.items():
+        setattr(x, k, v)
+    return x
+
+
 def sorted_interleave(*iterators, key=lambda x: x, reverse=False):
     """
     Given a number of sorted sequences return a single sorted sequence avoiding
