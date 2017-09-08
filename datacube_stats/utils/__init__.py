@@ -280,3 +280,29 @@ def report_unmatched_datasets(co_unmatched, logger=None):
             logger(' {} {}'.format(ds.id, ds.local_path))
 
     return n
+
+
+def sorted_interleave(*iterators, key=lambda x: x, reverse=False):
+    """
+    Given a number of sorted sequences return a single sorted sequence avoiding
+    looking ahead as much as possible. Supports infinite sequences, loads one
+    item at a time from each sequence at the most.
+    """
+    def advance(it):
+        try:
+            return (next(it), it)
+        except StopIteration:
+            return None
+
+    vv = map(advance, iterators)
+    vv = list(filter(lambda x: x is not None, vv))
+
+    while len(vv) > 0:
+        (val, it), *vv = sorted(vv, key=lambda a: key(a[0]), reverse=reverse)
+
+        yield val
+        del val
+
+        x = advance(it)
+        if x is not None:
+            vv.append(x)

@@ -361,6 +361,20 @@ class EmptyChunkException(Exception):
     pass
 
 
+def load_data_lazy(sub_tile_slice, sources):
+    from .utils import sorted_interleave
+
+    def by_time(ds):
+        return ds.time.values[0]
+
+    data = [load_masked_data_lazy(sub_tile_slice, source) for source in sources]
+
+    if len(data) == 1:
+        return data[0]
+
+    return sorted_interleave(*data, key=by_time)
+
+
 def load_data(sub_tile_slice, sources):
     """
     Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
@@ -397,6 +411,85 @@ def _remove_emptys(datasets):
     return [dataset
             for dataset in datasets
             if dataset is not None]
+
+
+def load_masked_tile_lazy(tile, masks, mask_nodata=False, mask_inplace=False, **kwargs):
+    """Given data tile and an optional list of masks load data and masks apply
+    masks to data and return one time slice at a time.
+
+
+    tile -- Tile object for main data
+    masks -- [(Tile, flags, load_args)] list of triplets describing mask to be applied to data.
+             Tile -- tile objects describing where mask data files are
+             flags -- dictionary of flags to be checked
+             load_args - dictionary of load parameters (e.g. fuse_func, measurements, etc.)
+
+    mask_nodata -- Convert data to float32 replacing nodata values with nan
+    mask_inplace -- Apply mask without conversion to float
+
+
+    Returns an iterator of DataFrames one time-slice at a time
+
+    """
+
+    for i in range(tile.shape[0]):
+        loc = [slice(i, i+1), slice(None), slice(None)]
+        d = GridWorkflow.load(tile[loc], **kwargs)
+
+        if mask_nodata:
+            d = sensible_mask_invalid_data(d)
+
+        # Load all masks and combine them all into one
+        mask = None
+        for m_tile, flags, load_args in masks:
+            m = GridWorkflow.load(m_tile[loc], **load_args)
+            m, *other = m.data_vars.values()
+            m = make_mask(m, **flags)
+
+            if mask is None:
+                mask = m
+            else:
+                mask &= m
+
+        if mask is not None:
+            # Apply mask in place if asked or if we already performed
+            # conversion to float32, this avoids reallocation of memory and
+            # hence increases the largest data set size one can load without
+            # running out of memory
+            if mask_inplace or mask_nodata:
+                d = sensible_where_inplace(d, mask)
+            else:
+                d = sensible_where(d, mask)
+
+        yield d
+
+
+def load_masked_data_lazy(sub_tile_slice, source_prod):
+    data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
+    data_tile = source_prod['data'][sub_tile_slice]
+    data_measurements = source_prod['spec'].get('measurements')
+
+    mask_nodata = source_prod['spec'].get('mask_nodata', True)
+    mask_inplace = source_prod['spec'].get('mask_inplace', False)
+    masks = []
+
+    if 'masks' in source_prod and 'masks' in source_prod['spec']:
+        for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
+            flags = mask_spec['flags']
+            mask_fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
+            opts = dict(skip_broken_datasets=True,
+                        fuse_func=mask_fuse_func,
+                        measurements=[mask_spec['measurement']])
+
+            masks.append((mask_tile[sub_tile_slice], flags, opts))
+
+    return load_masked_tile_lazy(data_tile,
+                                 masks,
+                                 mask_nodata=mask_nodata,
+                                 mask_inplace=mask_inplace,
+                                 fuse_func=data_fuse_func,
+                                 measurements=data_measurements,
+                                 skip_broken_datasets=True)
 
 
 def load_masked_data(sub_tile_slice, source_prod):
