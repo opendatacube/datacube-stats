@@ -361,18 +361,18 @@ class EmptyChunkException(Exception):
     pass
 
 
-def load_data_lazy(sub_tile_slice, sources):
+def load_data_lazy(sub_tile_slice, sources, reverse=False):
     from .utils import sorted_interleave
 
     def by_time(ds):
         return ds.time.values[0]
 
-    data = [load_masked_data_lazy(sub_tile_slice, source) for source in sources]
+    data = [load_masked_data_lazy(sub_tile_slice, source, reverse=reverse) for source in sources]
 
     if len(data) == 1:
         return data[0]
 
-    return sorted_interleave(*data, key=by_time)
+    return sorted_interleave(*data, key=by_time, reverse=reverse)
 
 
 def load_data(sub_tile_slice, sources):
@@ -413,7 +413,7 @@ def _remove_emptys(datasets):
             if dataset is not None]
 
 
-def load_masked_tile_lazy(tile, masks, mask_nodata=False, mask_inplace=False, **kwargs):
+def load_masked_tile_lazy(tile, masks, mask_nodata=False, mask_inplace=False, reverse=True, **kwargs):
     """Given data tile and an optional list of masks load data and masks apply
     masks to data and return one time slice at a time.
 
@@ -424,15 +424,19 @@ def load_masked_tile_lazy(tile, masks, mask_nodata=False, mask_inplace=False, **
              flags -- dictionary of flags to be checked
              load_args - dictionary of load parameters (e.g. fuse_func, measurements, etc.)
 
-    mask_nodata -- Convert data to float32 replacing nodata values with nan
+    mask_nodata  -- Convert data to float32 replacing nodata values with nan
     mask_inplace -- Apply mask without conversion to float
+    reverse      -- Return data earliest observation first
 
 
     Returns an iterator of DataFrames one time-slice at a time
 
     """
+    ii = range(tile.shape[0])
+    if reverse:
+        ii = ii[::-1]
 
-    for i in range(tile.shape[0]):
+    for i in ii:
         loc = [slice(i, i+1), slice(None), slice(None)]
         d = GridWorkflow.load(tile[loc], **kwargs)
 
@@ -464,7 +468,7 @@ def load_masked_tile_lazy(tile, masks, mask_nodata=False, mask_inplace=False, **
         yield d
 
 
-def load_masked_data_lazy(sub_tile_slice, source_prod):
+def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False):
     data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
     data_tile = source_prod['data'][sub_tile_slice]
     data_measurements = source_prod['spec'].get('measurements')
@@ -487,6 +491,7 @@ def load_masked_data_lazy(sub_tile_slice, source_prod):
                                  masks,
                                  mask_nodata=mask_nodata,
                                  mask_inplace=mask_inplace,
+                                 reverse=reverse,
                                  fuse_func=data_fuse_func,
                                  measurements=data_measurements,
                                  skip_broken_datasets=True)
