@@ -33,7 +33,7 @@ install:
   # print conda info
   - conda info -a
 
-  - conda create -n datacube datacube pytest mock
+  - conda create -n datacube datacube pytest mock boltons
   - source activate datacube
   - pip install pydash
   - pip install . --no-deps --upgrade
