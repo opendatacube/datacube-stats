@@ -40,6 +40,7 @@ from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExist
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where
+from datacube_stats.utils import cast_back
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -338,8 +339,13 @@ def load_process_save_chunk(output_files, chunk, task, timer):
         for prod_name, stat in task.output_products.items():
             _LOG.info("Computing %s in tile %s %s. Current timing: %s",
                       prod_name, task.tile_index, chunk, timer)
+
+            measurements = stat.data_measurements
             with timer.time(prod_name):
                 data = stat.compute(data)
+
+                # restore nodata values back
+                data = cast_back(data, measurements)
 
             # For each of the data variables, shove this chunk into the output results
             with timer.time('writing_data'):

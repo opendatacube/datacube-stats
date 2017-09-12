@@ -96,6 +96,42 @@ def _convert_to_floats(data):
     return data.apply(to_float, keep_attrs=True)
 
 
+def cast_back(data, measurements):
+    """
+    Cast calculated statistic `Dataset` into intended data types.
+    When going through intermediate representation as floats,
+    restore `nodata` values in place of `NaN`s.
+    """
+    assert isinstance(data, xarray.Dataset)
+    measurements = {measurement['name']: measurement
+                    for measurement in measurements}
+
+    data_vars = [name for name in data.data_vars]
+    assert set(data_vars) == set(measurements.keys())
+
+    def cast(da):
+        """ Cast `DataArray` into intended type. """
+        output_measurement = measurements[da.name]
+        expected_dtype = np.dtype(output_measurement['dtype'])
+        actual_dtype = da.dtype
+
+        if actual_dtype.kind != 'f' or 'nodata' not in output_measurement:
+            # did not go through intermediate representation
+            # or nodata is unspecified
+            if expected_dtype == actual_dtype:
+                return da
+            else:
+                return da.astype(expected_dtype)
+
+        # replace NaNs with nodata
+        nans = np.isnan(da.values)
+        clone = da.astype(expected_dtype)
+        clone.values[nans] = output_measurement['nodata']
+        return clone
+
+    return data.apply(cast, keep_attrs=True)
+
+
 wofs_flag_defs = {'cloud': {'bits': 6, 'description': 'Cloudy', 'values': {0: False, 1: True}},
                   'cloud_shadow': {'bits': 5,
                                    'description': 'Cloud shadow',
