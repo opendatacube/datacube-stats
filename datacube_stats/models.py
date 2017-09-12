@@ -1,6 +1,7 @@
 from __future__ import absolute_import
-from datacube.model import DatasetType
+from datacube.model import Product
 from datacube_stats.statistics import STATS
+import warnings
 
 
 class StatsTask(object):
@@ -60,6 +61,30 @@ class StatsTask(object):
 
     def __repr__(self):
         return self.__str__()
+
+
+class DataSource(object):
+    """A source was originally a dictionary containing:
+
+      * data - Tile, Loadable by GridWorkflow
+      * masks - List[Tile], loadable by GridWorkflow
+      * spec - Source specification. Dictionary copy of the specification from the config file,
+               containing details about which bands to load and how to apply masks.
+    """
+    def __init__(self, data, masks, spec):
+        #: :type: Tile
+        self.data = data
+
+        #: :type: List[Tile]
+        self.masks = masks
+
+        #: Original Specification from configuration file
+        #: :type: dict
+        self.spec = spec
+
+    def __getitem__(self, item):
+        warnings.warn("Stop using dictionary based access for DataSource")
+        return getattr(self, item)
 
 
 class OutputProduct(object):
