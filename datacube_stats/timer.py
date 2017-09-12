@@ -55,3 +55,20 @@ def sizeof_fmt(num, suffix='B'):
             return "%3.1f%s%s" % (num, unit, suffix)
         num /= 1024.0
     return "%.1f%s%s" % (num, 'Yi', suffix)
+
+
+def wrap_in_timer(func, timer, name):
+    """
+    If timer is none, return func, else returns a wrapper function that calls supplied function inside the timer.
+
+    with timer.time(name):
+       return func(...)
+    """
+    if timer is None:
+        return func
+
+    def wrapped(*args, **kwargs):
+        with timer.time(name):
+            return func(*args, **kwargs)
+
+    return wrapped

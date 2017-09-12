@@ -361,13 +361,14 @@ class EmptyChunkException(Exception):
     pass
 
 
-def load_data_lazy(sub_tile_slice, sources, reverse=False):
+def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
     from .utils import sorted_interleave
 
     def by_time(ds):
         return ds.time.values[0]
 
-    data = [load_masked_data_lazy(sub_tile_slice, source, reverse=reverse) for source in sources]
+    data = [load_masked_data_lazy(sub_tile_slice, source, reverse=reverse, src_idx=idx, timer=timer)
+            for idx, source in enumerate(sources)]
 
     if len(data) == 1:
         return data[0]
@@ -413,7 +414,13 @@ def _remove_emptys(datasets):
             if dataset is not None]
 
 
-def load_masked_tile_lazy(tile, masks, mask_nodata=False, mask_inplace=False, reverse=True, **kwargs):
+def load_masked_tile_lazy(tile, masks,
+                          mask_nodata=False,
+                          mask_inplace=False,
+                          reverse=True,
+                          src_idx=None,
+                          timer=None,
+                          **kwargs):
     """Given data tile and an optional list of masks load data and masks apply
     masks to data and return one time slice at a time.
 
@@ -427,16 +434,20 @@ def load_masked_tile_lazy(tile, masks, mask_nodata=False, mask_inplace=False, re
     mask_nodata  -- Convert data to float32 replacing nodata values with nan
     mask_inplace -- Apply mask without conversion to float
     reverse      -- Return data earliest observation first
+    src_idx      -- If set adds extra axis called source with supplied value
+    timer        -- Optionally track time
 
 
     Returns an iterator of DataFrames one time-slice at a time
 
     """
+    from .timer import wrap_in_timer
+
     ii = range(tile.shape[0])
     if reverse:
         ii = ii[::-1]
 
-    for i in ii:
+    def load_slice(i):
         loc = [slice(i, i+1), slice(None), slice(None)]
         d = GridWorkflow.load(tile[loc], **kwargs)
 
@@ -465,10 +476,18 @@ def load_masked_tile_lazy(tile, masks, mask_nodata=False, mask_inplace=False, re
             else:
                 d = sensible_where(d, mask)
 
-        yield d
+        if src_idx is not None:
+            d.coords['source'] = ('time', np.repeat(src_idx, d.time.size))
+
+        return d
+
+    extract = wrap_in_timer(load_slice, timer, 'loading_data')
+
+    for i in ii:
+        yield extract(i)
 
 
-def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False):
+def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False, src_idx=None, timer=None):
     data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
     data_tile = source_prod['data'][sub_tile_slice]
     data_measurements = source_prod['spec'].get('measurements')
@@ -492,6 +511,8 @@ def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False):
                                  mask_nodata=mask_nodata,
                                  mask_inplace=mask_inplace,
                                  reverse=reverse,
+                                 src_idx=src_idx,
+                                 timer=timer,
                                  fuse_func=data_fuse_func,
                                  measurements=data_measurements,
                                  skip_broken_datasets=True)
