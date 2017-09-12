@@ -3,10 +3,13 @@ Useful utilities used in Stats
 """
 from __future__ import print_function
 import itertools
+import pickle
 import functools
 
+import cloudpickle
 import numpy as np
 import xarray
+from datacube.api.query import Query
 
 from datacube.storage.masking import mask_invalid_data, create_mask_value
 
@@ -324,3 +327,44 @@ def sorted_interleave(*iterators, key=lambda x: x, reverse=False):
         x = advance(it)
         if x is not None:
             vv.append(x)
+
+
+def pickle_stream(objs, filename):
+    idx = 0
+    with open(filename, 'wb') as stream:
+        for idx, obj in enumerate(objs, start=1):
+            cloudpickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
+    return idx
+
+
+def unpickle_stream(filename):
+    with open(filename, 'rb') as stream:
+        while True:
+            try:
+                yield pickle.load(stream)
+            except EOFError:
+                break
+
+
+def _find_periods_with_data(index, product_names, period_duration='1 day',
+                            start_date='1985-01-01', end_date='2000-01-01'):
+    """
+    Search the datacube and find which periods contain data
+
+    This is very useful when running stats in the `daily` mode (which outputs a file for each day). It is
+    very slow to create an output for every day regardless of data availability, so it is better to only find
+    the useful days at the beginning.
+
+    :return: sequence of (start_date, end_date) tuples
+    """
+    # TODO: Read 'simple' job configuration from file
+    query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
+
+    valid_dates = set()
+    for product in product_names:
+        counts = index.datasets.count_product_through_time(period_duration, product=product,
+                                                           **Query(**query).search_terms)
+        valid_dates.update(time_range for time_range, count in counts if count > 0)
+
+    for time_range in sorted(valid_dates):
+        yield time_range.begin, time_range.end

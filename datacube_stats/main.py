@@ -6,8 +6,8 @@ This command is run as ``datacube-stats``, all operation are driven by a configu
 """
 from __future__ import absolute_import, print_function
 
-import logging
 import copy
+import logging
 from functools import partial
 from textwrap import dedent
 from .cli.qsub import with_qsub_runner
@@ -18,7 +18,6 @@ except ImportError:
     import pickle
 
 import click
-import cloudpickle
 import numpy as np
 import pandas as pd
 import xarray
@@ -28,7 +27,7 @@ import datacube_stats
 import datacube
 from datacube import Datacube
 from datacube.api import make_mask, GridWorkflow, Tile
-from datacube.api.query import query_group_by, query_geopolygon, Query
+from datacube.api.query import query_group_by, query_geopolygon
 from datacube.model import GridSpec
 from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube.ui import click as ui
@@ -40,7 +39,7 @@ from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExist
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
-from datacube_stats.utils import cast_back
+from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)

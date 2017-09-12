@@ -9,6 +9,10 @@ class StatsTask(object):
     Including:
       - Reference to all the source datasets
       - A list of `StatsProduct`s to create
+
+    :param time_period: (start datetime, end datetime) tuple
+    :param sources: List[dict] describing data/masks
+    :param output_products: dict(product_name: OutputProduct)
     """
 
     def __init__(self, time_period, tile_index=None, sources=None, output_products=None):
@@ -66,10 +70,13 @@ class OutputProduct(object):
       - Statistical operation, ie max, mean, median, medoid. An implementation of `ValueStat`
       - Output product definition
       - Input measurements
+
+    :param str product_type: Just a string tag, labelling the type of product
     """
 
     def __init__(self, metadata_type, product_type, input_measurements, storage, name, file_path_template,
                  stat_name, statistic, output_params=None, extras=None):
+
         #: The product name.
         self.name = name
 
@@ -84,7 +91,9 @@ class OutputProduct(object):
 
         self.data_measurements = statistic.measurements(input_measurements)
 
+        #: The ODC Product (formerly DatasetType)
         self.product = self._create_product(metadata_type, product_type, self.data_measurements, storage)
+
         self.output_params = output_params
 
         #: A dictionary of extra arguments to be used through the processing chain
@@ -118,8 +127,9 @@ class OutputProduct(object):
         product_definition = {
             'name': self.name,
             'description': 'Description for ' + self.name,
-            'metadata_type': 'eo',
+            'metadata_type': metadata_type.name,
             'metadata': {
+                # TODO: Setting format here is wrong. does it have to be set? Hopefully it's optional
                 'format': {
                     'name': 'NetCDF'
                 },
