@@ -627,60 +627,6 @@ def _get_app_metadata(config_file):
     }
 
 
-def _find_periods_with_data(index, product_names, period_duration='1 day',
-                            start_date='1985-01-01', end_date='2000-01-01'):
-    # TODO: Read 'simple' job configuration from file
-    query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
-
-    valid_dates = set()
-    for product in product_names:
-        counts = index.datasets.count_product_through_time(period_duration, product=product,
-                                                           **Query(**query).search_terms)
-        valid_dates.update(time_range for time_range, count in counts if count > 0)
-
-    for time_range in sorted(valid_dates):
-        yield time_range.begin, time_range.end
-
-
-def create_stats_app(config, index=None, tile_index=None, output_location=None, year=None):
-    """
-    Create a StatsApp to run a processing job, based on a configuration file
-
-    :param config: dictionary based configuration
-    :param index: open database connection
-    :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
-    :return: read to run StatsApp
-    """
-    input_region = config.get('input_region')
-    if tile_index and not input_region:
-        input_region = {'tile': tile_index}
-
-    if year is not None:
-        if 'date_ranges' not in config:
-            config['date_ranges'] = {}
-
-        config['date_ranges']['start_date'] = '{}-01-01'.format(year)
-        config['date_ranges']['end_date'] = '{}-01-01'.format(year+1)
-
-    stats_app = StatsApp()
-    stats_app.index = index
-    stats_app.config_file = config
-    stats_app.storage = config['storage']
-    stats_app.sources = config['sources']
-    stats_app.output_product_specs = config['output_products']
-    # Write files to current directory if not set in config or command line
-    stats_app.location = output_location or config.get('location', '')
-    stats_app.computation = config.get('computation', {})
-    stats_app.date_ranges = _configure_date_ranges(index, config)
-    stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
-    stats_app.output_driver = _prepare_output_driver(stats_app.storage)
-    stats_app.global_attributes = config.get('global_attributes', {})
-    stats_app.var_attributes = config.get('var_attributes', {})
-    stats_app.process_completed = do_nothing  # TODO: Save dataset to database
-
-    return stats_app
-
-
 def _prepare_output_driver(storage):
     try:
         return OUTPUT_DRIVERS[storage['driver']]
@@ -776,10 +722,6 @@ def boundary_polygon_from_file(filename):
         crs = CRS(input_region.crs_wkt)
         boundary_polygon = Geometry(mapping(final), crs)
     return boundary_polygon
-
-
-def do_nothing(*args, **varargs):
-    pass
 
 
 class GriddedTaskGenerator(object):
@@ -926,23 +868,6 @@ class ArbitraryTileMaker(object):
         geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
 
         return Tile(sources, geobox)
-
-
-def pickle_stream(objs, filename):
-    idx = 0
-    with open(filename, 'wb') as stream:
-        for idx, obj in enumerate(objs, start=1):
-            cloudpickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
-    return idx
-
-
-def unpickle_stream(filename):
-    with open(filename, 'rb') as stream:
-        while True:
-            try:
-                yield pickle.load(stream)
-            except EOFError:
-                break
 
 
 if __name__ == '__main__':
