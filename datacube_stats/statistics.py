@@ -22,6 +22,7 @@ from __future__ import absolute_import
 
 import abc
 import collections
+from copy import copy
 from collections import OrderedDict
 from datetime import datetime
 from functools import reduce as reduce_, partial
@@ -1100,21 +1101,25 @@ try:
             :param xarray.Dataset data:
             :return: xarray.Dataset
             """
-
             # We need to reshape our data into Y, X, Band, Time
 
             squashed_together_dimensions, normal_datacube_dimensions = self._vars_to_transpose(data)
 
             squashed = data.to_array(dim='variable').transpose(*squashed_together_dimensions)
-
             assert squashed.dims == squashed_together_dimensions
+
+            # Grab a copy of the coordinates we need for creating the output DataArray
+            output_coords = copy(squashed.coords)
+            del output_coords['time']
 
             # Call Dale's function here
             squashed = gmpcm(squashed.data)
 
-            # expect back a numpy array with dimensions (Y, X, Band)
+            # Jam the raw numpy array back into a pleasantly labelled DataArray
+            output_dims = squashed_together_dimensions[:-1]
+            as_datarray = xarray.DataArray(squashed, dims=output_dims, coords=output_coords)
 
-            return data.transpose(*normal_datacube_dimensions).to_dataset(dim='variable')
+            return as_datarray.transpose(*normal_datacube_dimensions).to_dataset(dim='variable')
 
         @staticmethod
         def _vars_to_transpose(data):
@@ -1126,15 +1131,19 @@ try:
 
             The dimension ordering returned by this function is specific to the Geometric Median PCM functions
             included from the `pcm` module.
+
+            :return: pcm input array dimension order, datacube dimension ordering
             """
-            dims = data.dims
-            is_proj = 'x' in dims and 'y' in dims
-            is_geo = 'longitude' in dims and 'latitude' in dims
-            if is_proj and is_geo:
-                raise StatsProcessingError('Data to process contains both geographic and projected dimensions, unable to proceed')
-            elif not is_proj and not is_geo:
-                raise StatsProcessingError('Data to process contains neither geographic nor projected dimensions, unable to proceed')
-            elif is_proj:
+            is_projected = 'x' in data.dims and 'y' in data.dims
+            is_geographic = 'longitude' in data.dims and 'latitude' in data.dims
+
+            if is_projected and is_geographic:
+                raise StatsProcessingError('Data to process contains BOTH geographic and projected dimensions, '
+                                           'unable to proceed')
+            elif not is_projected and not is_geographic:
+                raise StatsProcessingError('Data to process contains NEITHER geographic nor projected dimensions, '
+                                           'unable to proceed')
+            elif is_projected:
                 return ('y', 'x', 'variable', 'time'), ('variable', 'y', 'x')
             else:
                 return ('latitude', 'longitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
