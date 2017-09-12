@@ -337,10 +337,10 @@ def execute_task(task, output_driver, chunking):
 
 
 def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
-    procs = [(stat.make_iterative_proc(), name) for name, stat in task.output_products.items()]
+    procs = [(stat.make_iterative_proc(), name, stat) for name, stat in task.output_products.items()]
 
     def update(ds):
-        for proc, name in procs:
+        for proc, name, _ in procs:
             with timer.time(name):
                 proc(ds)
 
@@ -352,8 +352,8 @@ def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
         update(ds)
 
     with timer.time('writing_data'):
-        for proc, name in procs:
-            save(name, proc())
+        for proc, name, stat in procs:
+            save(name, cast_back(proc(), stat.data_measurements))
 
 
 def load_process_save_chunk(output_files, chunk, task, timer):
