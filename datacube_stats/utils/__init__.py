@@ -3,6 +3,7 @@ Useful utilities used in Stats
 """
 from __future__ import print_function
 import itertools
+import functools
 
 import numpy as np
 import xarray
@@ -76,8 +77,16 @@ def ds_all_float(ds):
 
 
 def da_nodata(da, default=None):
-    from numpy import nan
+    """
+    Lookup `nodata` property of DataArray
 
+    Returns:
+      nodata if set
+      default if supplied, otherwise
+
+      NaN for floating point arrays
+      0   for everything else
+    """
     nodata = getattr(da, 'nodata', None)
     if nodata is not None:
         return nodata
@@ -86,7 +95,7 @@ def da_nodata(da, default=None):
         return default
 
     if da_is_float(da):
-        return nan
+        return np.nan
 
     # integer like but has no 'nodata' attribute and default wasn't specified
     return 0
@@ -248,8 +257,7 @@ def tile_flatten_sources(tile):
     Extract sources from tile as a flat list of Dataset objects,
     this removes any grouping that might have been applied to tile sources
     """
-    from functools import reduce
-    return reduce(list.__add__, [list(a.item()) for a in tile.sources])
+    return functools.reduce(list.__add__, [list(a.item()) for a in tile.sources])
 
 
 def report_unmatched_datasets(co_unmatched, logger=None):
