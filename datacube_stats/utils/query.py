@@ -80,10 +80,6 @@ def multi_product_list_cells(products, gw, cell_index=None, product_query={}, **
     `type(co_common[product_idx:Int][cell_idx:(Int,Int)]) == datacube.api.Tile`
 
     """
-    from functools import reduce
-    from datacube.api.query import query_group_by
-    from datacube.api import GridWorkflow
-
     empty_cell = dict(datasets=[], geobox=None)
     co_common = [dict() for _ in products]
     co_unmatched = [dict() for _ in products]

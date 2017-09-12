@@ -109,7 +109,7 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = create_stats_app(config, index, tile_index, output_location, year)
+    app = StatsApp.from_configuration_file(config, index, tile_index, output_location, year)
     app.validate()
 
     if save_tasks:
@@ -176,6 +176,47 @@ class StatsApp(object):
         #: A function to process the result of a complated task
         #: Takes a single argument of the task result
         self.process_completed = None
+
+        self.queue_size = 50
+
+    @classmethod
+    def from_configuration_file(cls, config, index=None, tile_index=None, output_location=None, year=None):
+        """
+        Create a StatsApp to run a processing job, based on a configuration file
+
+        :param config: dictionary based configuration
+        :param index: open database connection
+        :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
+        :return: read to run StatsApp
+        """
+        input_region = config.get('input_region')
+        if tile_index and not input_region:
+            input_region = {'tile': tile_index}
+
+        if year is not None:
+            if 'date_ranges' not in config:
+                config['date_ranges'] = {}
+
+            config['date_ranges']['start_date'] = '{}-01-01'.format(year)
+            config['date_ranges']['end_date'] = '{}-01-01'.format(year + 1)
+
+        stats_app = cls()
+        stats_app.index = index
+        stats_app.config_file = config
+        stats_app.storage = config['storage']
+        stats_app.sources = config['sources']
+        stats_app.output_product_specs = config['output_products']
+        # Write files to current directory if not set in config or command line
+        stats_app.location = output_location or config.get('location', '')
+        stats_app.computation = config.get('computation', {})
+        stats_app.date_ranges = _configure_date_ranges(index, config)
+        stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
+        stats_app.output_driver = _prepare_output_driver(stats_app.storage)
+        stats_app.global_attributes = config.get('global_attributes', {})
+        stats_app.var_attributes = config.get('var_attributes', {})
+        stats_app.process_completed = lambda: None
+
+        return stats_app
 
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
@@ -297,9 +338,19 @@ class StatsApp(object):
                 storage=self.storage,
                 definition=output_spec)
 
-        # TODO: Create the output product in the database
+        # TODO: Write the output product to disk somewhere
 
         return output_products
+
+    def __str__(self):
+        return "StatsApp: sources=({}), output_driver={}, output_products=({})".format(
+            ', '.join(source['product'] for source in self.sources),
+            self.ouput_driver,
+            ', '.join(out_spec['name'] for out_spec in self.output_product_specs)
+        )
+
+    def __repr__(self):
+        return str(self)
 
 
 class StatsProcessingException(Exception):
