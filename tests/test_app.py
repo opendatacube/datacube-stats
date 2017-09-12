@@ -9,7 +9,7 @@ import mock
 from datacube.model import MetadataType
 from datacube_stats.main import OutputProduct
 from datacube_stats.models import StatsTask
-from datacube_stats.statistics import StatsConfigurationError, SimpleStatistic, ReducingXarrayStatistic
+from datacube_stats.statistics import StatsConfigurationError, ReducingXarrayStatistic
 
 from datacube_stats.main import StatsApp
 import yaml
@@ -61,7 +61,7 @@ def test_raises_error_on_invalid_driver(sample_stats_config):
 
 def test_raises_error_on_no_sources(sample_stats_config):
     sample_stats_config['sources'] = []
-    stats_app = StatsApp.from_configuration_file(sample_stats_config)
+    stats_app = StatsApp.from_configuration_file(config=sample_stats_config)
 
     with pytest.raises(StatsConfigurationError):
         stats_app.validate()
@@ -117,11 +117,26 @@ def mock_index():
     fake_index = mock.MagicMock()
     fake_index.metadata_types.get_by_name.return_value = mock.MagicMock(spec=MetadataType)
     fake_index.datasets.get_field_names.return_value = {'time', 'source_filter'}
-    fake_index.products.get_by_name.return_value.measurements = {'red':
-                                                                     {'name': 'mock_measurement',
-                                                                      'dtype': 'int8',
-                                                                      'nodata': -999,
-                                                                      'units': '1'}}
+    fake_index.products.get_by_name.return_value.measurements = {'red': {
+        'name': 'mock_measurement',
+        'dtype': 'int8',
+        'nodata': -999,
+        'units': '1'}}
+
+    fake_index.metadata_types.get_by_name.return_value = MetadataType(
+        {
+            'name': 'eo',
+            'dataset': dict(
+                id=['id'],
+                label=['ga_label'],
+                creation_time=['creation_dt'],
+                measurements=['image', 'bands'],
+                sources=['lineage', 'source_datasets']
+            )
+        },
+        dataset_search_fields={}
+    )
+
     return fake_index
 
 
@@ -129,8 +144,12 @@ _SAMPLE_OUTPUTS_SPEC = [dict(name='landsat_yearly_mean',
                              statistic='mean',
                              file_path_template='SR_N_MEAN/SR_N_MEAN_3577_{tile_index[0]}_'
                                                 '{tile_index[1]}_{time_period[0]:%Y%m%d}.nc')]
-_EXPECTED_DB_FILTER = {'cell_index': None, 'geopolygon': None, 'group_by': 'time', 'product': 'fake_source_product',
-                       'source_filter': None, 'time': mock.ANY}
+_EXPECTED_DB_FILTER = {'cell_index': None,
+                       'geopolygon': None,
+                       'group_by': 'time',
+                       'product': 'fake_source_product',
+                       'source_filter': None,
+                       'time': mock.ANY}
 
 
 def create_app_with_products(sample_stats_config, mock_index):
@@ -141,6 +160,7 @@ def create_app_with_products(sample_stats_config, mock_index):
     return stats_app, output_prods
 
 
+@pytest.mark.skip('Pending resolving issues with DriverManager pickling in ODC')
 def test_can_generate_tasks(sample_stats_config, mock_index, mock_grid_workflow):
     # GIVEN: A simple stats app that has created some output products
     stats_app, output_prods = create_app_with_products(sample_stats_config, mock_index)
@@ -157,6 +177,7 @@ def test_can_generate_tasks(sample_stats_config, mock_index, mock_grid_workflow)
     mock_grid_workflow.list_cells.assert_called_with(**_EXPECTED_DB_FILTER)
 
 
+@pytest.mark.skip('Pending resolving issues with DriverManager pickling in ODC')
 def test_gqa_filtering_passed_in_queries(sample_stats_config, mock_index, mock_grid_workflow):
     # GIVEN: A simple stats app configured to filter on GQA, and that has created some output products,
     gqa_filter = {
