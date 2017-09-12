@@ -1,5 +1,8 @@
 from __future__ import absolute_import
-from datacube.model import Product
+try:
+    from datacube.model import Product
+except ImportError:
+    from datacube.model import DatasetType as Product
 from datacube_stats.statistics import STATS
 import warnings
 
@@ -163,8 +166,8 @@ class OutputProduct(object):
             'storage': storage,
             'measurements': data_measurements
         }
-        DatasetType.validate(product_definition)
-        return DatasetType(metadata_type, product_definition)
+        Product.validate(product_definition)
+        return Product(metadata_type, product_definition)
 
     def __str__(self):
         return "OutputProduct<name={}, stat_name={}>".format(self.name, self.stat_name)
