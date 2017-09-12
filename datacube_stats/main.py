@@ -270,9 +270,12 @@ class StatsApp(object):
         :param output_products: List of output product definitions
         :return:
         """
+        is_iterative = all(op.is_iterative() for op in output_products.values())
+
         for task in self.task_generator(index=self.index, date_ranges=self.date_ranges,
                                         sources_spec=self.sources):
             task.output_products = output_products
+            task.is_iterative = is_iterative
             yield task
 
     def configure_outputs(self, metadata_type='eo'):
@@ -315,10 +318,12 @@ def execute_task(task, output_driver, chunking):
     timer = MultiTimer().start('total')
     datacube.set_options(reproject_threads=1)
 
+    process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
+
     try:
         with output_driver(task=task) as output_files:
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-                load_process_save_chunk(output_files, sub_tile_slice, task, timer)
+                process_chunk(output_files, sub_tile_slice, task, timer)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
     except Exception as e:
@@ -329,6 +334,26 @@ def execute_task(task, output_driver, chunking):
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
     return task
+
+
+def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
+    procs = [(stat.make_iterative_proc(), name) for name, stat in task.output_products.items()]
+
+    def update(ds):
+        for proc, name in procs:
+            with timer.time(name):
+                proc(ds)
+
+    def save(name, ds):
+        for var_name, var in ds.data_vars.items():
+            output_files.write_data(name, var_name, chunk, var.values)
+
+    for ds in load_data_lazy(chunk, task.sources, timer=timer):
+        update(ds)
+
+    with timer.time('writing_data'):
+        for proc, name in procs:
+            save(name, proc())
 
 
 def load_process_save_chunk(output_files, chunk, task, timer):

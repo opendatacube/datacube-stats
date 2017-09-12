@@ -106,6 +106,14 @@ class OutputProduct(object):
     def compute(self):
         return self.statistic.compute
 
+    @property
+    def is_iterative(self):
+        return self.statistic.is_iterative
+
+    @property
+    def make_iterative_proc(self):
+        return self.statistic.make_iterative_proc
+
     def _create_product(self, metadata_type, product_type, data_measurements, storage):
         product_definition = {
             'name': self.name,

@@ -303,6 +303,31 @@ class Statistic(object):
             for measurement in input_measurements]
         return output_measurements
 
+    def is_iterative(self):
+        """
+        Should return True if class supports iterative computation one time slice at a time.
+
+        :rtype: Bool
+        """
+        return False
+
+    def make_iterative_proc(self):
+        """
+        Should return `None` if `is_iterative()` returns `False`.
+
+        Should return processing function `proc` that closes over internal
+        state that get updated one time slice at time, if `is_iterative()`
+        returns `True`.
+
+        proc(dataset_slice)  # Update internal state, called many times
+        result = proc()  # Extract final result, called once
+
+
+        See `incremental_stats.assemble_updater`
+
+        """
+        return None
+
 
 class ClearCount(Statistic):
     """Count the number of clear data points through time"""
@@ -862,6 +887,12 @@ class ExternalPlugin(Statistic):
 
     def measurements(self, input_measurements):
         return self._impl.measurements(input_measurements)
+
+    def is_iterative(self):
+        return self._impl.is_iterative()
+
+    def make_iterative_proc(self):
+        return self._impl.make_iterative_proc()
 
 
 class MaskMultiCounter(Statistic):
