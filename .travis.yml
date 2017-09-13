@@ -33,7 +33,7 @@ install:
   # print conda info
   - conda info -a
 
-  - conda create -n datacube datacube pytest mock boltons
+  - conda create -n datacube datacube pytest mock boltons pytest-cov
   - source activate datacube
   - pip install pydash
   - pip install . --no-deps --upgrade
@@ -41,7 +41,7 @@ install:
   - pip freeze
 
 script:
-  - pytest
+  - pytest --cov datacube_stats
 
 after_success:
   - test $TRAVIS_PYTHON_VERSION = "3.6" && coveralls
