@@ -411,20 +411,25 @@ def load_process_save_chunk(output_files, chunk, task, timer):
         with timer.time('loading_data'):
             data = load_data(chunk, task.sources)
 
-        for prod_name, stat in task.output_products.items():
+        last_idx = len(task.output_products) - 1
+
+        for idx, (prod_name, stat) in enumerate(task.output_products.items()):
             _LOG.info("Computing %s in tile %s %s. Current timing: %s",
                       prod_name, task.tile_index, chunk, timer)
 
             measurements = stat.data_measurements
             with timer.time(prod_name):
-                data = stat.compute(data)
+                result = stat.compute(data)
+
+                if idx == last_idx:  # make sure input data is released early
+                    del data
 
                 # restore nodata values back
-                data = cast_back(data, measurements)
+                result = cast_back(result, measurements)
 
             # For each of the data variables, shove this chunk into the output results
             with timer.time('writing_data'):
-                for var_name, var in data.data_vars.items():  # TODO: Move this loop into output_files
+                for var_name, var in result.data_vars.items():  # TODO: Move this loop into output_files
                     output_files.write_data(prod_name, var_name, chunk, var.values)
 
     except EmptyChunkException:
