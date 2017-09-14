@@ -15,7 +15,7 @@ setup(
     packages=find_packages(),
     url='https://github.com/data-cube/',
     license='Apache',
-    author='Geosience Australia',
+    author='Geoscience Australia',
     author_email='datacube@ga.gov.au',
     description='Perform statistics operations on a Data Cube',
     install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio', 'pyyaml',

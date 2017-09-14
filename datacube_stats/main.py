@@ -685,7 +685,7 @@ def _get_app_metadata(config_file):
 
 def _prepare_output_driver(storage):
     try:
-        return OUTPUT_DRIVERS[storage['driver']]
+        return OUTPUT_DRIVERS[storage['driver'].replace(' ', '')]
     except KeyError:
         if 'driver' in storage:
             msg = 'Invalid output driver "{}" specified.'

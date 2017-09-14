@@ -101,7 +101,7 @@ def mock_grid_workflow():
     with mock.patch('datacube_stats.utils.query.GridWorkflow', spec=True) as mock_gwf_class:
         gwf_instance = mock_gwf_class.return_value
         gwf_instance.list_cells.return_value = {(0, 0): mock.MagicMock()}
-        yield gwf_instance
+        return gwf_instance
 
 
 @pytest.fixture
@@ -109,7 +109,7 @@ def mock_datacube():
     with mock.patch('datacube_stats.main.Datacube', spec=True) as mock_datacube_class:
         dc_instance = mock_datacube_class.return_value
         # dc_instance.list_cells.return_value = {(0, 0): mock.MagicMock()}
-        yield dc_instance
+        return dc_instance
 
 
 @pytest.fixture
