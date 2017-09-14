@@ -1,10 +1,15 @@
 """
 Useful utilities used in Stats
 """
+from __future__ import print_function
 import itertools
+import pickle
+import functools
 
+import cloudpickle
 import numpy as np
 import xarray
+from datacube.api.query import Query
 
 from datacube.storage.masking import mask_invalid_data, create_mask_value
 
@@ -53,13 +58,145 @@ def sensible_where(data, mask):
     return data.where(mask)
 
 
-def _convert_to_floats(data):
-    # Use float32 instead of float64 if input dtype is int16
+def da_is_float(da):
+    """
+    Check if DataArray is of floating point type
+    """
+    assert hasattr(da, 'dtype')
+
+    return da.dtype.kind is 'f'
+
+
+def ds_all_float(ds):
+    """
+    Check if dataset contains only floating point arrays
+    """
+    assert isinstance(ds, xarray.Dataset)
+
+    for da in ds.data_vars.values():
+        if not da_is_float(da):
+            return False
+    return True
+
+
+def da_nodata(da, default=None):
+    """
+    Lookup `nodata` property of DataArray
+
+    Returns:
+      nodata if set
+      default if supplied, otherwise
+
+      NaN for floating point arrays
+      0   for everything else
+    """
+    nodata = getattr(da, 'nodata', None)
+    if nodata is not None:
+        return nodata
+
+    if default is not None:
+        return default
+
+    if da_is_float(da):
+        return np.nan
+
+    # integer like but has no 'nodata' attribute and default wasn't specified
+    return 0
+
+
+def sensible_where_inplace(data, mask):
+    """
+    Apply mask in-place without creating new storage or converting to float
+
+    data -- Dataset or DataArray, if dataset applies mask to all data variables
+    mask -- DataArray or ndarray of the same x,y shape as data
+
+    If mask has no time dimension and data does, it will be broadcast along time dimension
+
+    Does equivalent of:
+       `data[mask == False] = nodata` or `data[:, mask == False] = nodata`
+
+    """
+    mask = xarray.ufuncs.logical_not(mask)
+    mask = mask.values
+
+    def proc_var(a):
+        if a.shape == mask.shape:
+            a.values[mask] = da_nodata(a)
+        elif mask.shape == a.shape[1:]:
+            # note this assumes time dimension goes first
+            a.values[:, mask] = da_nodata(a)
+        else:
+            assert "Incompatible mask shape"
+
+        return a
+
+    if isinstance(data, xarray.DataArray):
+        return proc_var(data)
+
     assert isinstance(data, xarray.Dataset)
-    for name, dataarray in data.data_vars.items():
-        if dataarray.dtype != np.int16:
-            return data
-    return data.apply(lambda d: d.astype(np.float32), keep_attrs=True)
+
+    for a in data.data_vars.values():
+        proc_var(a)
+
+    return data
+
+
+def _convert_to_floats(data):
+    assert isinstance(data, xarray.Dataset)
+
+    if ds_all_float(data):
+        return data
+
+    def to_float(da):
+        if da_is_float(da):
+            return da
+
+        out = da.astype(np.float32)
+
+        nodata = getattr(da, 'nodata', None)
+        if nodata is None:
+            return out
+
+        return out.where(da != nodata)
+
+    return data.apply(to_float, keep_attrs=True)
+
+
+def cast_back(data, measurements):
+    """
+    Cast calculated statistic `Dataset` into intended data types.
+    When going through intermediate representation as floats,
+    restore `nodata` values in place of `NaN`s.
+    """
+    assert isinstance(data, xarray.Dataset)
+    measurements = {measurement['name']: measurement
+                    for measurement in measurements}
+
+    data_vars = [name for name in data.data_vars]
+    assert set(data_vars) == set(measurements.keys())
+
+    def cast(da):
+        """ Cast `DataArray` into intended type. """
+        output_measurement = measurements[da.name]
+        expected_dtype = np.dtype(output_measurement['dtype'])
+        actual_dtype = da.dtype
+
+        if actual_dtype.kind != 'f' or 'nodata' not in output_measurement:
+            # did not go through intermediate representation
+            # or nodata is unspecified
+            if expected_dtype == actual_dtype:
+                return da
+            else:
+                return da.astype(expected_dtype)
+
+        # replace NaNs with nodata
+        nans = np.isnan(da.values)
+        clone = da.astype(expected_dtype)
+        clone.values[nans] = output_measurement['nodata']
+        return clone
+
+    return data.apply(cast, keep_attrs=True)
 
 
 wofs_flag_defs = {'cloud': {'bits': 6, 'description': 'Cloudy', 'values': {0: False, 1: True}},
@@ -109,3 +246,125 @@ def wofs_fuser(dest, src):
         wofs_mask(src, wet=True) & wofs_mask(dest, dry=True))
     np.copyto(dest, 2, where=invalid)
     return dest
+
+
+def tile_to_list(tile):
+    """
+    Extract tile sources xarray into a list of tuples of datasets
+    """
+    return [a.item() for a in tile.sources]
+
+
+def tile_flatten_sources(tile):
+    """
+    Extract sources from tile as a flat list of Dataset objects,
+    this removes any grouping that might have been applied to tile sources
+    """
+    return functools.reduce(list.__add__, [list(a.item()) for a in tile.sources])
+
+
+def report_unmatched_datasets(co_unmatched, logger=None):
+    """ Printout in "human" format unmatched datasets
+
+    co_unmatched -- dict (int,int) => Tile
+    logger -- function that logs string, by default will print to stdout
+
+    returns number of datasets that were skipped
+    """
+    def default_logger(s):
+        print(s)
+
+    logger = default_logger if logger is None else logger
+    n = 0
+
+    for cell_idx, tile in co_unmatched.items():
+        dss = tile_flatten_sources(tile)
+
+        if len(dss) == 0:
+            continue
+
+        n += len(dss)
+
+        logger('Skipping files in tile {},{}'.format(*cell_idx))
+
+        for ds in dss:
+            logger(' {} {}'.format(ds.id, ds.local_path))
+
+    return n
+
+
+def bunch(**kw):
+    """
+    Create object with given attributes
+    """
+    x = type('bunch', (object, ), {})()
+    for k, v in kw.items():
+        setattr(x, k, v)
+    return x
+
+
+def sorted_interleave(*iterators, key=lambda x: x, reverse=False):
+    """
+    Given a number of sorted sequences return a single sorted sequence avoiding
+    looking ahead as much as possible. Supports infinite sequences, loads one
+    item at a time from each sequence at the most.
+    """
+    def advance(it):
+        try:
+            return (next(it), it)
+        except StopIteration:
+            return None
+
+    vv = map(advance, iterators)
+    vv = list(filter(lambda x: x is not None, vv))
+
+    while len(vv) > 0:
+        (val, it), *vv = sorted(vv, key=lambda a: key(a[0]), reverse=reverse)
+
+        yield val
+        del val
+
+        x = advance(it)
+        if x is not None:
+            vv.append(x)
+
+
+def pickle_stream(objs, filename):
+    idx = 0
+    with open(filename, 'wb') as stream:
+        for idx, obj in enumerate(objs, start=1):
+            cloudpickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
+    return idx
+
+
+def unpickle_stream(filename):
+    with open(filename, 'rb') as stream:
+        while True:
+            try:
+                yield pickle.load(stream)
+            except EOFError:
+                break
+
+
+def _find_periods_with_data(index, product_names, period_duration='1 day',
+                            start_date='1985-01-01', end_date='2000-01-01'):
+    """
+    Search the datacube and find which periods contain data
+
+    This is very useful when running stats in the `daily` mode (which outputs a file for each day). It is
+    very slow to create an output for every day regardless of data availability, so it is better to only find
+    the useful days at the beginning.
+
+    :return: sequence of (start_date, end_date) tuples
+    """
+    # TODO: Read 'simple' job configuration from file
+    query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
+
+    valid_dates = set()
+    for product in product_names:
+        counts = index.datasets.count_product_through_time(period_duration, product=product,
+                                                           **Query(**query).search_terms)
+        valid_dates.update(time_range for time_range, count in counts if count > 0)
+
+    for time_range in sorted(valid_dates):
+        yield time_range.begin, time_range.end

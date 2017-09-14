@@ -1,6 +1,10 @@
 from __future__ import absolute_import
-from datacube.model import DatasetType
+try:
+    from datacube.model import Product
+except ImportError:
+    from datacube.model import DatasetType as Product
 from datacube_stats.statistics import STATS
+import warnings
 
 
 class StatsTask(object):
@@ -9,6 +13,10 @@ class StatsTask(object):
     Including:
       - Reference to all the source datasets
       - A list of `StatsProduct`s to create
+
+    :param time_period: (start datetime, end datetime) tuple
+    :param sources: List[dict] describing data/masks
+    :param output_products: dict(product_name: OutputProduct)
     """
 
     def __init__(self, time_period, tile_index=None, sources=None, output_products=None):
@@ -48,11 +56,38 @@ class StatsTask(object):
     def __getitem__(self, item):
         return getattr(self, item)
 
+    def get(self, item, default=None):
+        return getattr(self, item, default)
+
     def __str__(self):
         return "StatsTask(time_period={}, tile_index={})".format(self.time_period, self.tile_index)
 
     def __repr__(self):
         return self.__str__()
+
+
+class DataSource(object):
+    """A source was originally a dictionary containing:
+
+      * data - Tile, Loadable by GridWorkflow
+      * masks - List[Tile], loadable by GridWorkflow
+      * spec - Source specification. Dictionary copy of the specification from the config file,
+               containing details about which bands to load and how to apply masks.
+    """
+    def __init__(self, data, masks, spec):
+        #: :type: Tile
+        self.data = data
+
+        #: :type: List[Tile]
+        self.masks = masks
+
+        #: Original Specification from configuration file
+        #: :type: dict
+        self.spec = spec
+
+    def __getitem__(self, item):
+        warnings.warn("Stop using dictionary based access for DataSource")
+        return getattr(self, item)
 
 
 class OutputProduct(object):
@@ -63,10 +98,13 @@ class OutputProduct(object):
       - Statistical operation, ie max, mean, median, medoid. An implementation of `ValueStat`
       - Output product definition
       - Input measurements
+
+    :param str product_type: Just a string tag, labelling the type of product
     """
 
     def __init__(self, metadata_type, product_type, input_measurements, storage, name, file_path_template,
                  stat_name, statistic, output_params=None, extras=None):
+
         #: The product name.
         self.name = name
 
@@ -81,7 +119,9 @@ class OutputProduct(object):
 
         self.data_measurements = statistic.measurements(input_measurements)
 
+        #: The ODC Product (formerly DatasetType)
         self.product = self._create_product(metadata_type, product_type, self.data_measurements, storage)
+
         self.output_params = output_params
 
         #: A dictionary of extra arguments to be used through the processing chain
@@ -103,12 +143,21 @@ class OutputProduct(object):
     def compute(self):
         return self.statistic.compute
 
+    @property
+    def is_iterative(self):
+        return self.statistic.is_iterative
+
+    @property
+    def make_iterative_proc(self):
+        return self.statistic.make_iterative_proc
+
     def _create_product(self, metadata_type, product_type, data_measurements, storage):
         product_definition = {
             'name': self.name,
             'description': 'Description for ' + self.name,
-            'metadata_type': 'eo',
+            'metadata_type': metadata_type.name,
             'metadata': {
+                # TODO: Setting format here is wrong. does it have to be set? Hopefully it's optional
                 'format': {
                     'name': 'NetCDF'
                 },
@@ -117,8 +166,8 @@ class OutputProduct(object):
             'storage': storage,
             'measurements': data_measurements
         }
-        DatasetType.validate(product_definition)
-        return DatasetType(metadata_type, product_definition)
+        Product.validate(product_definition)
+        return Product(metadata_type, product_definition)
 
     def __str__(self):
         return "OutputProduct<name={}, stat_name={}>".format(self.name, self.stat_name)

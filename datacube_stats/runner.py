@@ -1,13 +1,12 @@
 """
 This module is based on the main() method code from FC/NDVI/ingest for running
-tasks using `task_app` and extracts it into a reusable function called `run_taks`.
+tasks using `task_app` and extracts it into a reusable function called `run_task`.
 
 Hopefully this can be pushed back into `task_app` to reduce duplication, and allow
 any bugs or improvements to be fixed in only one place.
 """
 from __future__ import absolute_import, print_function
 
-import click
 import itertools
 
 import logging

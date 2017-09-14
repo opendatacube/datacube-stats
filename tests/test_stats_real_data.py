@@ -1,9 +1,12 @@
 from pathlib import Path
 import pytest
 
+from datacube.utils import geometry
+from affine import Affine
 from click.testing import CliRunner
 from datacube_stats.main import main
 
+import pytest
 
 CONFIG_TEMPLATE = """
 ## Define inputs to perform statistics on
@@ -72,12 +75,16 @@ CONFIG_FILENAME = 'config.yaml'
 
 
 def sample_geometry():
-    from datacube.utils import geometry
-    from affine import Affine
     gb = geometry.GeoBox(40, 40, Affine(2500, 0.0, 1200000.0, 0.0, -2500, -4300000.0), geometry.CRS('EPSG:3577'))
     json = gb.extent.json
+    return json
 
-@pytest.mark.xfail(reason='Needs implementation')
+
+running_on_nci_environment = Path('/g/data/u46').exists()
+
+
+@pytest.mark.xfail(not running_on_nci_environment,
+                   reason="This test currently expects to be run in the DEA environment on NCI.")
 def test_input_region_single_tile():
     runner = CliRunner()
     with runner.isolated_filesystem() as tmpdir:

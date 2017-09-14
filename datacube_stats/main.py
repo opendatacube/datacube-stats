@@ -6,10 +6,11 @@ This command is run as ``datacube-stats``, all operation are driven by a configu
 """
 from __future__ import absolute_import, print_function
 
-import logging
 import copy
+import logging
 from functools import partial
 from textwrap import dedent
+from .cli.qsub import with_qsub_runner
 
 try:
     import cPickle as pickle
@@ -17,7 +18,6 @@ except ImportError:
     import pickle
 
 import click
-import cloudpickle
 import numpy as np
 import pandas as pd
 import xarray
@@ -27,7 +27,7 @@ import datacube_stats
 import datacube
 from datacube import Datacube
 from datacube.api import make_mask, GridWorkflow, Tile
-from datacube.api.query import query_group_by, query_geopolygon, Query
+from datacube.api.query import query_group_by, query_geopolygon
 from datacube.model import GridSpec
 from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube.ui import click as ui
@@ -36,10 +36,10 @@ from datacube.utils import read_documents, import_function
 from datacube_stats.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
-from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
-from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where
+from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
+from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -85,8 +85,6 @@ def list_statistics(ctx, param, value):
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
                 callback=to_pathlib)
-@click.option('--queue-size', type=click.IntRange(1, 100000), default=2000,
-              help='Number of tasks to queue at the start')
 @click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
@@ -94,45 +92,33 @@ def list_statistics(ctx, param, value):
 @click.option('--output-location', help='Override output location in configuration file')
 @click.option('--year', type=int, help='Override time period in configuration file')
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
-@click.option('--pbs-celery', is_flag=True, help='Launch worker pool when running on PBS')
 @ui.global_cli_options
-@ui.executor_cli_options
+@with_qsub_runner()
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks,
-         tile_index, output_location, year,
-         pbs_celery):
+def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
+         tile_index, output_location, year):
+    if qsub is not None:
+        # TODO: verify config before calling qsub submit
+        click.echo(repr(qsub))
+        return qsub(auto=True)
+
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = create_stats_app(config, index, tile_index, output_location, year)
-    app.queue_size = queue_size
+    app = StatsApp.from_configuration_file(config, index, tile_index, output_location, year)
     app.validate()
-
-    shutdown = None
-
-    if pbs_celery:
-        from .utils import pbs
-        click.echo('Launching Redis worker pool')
-        try:
-            executor, shutdown = pbs.launch_redis_worker_pool()
-        except RuntimeError:
-            raise click.ClickException('Failed to launch redis worker pool')
 
     if save_tasks:
         app.save_tasks_to_file(save_tasks)
         failed = 0
     elif load_tasks:
-        successful, failed = app.run(executor, load_tasks)
+        successful, failed = app.run(runner, load_tasks)
     else:
-        successful, failed = app.run(executor)
-
-    if shutdown is not None:
-        click.echo('Calling shutdown hook')
-        shutdown()
+        successful, failed = app.run(runner)
 
     timer.pause('main')
     _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
@@ -193,6 +179,45 @@ class StatsApp(object):
 
         self.queue_size = 50
 
+    @classmethod
+    def from_configuration_file(cls, config, index=None, tile_index=None, output_location=None, year=None):
+        """
+        Create a StatsApp to run a processing job, based on a configuration file
+
+        :param config: dictionary based configuration
+        :param index: open database connection
+        :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
+        :return: read to run StatsApp
+        """
+        input_region = config.get('input_region')
+        if tile_index and not input_region:
+            input_region = {'tile': tile_index}
+
+        if year is not None:
+            if 'date_ranges' not in config:
+                config['date_ranges'] = {}
+
+            config['date_ranges']['start_date'] = '{}-01-01'.format(year)
+            config['date_ranges']['end_date'] = '{}-01-01'.format(year + 1)
+
+        stats_app = cls()
+        stats_app.index = index
+        stats_app.config_file = config
+        stats_app.storage = config['storage']
+        stats_app.sources = config['sources']
+        stats_app.output_product_specs = config['output_products']
+        # Write files to current directory if not set in config or command line
+        stats_app.location = output_location or config.get('location', '')
+        stats_app.computation = config.get('computation', {})
+        stats_app.date_ranges = _configure_date_ranges(index, config)
+        stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
+        stats_app.output_driver = _prepare_output_driver(stats_app.storage)
+        stats_app.global_attributes = config.get('global_attributes', {})
+        stats_app.var_attributes = config.get('var_attributes', {})
+        stats_app.process_completed = lambda: None
+
+        return stats_app
+
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
         self._ensure_unique_output_product_names()
@@ -237,7 +262,7 @@ class StatsApp(object):
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
 
-    def run(self, executor, task_file=None):
+    def run(self, runner, task_file=None):
         if task_file:
             tasks = unpickle_stream(task_file)
         else:
@@ -253,11 +278,9 @@ class StatsApp(object):
         task_runner = partial(execute_task,
                               output_driver=output_driver,
                               chunking=self.computation.get('chunking', {}))
-        return run_tasks(tasks,
-                         executor,
-                         task_runner,
-                         self.process_completed,
-                         queue_size=self.queue_size)
+        return runner(tasks,
+                      task_runner,
+                      self.process_completed)
 
     def save_tasks_to_file(self, filename):
         _LOG.debug('Saving tasks to %s.', filename)
@@ -287,9 +310,12 @@ class StatsApp(object):
         :param output_products: List of output product definitions
         :return:
         """
+        is_iterative = all(op.is_iterative() for op in output_products.values())
+
         for task in self.task_generator(index=self.index, date_ranges=self.date_ranges,
                                         sources_spec=self.sources):
             task.output_products = output_products
+            task.is_iterative = is_iterative
             yield task
 
     def configure_outputs(self, metadata_type='eo'):
@@ -312,9 +338,19 @@ class StatsApp(object):
                 storage=self.storage,
                 definition=output_spec)
 
-        # TODO: Create the output product in the database
+        # TODO: Write the output product to disk somewhere
 
         return output_products
+
+    def __str__(self):
+        return "StatsApp: sources=({}), output_driver={}, output_products=({})".format(
+            ', '.join(source['product'] for source in self.sources),
+            self.ouput_driver,
+            ', '.join(out_spec['name'] for out_spec in self.output_product_specs)
+        )
+
+    def __repr__(self):
+        return str(self)
 
 
 class StatsProcessingException(Exception):
@@ -332,10 +368,12 @@ def execute_task(task, output_driver, chunking):
     timer = MultiTimer().start('total')
     datacube.set_options(reproject_threads=1)
 
+    process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
+
     try:
         with output_driver(task=task) as output_files:
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-                load_process_save_chunk(output_files, sub_tile_slice, task, timer)
+                process_chunk(output_files, sub_tile_slice, task, timer)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
     except Exception as e:
@@ -348,20 +386,50 @@ def execute_task(task, output_driver, chunking):
     return task
 
 
+def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
+    procs = [(stat.make_iterative_proc(), name, stat) for name, stat in task.output_products.items()]
+
+    def update(ds):
+        for proc, name, _ in procs:
+            with timer.time(name):
+                proc(ds)
+
+    def save(name, ds):
+        for var_name, var in ds.data_vars.items():
+            output_files.write_data(name, var_name, chunk, var.values)
+
+    for ds in load_data_lazy(chunk, task.sources, timer=timer):
+        update(ds)
+
+    with timer.time('writing_data'):
+        for proc, name, stat in procs:
+            save(name, cast_back(proc(), stat.data_measurements))
+
+
 def load_process_save_chunk(output_files, chunk, task, timer):
     try:
         with timer.time('loading_data'):
             data = load_data(chunk, task.sources)
 
-        for prod_name, stat in task.output_products.items():
+        last_idx = len(task.output_products) - 1
+
+        for idx, (prod_name, stat) in enumerate(task.output_products.items()):
             _LOG.info("Computing %s in tile %s %s. Current timing: %s",
                       prod_name, task.tile_index, chunk, timer)
+
+            measurements = stat.data_measurements
             with timer.time(prod_name):
-                data = stat.compute(data)
+                result = stat.compute(data)
+
+                if idx == last_idx:  # make sure input data is released early
+                    del data
+
+                # restore nodata values back
+                result = cast_back(result, measurements)
 
             # For each of the data variables, shove this chunk into the output results
             with timer.time('writing_data'):
-                for var_name, var in data.data_vars.items():  # TODO: Move this loop into output_files
+                for var_name, var in result.data_vars.items():  # TODO: Move this loop into output_files
                     output_files.write_data(prod_name, var_name, chunk, var.values)
 
     except EmptyChunkException:
@@ -371,6 +439,21 @@ def load_process_save_chunk(output_files, chunk, task, timer):
 
 class EmptyChunkException(Exception):
     pass
+
+
+def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
+    from .utils import sorted_interleave
+
+    def by_time(ds):
+        return ds.time.values[0]
+
+    data = [load_masked_data_lazy(sub_tile_slice, source, reverse=reverse, src_idx=idx, timer=timer)
+            for idx, source in enumerate(sources)]
+
+    if len(data) == 1:
+        return data[0]
+
+    return sorted_interleave(*data, key=by_time, reverse=reverse)
 
 
 def load_data(sub_tile_slice, sources):
@@ -411,6 +494,110 @@ def _remove_emptys(datasets):
             if dataset is not None]
 
 
+def load_masked_tile_lazy(tile, masks,
+                          mask_nodata=False,
+                          mask_inplace=False,
+                          reverse=True,
+                          src_idx=None,
+                          timer=None,
+                          **kwargs):
+    """Given data tile and an optional list of masks load data and masks apply
+    masks to data and return one time slice at a time.
+
+
+    tile -- Tile object for main data
+    masks -- [(Tile, flags, load_args)] list of triplets describing mask to be applied to data.
+             Tile -- tile objects describing where mask data files are
+             flags -- dictionary of flags to be checked
+             load_args - dictionary of load parameters (e.g. fuse_func, measurements, etc.)
+
+    mask_nodata  -- Convert data to float32 replacing nodata values with nan
+    mask_inplace -- Apply mask without conversion to float
+    reverse      -- Return data earliest observation first
+    src_idx      -- If set adds extra axis called source with supplied value
+    timer        -- Optionally track time
+
+
+    Returns an iterator of DataFrames one time-slice at a time
+
+    """
+    from .timer import wrap_in_timer
+
+    ii = range(tile.shape[0])
+    if reverse:
+        ii = ii[::-1]
+
+    def load_slice(i):
+        loc = [slice(i, i+1), slice(None), slice(None)]
+        d = GridWorkflow.load(tile[loc], **kwargs)
+
+        if mask_nodata:
+            d = sensible_mask_invalid_data(d)
+
+        # Load all masks and combine them all into one
+        mask = None
+        for m_tile, flags, load_args in masks:
+            m = GridWorkflow.load(m_tile[loc], **load_args)
+            m, *other = m.data_vars.values()
+            m = make_mask(m, **flags)
+
+            if mask is None:
+                mask = m
+            else:
+                mask &= m
+
+        if mask is not None:
+            # Apply mask in place if asked or if we already performed
+            # conversion to float32, this avoids reallocation of memory and
+            # hence increases the largest data set size one can load without
+            # running out of memory
+            if mask_inplace or mask_nodata:
+                d = sensible_where_inplace(d, mask)
+            else:
+                d = sensible_where(d, mask)
+
+        if src_idx is not None:
+            d.coords['source'] = ('time', np.repeat(src_idx, d.time.size))
+
+        return d
+
+    extract = wrap_in_timer(load_slice, timer, 'loading_data')
+
+    for i in ii:
+        yield extract(i)
+
+
+def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False, src_idx=None, timer=None):
+    data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
+    data_tile = source_prod['data'][sub_tile_slice]
+    data_measurements = source_prod['spec'].get('measurements')
+
+    mask_nodata = source_prod['spec'].get('mask_nodata', True)
+    mask_inplace = source_prod['spec'].get('mask_inplace', False)
+    masks = []
+
+    if 'masks' in source_prod and 'masks' in source_prod['spec']:
+        for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
+            flags = mask_spec['flags']
+            mask_fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
+            opts = dict(skip_broken_datasets=True,
+                        fuse_func=mask_fuse_func,
+                        measurements=[mask_spec['measurement']])
+
+            masks.append((mask_tile[sub_tile_slice], flags, opts))
+
+    return load_masked_tile_lazy(data_tile,
+                                 masks,
+                                 mask_nodata=mask_nodata,
+                                 mask_inplace=mask_inplace,
+                                 reverse=reverse,
+                                 src_idx=src_idx,
+                                 timer=timer,
+                                 fuse_func=data_fuse_func,
+                                 measurements=data_measurements,
+                                 skip_broken_datasets=True)
+
+
 def load_masked_data(sub_tile_slice, source_prod):
     data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
     data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
@@ -418,7 +605,9 @@ def load_masked_data(sub_tile_slice, source_prod):
                              fuse_func=data_fuse_func,
                              skip_broken_datasets=True)
 
+    mask_inplace = source_prod['spec'].get('mask_inplace', False)
     mask_nodata = source_prod['spec'].get('mask_nodata', True)
+
     if mask_nodata:
         data = sensible_mask_invalid_data(data)
 
@@ -439,7 +628,10 @@ def load_masked_data(sub_tile_slice, source_prod):
                                      fuse_func=mask_fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
             mask = make_mask(mask, **mask_spec['flags'])
-            data = sensible_where(data, mask)
+            if mask_inplace:
+                data = sensible_where_inplace(data, mask)
+            else:
+                data = sensible_where(data, mask)
             del mask
     return data
 
@@ -489,60 +681,6 @@ def _get_app_metadata(config_file):
             },
         }
     }
-
-
-def _find_periods_with_data(index, product_names, period_duration='1 day',
-                            start_date='1985-01-01', end_date='2000-01-01'):
-    # TODO: Read 'simple' job configuration from file
-    query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
-
-    valid_dates = set()
-    for product in product_names:
-        counts = index.datasets.count_product_through_time(period_duration, product=product,
-                                                           **Query(**query).search_terms)
-        valid_dates.update(time_range for time_range, count in counts if count > 0)
-
-    for time_range in sorted(valid_dates):
-        yield time_range.begin, time_range.end
-
-
-def create_stats_app(config, index=None, tile_index=None, output_location=None, year=None):
-    """
-    Create a StatsApp to run a processing job, based on a configuration file
-
-    :param config: dictionary based configuration
-    :param index: open database connection
-    :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
-    :return: read to run StatsApp
-    """
-    input_region = config.get('input_region')
-    if tile_index and not input_region:
-        input_region = {'tile': tile_index}
-
-    if year is not None:
-        if 'date_ranges' not in config:
-            config['date_ranges'] = {}
-
-        config['date_ranges']['start_date'] = '{}-01-01'.format(year)
-        config['date_ranges']['end_date'] = '{}-01-01'.format(year+1)
-
-    stats_app = StatsApp()
-    stats_app.index = index
-    stats_app.config_file = config
-    stats_app.storage = config['storage']
-    stats_app.sources = config['sources']
-    stats_app.output_product_specs = config['output_products']
-    # Write files to current directory if not set in config or command line
-    stats_app.location = output_location or config.get('location', '')
-    stats_app.computation = config.get('computation', {})
-    stats_app.date_ranges = _configure_date_ranges(index, config)
-    stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
-    stats_app.output_driver = _prepare_output_driver(stats_app.storage)
-    stats_app.global_attributes = config.get('global_attributes', {})
-    stats_app.var_attributes = config.get('var_attributes', {})
-    stats_app.process_completed = do_nothing  # TODO: Save dataset to database
-
-    return stats_app
 
 
 def _prepare_output_driver(storage):
@@ -642,15 +780,12 @@ def boundary_polygon_from_file(filename):
     return boundary_polygon
 
 
-def do_nothing(*args, **varargs):
-    pass
-
-
 class GriddedTaskGenerator(object):
     def __init__(self, storage, geopolygon=None, cell_index=None):
         self.grid_spec = _make_grid_spec(storage)
         self.geopolygon = geopolygon
         self.cell_index = cell_index
+        self._total_unmatched = 0
 
     def __call__(self, index, sources_spec, date_ranges):
         """
@@ -662,6 +797,9 @@ class GriddedTaskGenerator(object):
         :param index: Datacube Index
         :return:
         """
+        from .utils.query import multi_product_list_cells
+        from .utils import report_unmatched_datasets
+
         workflow = GridWorkflow(index, grid_spec=self.grid_spec)
 
         for time_period in date_ranges:
@@ -674,13 +812,19 @@ class GriddedTaskGenerator(object):
             for source_spec in sources_spec:
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
                 source_filter = source_spec.get('source_filter', None)
-                data = workflow.list_cells(product=source_spec['product'], time=time_period,
-                                           group_by=group_by_name, geopolygon=self.geopolygon,
-                                           cell_index=self.cell_index, source_filter=source_filter)
-                masks = [workflow.list_cells(product=mask['product'], time=time_period,
-                                             group_by=group_by_name, geopolygon=self.geopolygon,
-                                             cell_index=self.cell_index)
-                         for mask in source_spec.get('masks', [])]
+
+                all_products = [source_spec['product']] + [m['product'] for m in source_spec.get('masks', [])]
+
+                product_query = {all_products[0]: {'source_filter': source_filter}}
+
+                (data, *masks), unmatched_ = multi_product_list_cells(all_products, workflow,
+                                                                      product_query=product_query,
+                                                                      cell_index=self.cell_index,
+                                                                      time=time_period,
+                                                                      group_by=group_by_name,
+                                                                      geopolygon=self.geopolygon)
+
+                self._total_unmatched += report_unmatched_datasets(unmatched_[0], lambda s: _LOG.warning(s))
 
                 for tile_index, sources in data.items():
                     task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
@@ -695,6 +839,11 @@ class GriddedTaskGenerator(object):
                 _LOG.info('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
             for task in tasks.values():
                 yield task
+
+    def __del__(self):
+        if self._total_unmatched > 0:
+            _LOG.warning('There were source datasets for which masks were not found, total: {}'.
+                         format(self._total_unmatched))
 
 
 def _make_grid_spec(storage):
@@ -775,23 +924,6 @@ class ArbitraryTileMaker(object):
         geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
 
         return Tile(sources, geobox)
-
-
-def pickle_stream(objs, filename):
-    idx = 0
-    with open(filename, 'wb') as stream:
-        for idx, obj in enumerate(objs, start=1):
-            cloudpickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
-    return idx
-
-
-def unpickle_stream(filename):
-    with open(filename, 'rb') as stream:
-        while True:
-            try:
-                yield pickle.load(stream)
-            except EOFError:
-                break
 
 
 if __name__ == '__main__':

@@ -22,6 +22,7 @@ from __future__ import absolute_import
 
 import abc
 import collections
+from copy import copy
 from collections import OrderedDict
 from datetime import datetime
 from functools import reduce as reduce_, partial
@@ -32,6 +33,7 @@ import xarray
 from pkg_resources import iter_entry_points
 
 from datacube.storage.masking import make_mask, create_mask_value
+from .utils import da_nodata
 
 try:
     from bottleneck import anynan, nansum
@@ -284,6 +286,8 @@ class Statistic(object):
         """
         Compute a statistic on the given Dataset.
 
+        # FIXME: Explain a little bit better, Dataset in, Dataset out, measurements match measurements()
+
         :param xarray.Dataset data:
         :return: xarray.Dataset
         """
@@ -295,12 +299,39 @@ class Statistic(object):
 
         Base implementation simply copies input measurements to output_measurements.
 
+        # FIXME: Explain the purpose of this
+
         :rtype: list(dict)
         """
         output_measurements = [
             {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
             for measurement in input_measurements]
         return output_measurements
+
+    def is_iterative(self):
+        """
+        Should return True if class supports iterative computation one time slice at a time.
+
+        :rtype: Bool
+        """
+        return False
+
+    def make_iterative_proc(self):
+        """
+        Should return `None` if `is_iterative()` returns `False`.
+
+        Should return processing function `proc` that closes over internal
+        state that get updated one time slice at time, if `is_iterative()`
+        returns `True`.
+
+        proc(dataset_slice)  # Update internal state, called many times
+        result = proc()  # Extract final result, called once
+
+
+        See `incremental_stats.assemble_updater`
+
+        """
+        return None
 
 
 class ClearCount(Statistic):
@@ -309,7 +340,7 @@ class ClearCount(Statistic):
     def compute(self, data):
         # TODO Fix Hardcoded 'time' and pulling out first data var
         _, sample_data_var = next(data.data_vars.items())
-        count_values = sample_data_var.count(dim='time').rename('clear_observations')
+        count_values = sample_data_var.count(dim='time').rename('clear_observations')  # FIXME, Probably buggy! Names don't match.
         return count_values
 
     def measurements(self, input_measurements):
@@ -760,7 +791,7 @@ class Medoid(Statistic):
                 result[not_enough] = nodata
                 return result
 
-            return var.reduce(worker, dim='time', nodata=var.nodata)
+            return var.reduce(worker, dim='time', nodata=da_nodata(var))
 
         def attach_metadata(result):
             """ Attach additional metadata to the `result`. """
@@ -861,6 +892,12 @@ class ExternalPlugin(Statistic):
 
     def measurements(self, input_measurements):
         return self._impl.measurements(input_measurements)
+
+    def is_iterative(self):
+        return self._impl.is_iterative()
+
+    def make_iterative_proc(self):
+        return self._impl.make_iterative_proc()
 
 
 class MaskMultiCounter(Statistic):
@@ -1048,5 +1085,69 @@ try:
                 return ('longitude', 'latitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
 
     STATS['geomedian'] = GeoMedian
+except ImportError:
+    pass
+
+try:
+    from pcm import gmpcm
+
+    class NewGeomedianStatistic(Statistic):
+        def __init__(self, eps=1e-3):
+            super(NewGeomedianStatistic, self).__init__()
+            self.eps = eps
+
+        def compute(self, data):
+            """
+            :param xarray.Dataset data:
+            :return: xarray.Dataset
+            """
+            # We need to reshape our data into Y, X, Band, Time
+
+            squashed_together_dimensions, normal_datacube_dimensions = self._vars_to_transpose(data)
+
+            squashed = data.to_array(dim='variable').transpose(*squashed_together_dimensions)
+            assert squashed.dims == squashed_together_dimensions
+
+            # Grab a copy of the coordinates we need for creating the output DataArray
+            output_coords = copy(squashed.coords)
+            del output_coords['time']
+
+            # Call Dale's function here
+            squashed = gmpcm(squashed.data)
+
+            # Jam the raw numpy array back into a pleasantly labelled DataArray
+            output_dims = squashed_together_dimensions[:-1]
+            as_datarray = xarray.DataArray(squashed, dims=output_dims, coords=output_coords)
+
+            return as_datarray.transpose(*normal_datacube_dimensions).to_dataset(dim='variable')
+
+        @staticmethod
+        def _vars_to_transpose(data):
+            """
+            We need to be able to handle data given to use in either Geographic or Projected form.
+
+            The Data Cube provided xarrays will contain different dimensions, latitude/longitude or x/y, which means
+            the array reshaping takes different arguments.
+
+            The dimension ordering returned by this function is specific to the Geometric Median PCM functions
+            included from the `pcm` module.
+
+            :return: pcm input array dimension order, datacube dimension ordering
+            """
+            is_projected = 'x' in data.dims and 'y' in data.dims
+            is_geographic = 'longitude' in data.dims and 'latitude' in data.dims
+
+            if is_projected and is_geographic:
+                raise StatsProcessingError('Data to process contains BOTH geographic and projected dimensions, '
+                                           'unable to proceed')
+            elif not is_projected and not is_geographic:
+                raise StatsProcessingError('Data to process contains NEITHER geographic nor projected dimensions, '
+                                           'unable to proceed')
+            elif is_projected:
+                return ('y', 'x', 'variable', 'time'), ('variable', 'y', 'x')
+            else:
+                return ('latitude', 'longitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
+
+    STATS['new_geomedian'] = NewGeomedianStatistic
 except ImportError:
     pass

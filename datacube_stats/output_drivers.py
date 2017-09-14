@@ -228,11 +228,11 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         Find all the source datasets for a task
 
         Put them in order so that they can be assigned to a stacked output aligned against it's time dimension
+
         :return: (datasets, sources)
+
         datasets is a bunch of strings to dump, indexed on time
-        sources is a more structured form. An x-array of lists of dataset sources, indexed on time
-
-
+        sources is more structured. An x-array of lists of dataset sources, indexed on time
         """
         task = self._task
         geobox = self._task.geobox
@@ -251,15 +251,6 @@ class OutputDriver(with_metaclass(RegisterDriver)):
             # ie. Two overlapped NBAR scenes, One PQ scene (the later)
             return add_all(sources_.sum() for sources_ in all_sources)
 
-        def _make_dataset(labels, sources_):
-            return make_dataset(product=stat.product,
-                                sources=sources_,
-                                extent=geobox.extent,
-                                center_time=labels['time'],
-                                uri=uri,
-                                app_info=app_info,
-                                valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
-
         sources = add_all(merge_sources(prod) for prod in task.sources)
 
         # Sources has no time at this point, so insert back in the start of our stats epoch
@@ -270,6 +261,15 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         if not sources:
             raise StatsOutputError('No valid sources found, or supplied sources do not align to the same time.\n'
                                    'Unable to write dataset metadata.')
+
+        def _make_dataset(labels, sources_):
+            return make_dataset(product=stat.product,
+                                sources=sources_,
+                                extent=geobox.extent,
+                                center_time=labels['time'],
+                                uri=uri,
+                                app_info=app_info,
+                                valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
         datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
         datasets = datasets_to_doc(datasets)
         return datasets
