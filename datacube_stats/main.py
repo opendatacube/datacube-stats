@@ -214,7 +214,7 @@ class StatsApp(object):
         stats_app.output_driver = _prepare_output_driver(stats_app.storage)
         stats_app.global_attributes = config.get('global_attributes', {})
         stats_app.var_attributes = config.get('var_attributes', {})
-        stats_app.process_completed = lambda: None
+        stats_app.process_completed = lambda _: None
 
         return stats_app
 
