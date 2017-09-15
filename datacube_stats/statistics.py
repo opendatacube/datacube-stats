@@ -33,7 +33,8 @@ import xarray
 from pkg_resources import iter_entry_points
 
 from datacube.storage.masking import make_mask, create_mask_value
-from .utils import da_nodata
+from .utils import da_nodata, mk_masker, first_var
+from .incremental_stats import mk_incremental_sum, mk_incremental_or
 
 try:
     from bottleneck import anynan, nansum
@@ -920,60 +921,88 @@ class MaskMultiCounter(Statistic):
 
         If variable is marked simple, then there is no distinction between 0 and nodata.
         """
-        self._vars = vars
+        self._vars = [v.copy() for v in vars]
         self._nodata_flags = nodata_flags
-        self._nodata_mask = None
+        self._valid_pq_mask = None
 
     def measurements(self, input_measurements):
         nodata = -1
         bit_defs = input_measurements[0]['flags_definition']
 
         if self._nodata_flags is not None:
-            self._nodata_mask = create_mask_value(bit_defs, **self._nodata_flags)
+            self._valid_pq_mask = mk_masker(*create_mask_value(bit_defs, **self._nodata_flags), invert=True)
 
         for v in self._vars:
             flags = v['flags']
-            v['mask'] = create_mask_value(bit_defs, **flags)
+            v['_mask'] = create_mask_value(bit_defs, **flags)
+            v['mask'] = mk_masker(*v['_mask'])
 
         return [dict(name=v['name'],
                      dtype='int16',
                      units='1',
                      nodata=nodata) for v in self._vars]
 
-    def compute(self, ds):
-        # print('::compute t:{} {}x{}'.format(ds.dims['time'], ds.dims['x'], ds.dims['y']))
+    def _to_mask(self, ds):
+        da = first_var(ds)
+        return xarray.Dataset({v['name']: v['mask'](da) for v in self._vars},
+                              attrs=ds.attrs)
 
-        def build_invalid_mask(pq):
-            if self._nodata_mask is None:
+    def is_iterative(self):
+        return True
+
+    def make_iterative_proc(self):
+        counts = mk_incremental_sum(dtype='int16')
+        if self._valid_pq_mask:
+            valid_proc = mk_incremental_or()
+        else:
+            valid_proc = None
+
+        vars = {v['name']: v for v in self._vars}
+
+        def apply_mask(ds, mask, nodata=-1):
+            if mask is None:
+                return ds
+
+            for name, da in ds.data_vars.items():
+                simple = vars[name].get('simple', False)
+                if not simple:
+                    da.values[mask] = nodata
+
+            return ds
+
+        def invalid_data_mask():
+            if valid_proc is None:
                 return None
 
-            m, v = self._nodata_mask
-            invalid_data_mask = ((pq & m) != v).sum(dim='time') == 0
+            mm = valid_proc().values
+            if mm.all():  # All pixels had at least one valid observation
+                return None
 
-            if invalid_data_mask.values.any():  # some missing data
-                return invalid_data_mask
-            return None
+            return np.logical_not(mm, out=mm)
 
-        nodata = -1
-        pq = list(ds.data_vars.values())[0]
+        def finalise():
+            cc = counts()
+            mm = invalid_data_mask()
 
-        invalid_data_mask = build_invalid_mask(pq)
+            return apply_mask(cc, mm)
 
-        def process_var(var):
-            name = var['name']
-            m, v = var['mask']
-            simple = var.get('simple', False)
+        def proc(ds=None):
+            if ds is None:
+                return finalise()
 
-            cc = ((pq & m) == v).sum(dim='time').astype('uint16')
+            counts(self._to_mask(ds))
+            if valid_proc:
+                valid_proc(self._valid_pq_mask(first_var(ds)))
 
-            if not simple and invalid_data_mask is not None:
-                cc.values[invalid_data_mask] = nodata
+        return proc
 
-            return (name, cc)
+    def compute(self, ds):
+        proc = self.make_iterative_proc()
 
-        vars = dict(process_var(v) for v in self._vars)
+        for i in range(ds.time.shape[0]):
+            proc(ds.isel(time=slice(i, i+1)))
 
-        return xarray.Dataset(vars, attrs=dict(crs=ds.crs))
+        return proc()
 
     def __repr__(self):
         return 'MaskMultiCounter<{}>'.format(','.join([v['name'] for v in self._vars]))
