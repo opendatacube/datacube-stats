@@ -214,7 +214,7 @@ class StatsApp(object):
         stats_app.output_driver = _prepare_output_driver(stats_app.storage)
         stats_app.global_attributes = config.get('global_attributes', {})
         stats_app.var_attributes = config.get('var_attributes', {})
-        stats_app.process_completed = lambda _: None
+        stats_app.process_completed = None
 
         return stats_app
 
@@ -228,7 +228,7 @@ class StatsApp(object):
         assert callable(self.output_driver)
         assert hasattr(self.output_driver, 'open_output_files')
         assert hasattr(self.output_driver, 'write_data')
-        assert callable(self.process_completed)
+        assert self.process_completed is None or callable(self.process_completed)
 
     def _check_consistent_measurements(self):
         """Part of configuration validation"""

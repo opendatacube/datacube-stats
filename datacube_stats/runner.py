@@ -20,7 +20,7 @@ def add_dataset_to_db(index, datasets):
         _LOG.info('Dataset added')
 
 
-def run_tasks(tasks, executor, run_task, process_result, queue_size=50):
+def run_tasks(tasks, executor, run_task, process_result=None, queue_size=50):
     """
 
     :param tasks: iterable of tasks. Usually a generator to create them as required.
@@ -53,7 +53,8 @@ def run_tasks(tasks, executor, run_task, process_result, queue_size=50):
         # Process the result
         try:
             actual_result = executor.result(result)
-            process_result(actual_result)
+            if process_result is not None:
+                process_result(actual_result)
             successful += 1
         except Exception as err:  # pylint: disable=broad-except
             _LOG.exception('Task failed: %s', err)
