@@ -44,6 +44,18 @@ def _slicify(step, size):
         return (slice(i, min(i + step, size)) for i in range(0, size, step))
 
 
+def first(xs):
+    """ Get first element from a sequence
+    """
+    return list(itertools.islice(xs, 1))[0]
+
+
+def first_var(ds):
+    """ Get first data variable from dataset
+    """
+    return first(ds.data_vars.values())
+
+
 def sensible_mask_invalid_data(data):
     # TODO This should be pushed up to datacube-core
     # xarray.DataArray.where() converts ints to floats, since NaNs are used to represent nodata
@@ -102,6 +114,22 @@ def da_nodata(da, default=None):
 
     # integer like but has no 'nodata' attribute and default wasn't specified
     return 0
+
+
+def nodata_like(ds):
+    """Similar to xarray.full_like but filled with nodata value or with NaN for
+    floating point variables.
+
+    """
+    assert isinstance(ds, (xarray.Dataset, xarray.DataArray))
+
+    def _nodata_like_da(da):
+        return xarray.full_like(da, da_nodata(da))
+
+    if isinstance(ds, xarray.DataArray):
+        return _nodata_like_da(ds)
+
+    return ds.apply(_nodata_like_da, keep_attrs=True)
 
 
 def sensible_where_inplace(data, mask):
@@ -220,6 +248,25 @@ wofs_flag_defs = {'cloud': {'bits': 6, 'description': 'Cloudy', 'values': {0: Fa
                   'wet': {'bits': [7, 6, 5, 4, 3, 1, 0],
                           'description': 'Clear and Wet',
                           'values': {128: True}}}
+
+
+def mk_masker(m, v, invert=False):
+    """
+
+    Construct function that converts bit array to boolean given mask and
+    expected value after masking.
+
+    x => (x & m) == v
+    x => (x & m) != v , when invert == True
+
+    """
+    def to_bool(da):
+        return (da & m) == v
+
+    def to_bool_inverted(da):
+        return (da & m) != v
+
+    return to_bool_inverted if invert else to_bool
 
 
 def make_numpy_mask(defn):
