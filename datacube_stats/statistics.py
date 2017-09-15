@@ -532,10 +532,10 @@ class PerBandIndexStat(SimpleStatistic):
         def index_source(var):
             return data.source.values[var.values]
 
-        time_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
+        source_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
                                                                    for name in index.data_vars))
 
-        return xarray.merge([data_values, time_values, text_values, count_values])
+        return xarray.merge([data_values, time_values, text_values, source_values])
 
     def measurements(self, input_measurements):
         index_measurements = [
