@@ -1,5 +1,5 @@
 import xarray as xr
-from .utils import bunch
+from .utils import bunch, nodata_like, da_is_float, da_nodata
 
 
 def assemble_updater(proc, init, finalise=None):
@@ -99,3 +99,57 @@ def mk_incremental_mean(dtype='float32'):
         op_count(ds)
 
     return proc
+
+
+def mk_incremental_latest():
+    """
+    Every new valid pixel overwrites previous pixels. Note this is in order of
+    processing, doesn't consider timestamp. So if you use reverse=True option this
+    will create "oldest" valid pixel on the output.
+    """
+
+    def valid_mask(da):
+        if da_is_float(da):
+            return xr.ufuncs.isfinite(da)
+        return da != da_nodata(da)
+
+    def init(ds):
+        return nodata_like(ds.isel(time=0))
+
+    def proc(s, ds):
+        for name, da in ds.isel(time=0).data_vars.items():
+            s_da = s.get(name)
+            m = valid_mask(da)
+            s_da.values[m] = da.values[m]
+
+        return s
+
+    return assemble_updater(proc, init)
+
+
+def mk_incremental_or():
+    """
+    Logical OR
+    """
+
+    def init(ds):
+        return xr.zeros_like(ds.isel(time=0))
+
+    def proc(s, ds):
+        return xr.ufuncs.logical_or(s, ds.isel(time=0))  # TODO: re-use memory of `s`
+
+    return assemble_updater(proc, init)
+
+
+def mk_incremental_and():
+    """
+    Logical AND, assumes boolean data
+    """
+
+    def init(ds):
+        return xr.ones_like(ds.isel(time=0))
+
+    def proc(s, ds):
+        return xr.ufuncs.logical_and(s, ds.isel(time=0))
+
+    return assemble_updater(proc, init)
