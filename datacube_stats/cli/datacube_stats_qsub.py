@@ -60,12 +60,12 @@ def do_qsub(name, nodes, walltime, queue, project, config_arg, env_arg, app_conf
     name = name
     app_cmd = ('datacube-stats -v {config_arg} '
                '--queue-size {queue_size} '
-               '--executor distributed DSCHEDULER {lt} {app_config}'.format(
-        config_arg=config_arg,
-        queue_size=nodes * CPUS_PER_NODE * 2,
-        app_config=app_config,
-        lt='--load-tasks {}'.format(load_tasks) if load_tasks else ''
-    ))  # 'DSCHEDULER' is replaced by distributed.sh with the host/port for the dask scheduler
+               '--dask DSCHEDULER {lt} {app_config}'.format(
+                   config_arg=config_arg,
+                   queue_size=nodes * CPUS_PER_NODE * 2,
+                   app_config=app_config,
+                   lt='--load-tasks {}'.format(load_tasks) if load_tasks else ''
+               ))  # 'DSCHEDULER' is replaced by distributed.sh with the host/port for the dask scheduler
 
     distr_cmd = '"%(distr)s" %(env_arg)s --ppn 16 %(app_cmd)s' % dict(
         distr=shutil.which('launch-distributed-pbs'),
