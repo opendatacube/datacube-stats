@@ -535,7 +535,7 @@ class PerBandIndexStat(SimpleStatistic):
             return data.source.values[var.values]
 
         source_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
-                                                                   for name in index.data_vars))
+                                                                     for name in index.data_vars))
 
         return xarray.merge([data_values, time_values, text_values, source_values])
 
@@ -993,7 +993,7 @@ class MaskMultiCounter(Statistic):
         proc = self.make_iterative_proc()
 
         for i in range(ds.time.shape[0]):
-            proc(ds.isel(time=slice(i, i+1)))
+            proc(ds.isel(time=slice(i, i + 1)))
 
         return proc()
 
