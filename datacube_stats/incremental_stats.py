@@ -40,6 +40,50 @@ def assemble_updater(proc, init, finalise=None):
     return _proc
 
 
+def compose_proc(input_transform, proc, output_transform=None):
+    """
+    Apply input transform before feeding data into an accumulator, optionally
+    apply output transform on the result also.
+
+      out_proc(x) == proc( input_transform(x) )
+      out_proc()  == output_transform(proc())
+
+    """
+
+    if output_transform is None:
+        output_transform = lambda x: x
+
+    def _proc(*x):
+        if len(x) == 0:
+            return output_transform(proc())
+        return proc(input_transform(*x))
+    return _proc
+
+
+def broadcast_proc(*procs, combine=None):
+    """Combine two or more updaters into one. Input data is passed on to all of
+    them, output is combined using combine(...) method or just assembled into a
+    tuple if combine argument was omitted.
+
+    combine -- should accept as many arguments as there are procs
+
+    out_proc(x) == proc1(x), proc2(x),...
+    out_proc()  == combine(proc1(), proc2(), ...)
+
+    """
+
+    if combine is None:
+        combine = lambda *x: tuple(x)
+
+    def _proc(*x):
+        if len(x) == 0:
+            return combine(*(proc() for proc in procs))
+
+        for proc in procs:
+            proc(*x)
+    return _proc
+
+
 def mk_incremental_min():
     def init(ds):
         return ds.min(dim='time')
@@ -89,7 +133,7 @@ def mk_incremental_mean(dtype='float32'):
     def finalise():
         s = op_sum()
         n = op_count()
-        return s/n.where(n > 0)
+        return s / n.where(n > 0)
 
     def proc(ds=None):
         if ds is None:
