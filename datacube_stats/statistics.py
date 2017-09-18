@@ -34,7 +34,8 @@ from pkg_resources import iter_entry_points
 
 from datacube.storage.masking import make_mask, create_mask_value
 from .utils import da_nodata, mk_masker, first_var
-from .incremental_stats import mk_incremental_sum, mk_incremental_or
+from .incremental_stats import (mk_incremental_sum, mk_incremental_or,
+                                compose_proc, broadcast_proc)
 
 try:
     from bottleneck import anynan, nansum
@@ -942,20 +943,32 @@ class MaskMultiCounter(Statistic):
                      units='1',
                      nodata=nodata) for v in self._vars]
 
-    def _to_mask(self, ds):
-        da = first_var(ds)
-        return xarray.Dataset({v['name']: v['mask'](da) for v in self._vars},
-                              attrs=ds.attrs)
-
     def is_iterative(self):
         return True
 
     def make_iterative_proc(self):
-        counts = mk_incremental_sum(dtype='int16')
-        if self._valid_pq_mask:
-            valid_proc = mk_incremental_or()
-        else:
-            valid_proc = None
+        def _to_mask(ds):
+            da = first_var(ds)
+            return xarray.Dataset({v['name']: v['mask'](da) for v in self._vars},
+                                  attrs=ds.attrs)
+
+        # PQ -> BoolMasks: DataSet<Bool> -> Sum: DataSet<int16>
+        proc = compose_proc(_to_mask,
+                            proc=mk_incremental_sum(dtype='int16'))
+
+        if self._valid_pq_mask is None:
+            return proc
+
+        def invalid_data_mask(da):
+            mm = da.values
+            if mm.all():  # All pixels had at least one valid observation
+                return None
+            return np.logical_not(mm, out=mm)
+
+        # PQ -> ValidMask:DataArray<Bool> -> OR:DataArray<Bool> |> InvertMask:ndarray<Bool>|None
+        valid_proc = compose_proc(lambda ds: self._valid_pq_mask(first_var(ds)),
+                                  proc=mk_incremental_or(),
+                                  output_transform=invalid_data_mask)
 
         vars = {v['name']: v for v in self._vars}
 
@@ -970,31 +983,11 @@ class MaskMultiCounter(Statistic):
 
             return ds
 
-        def invalid_data_mask():
-            if valid_proc is None:
-                return None
+        # Counts      ----\
+        #                  +----------- Counts[ InvalidMask ] = nodata
+        # InvalidMask ----/
 
-            mm = valid_proc().values
-            if mm.all():  # All pixels had at least one valid observation
-                return None
-
-            return np.logical_not(mm, out=mm)
-
-        def finalise():
-            cc = counts()
-            mm = invalid_data_mask()
-
-            return apply_mask(cc, mm)
-
-        def proc(ds=None):
-            if ds is None:
-                return finalise()
-
-            counts(self._to_mask(ds))
-            if valid_proc:
-                valid_proc(self._valid_pq_mask(first_var(ds)))
-
-        return proc
+        return broadcast_proc(proc, valid_proc, combine=apply_mask)
 
     def compute(self, ds):
         proc = self.make_iterative_proc()
