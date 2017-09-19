@@ -25,7 +25,7 @@ from ..runner import run_tasks  # TODO: fix version in datacube and use it
 NUM_CPUS_PER_NODE = 16
 _l_flags = 'mem ncpus walltime wd'.split(' ')
 
-_pass_thru_keys = 'name project queue env_vars wd noask _internal'.split(' ')
+_pass_thru_keys = 'name project queue env_vars wd noask ncpus _internal'.split(' ')
 _valid_keys = _pass_thru_keys + 'walltime nodes mem extra_qsub_args'.split(' ')
 
 _LOG = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ class QSubParamType(click.ParamType):
 Following parameters are understood:
 
    nodes    = <int> number of nodes
+   ncpus    = <int> number of cores if your don't need whole node
    walltime = <duration> e.g. "10m" -- ten minutes, "5h" -- five hours
    mem      = (small|medium|high) or 2G, 4G memory per core
    name     = job name
@@ -209,11 +210,21 @@ def normalise_mem(x):
 
 def norm_qsub_params(p):
 
-    nodes = int(p.get('nodes', 1))
-    ncpus = nodes*NUM_CPUS_PER_NODE
+    ncpus = int(p.get('ncpus', 0))
+
+    if ncpus == 0:
+        nodes = int(p.get('nodes', 1))
+        ncpus = nodes*NUM_CPUS_PER_NODE
+    else:
+        nodes = None
 
     mem = normalise_mem(p.get('mem', 'small'))
-    mem = int((mem*NUM_CPUS_PER_NODE*1024 - 512)*nodes)
+
+    if nodes:
+        mem = int((mem*NUM_CPUS_PER_NODE*1024 - 512)*nodes)
+    else:
+        mem = int(mem*ncpus*1024)
+
     mem = '{}MB'.format(mem)
 
     walltime = normalise_walltime(p.get('walltime'))
