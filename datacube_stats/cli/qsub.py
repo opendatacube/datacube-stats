@@ -1,10 +1,34 @@
 import click
+import yaml
+import sys
+import re
+import logging
+from time import sleep
+
+from pydash import pick
+from pathlib import Path
+from functools import update_wrapper
+from subprocess import Popen, PIPE
+
+from ..utils import pbs
+from datacube.executor import (SerialExecutor,
+                               mk_celery_executor,
+                               _get_concurrent_executor,
+                               _get_distributed_executor)
+
+from datacube import _celery_runner as cr
+
+# from datacube.ui.task_app import run_tasks
+from ..runner import run_tasks  # TODO: fix version in datacube and use it
+
 
 NUM_CPUS_PER_NODE = 16
 _l_flags = 'mem ncpus walltime wd'.split(' ')
 
 _pass_thru_keys = 'name project queue env_vars wd noask _internal'.split(' ')
 _valid_keys = _pass_thru_keys + 'walltime nodes mem extra_qsub_args'.split(' ')
+
+_LOG = logging.getLogger(__name__)
 
 
 class QSubLauncher(object):
@@ -13,7 +37,6 @@ class QSubLauncher(object):
         self._params = params
 
     def __repr__(self):
-        import yaml
         return yaml.dump(dict(qsub=self._params))
 
     def add_internal_args(self, *args):
@@ -24,7 +47,6 @@ class QSubLauncher(object):
 
     def __call__(self, auto=False, *args):
         if auto:
-            import sys
             args = sys.argv[1:]
             args = remove_args('--qsub', args, n=1)
             args = remove_args('--queue-size', args, n=1)
@@ -42,7 +64,6 @@ class QSubParamType(click.ParamType):
     name = 'opts'
 
     def convert(self, value, param, ctx):
-        from .qsub import norm_qsub_params, parse_comma_args
 
         if value == 'help':
             click.echo('''
@@ -125,7 +146,6 @@ class HostPort(click.ParamType):
 
 
 def parse_comma_args(s, valid_keys=None):
-    import re
 
     def parse_one(a):
         kv = tuple(s.strip() for s in re.split(' *[=:] *', a))
@@ -146,8 +166,6 @@ def parse_comma_args(s, valid_keys=None):
 
 
 def normalise_walltime(x):
-    import re
-
     if x is None or x.find(':') >= 0:
         return x
 
@@ -176,8 +194,6 @@ def normalise_walltime(x):
 
 
 def normalise_mem(x):
-    import re
-
     named = dict(small=2,
                  medium=4,
                  large=7.875)
@@ -192,7 +208,6 @@ def normalise_mem(x):
 
 
 def norm_qsub_params(p):
-    from pydash import pick
 
     nodes = int(p.get('nodes', 1))
     ncpus = nodes*NUM_CPUS_PER_NODE
@@ -256,15 +271,12 @@ def self_launch_args(*args):
     """
     Build tuple in the form (current_python, current_script, *args)
     """
-    import sys
-    from pathlib import Path
 
     py_file = str(Path(sys.argv[0]).absolute())
     return (sys.executable, py_file) + args
 
 
 def generate_self_launch_script(*args):
-    from ..utils import pbs
     s = "#!/bin/bash\n\n"
     s += pbs.generate_env_header()
     s += '\n\nexec ' + ' '.join("'{}'".format(s) for s in self_launch_args(*args))
@@ -272,7 +284,6 @@ def generate_self_launch_script(*args):
 
 
 def qsub_self_launch(qsub_opts, *args):
-    from subprocess import Popen, PIPE
 
     script = generate_self_launch_script(*args)
     qsub_args = build_qsub_args(**qsub_opts)
@@ -294,6 +305,55 @@ def qsub_self_launch(qsub_opts, *args):
     return exit_code, out_txt
 
 
+def launch_redis_worker_pool(port=6379):
+    redis_port = port
+    redis_host = pbs._hostname()
+    redis_password = cr.get_redis_password(generate_if_missing=True)
+
+    redis_shutdown = cr.launch_redis(redis_port, redis_password)
+
+    _LOG.info('Launched Redis at %s:%d', redis_host, redis_port)
+
+    if not redis_shutdown:
+        raise RuntimeError('Failed to launch Redis')
+
+    for i in range(5):
+        if cr.check_redis(redis_host, redis_port, redis_password) is False:
+            sleep(0.5)
+
+    executor = cr.CeleryExecutor(
+        redis_host,
+        redis_port,
+        password=redis_password)
+
+    worker_env = pbs.get_env()
+    worker_procs = []
+
+    for node in pbs.nodes():
+        nprocs = node.num_cores
+        if node.is_main:
+            nprocs = max(1, nprocs - 2)
+
+        celery_worker_script = 'exec datacube-worker --executor celery {}:{} --nprocs {} >/dev/null 2>/dev/null'.format(
+            redis_host, redis_port, nprocs)
+        proc = pbs.pbsdsh(node.offset, celery_worker_script, env=worker_env)
+        worker_procs.append(proc)
+
+    def shutdown():
+        cr.app.control.shutdown()
+
+        _LOG.info('Waiting for workers to quit')
+
+        # TODO: time limit followed by kill
+        for p in worker_procs:
+            p.wait()
+
+        _LOG.info('Shutting down redis-server')
+        redis_shutdown()
+
+    return executor, shutdown
+
+
 class TaskRunner(object):
     def __init__(self, kind='serial', opts=None):
         self._kind = kind
@@ -311,18 +371,12 @@ class TaskRunner(object):
         self._user_queue_size = qsize
 
     def start(self):
-        from ..utils import pbs
-        from datacube.executor import (SerialExecutor,
-                                       mk_celery_executor,
-                                       _get_concurrent_executor,
-                                       _get_distributed_executor)
-
         def noop():
             pass
 
         def mk_pbs_celery():
             qsize = pbs.preferred_queue_size()
-            executor, shutdown = pbs.launch_redis_worker_pool()
+            executor, shutdown = launch_redis_worker_pool()
             return (executor, qsize, shutdown)
 
         def mk_dask():
@@ -371,9 +425,6 @@ class TaskRunner(object):
             self._shutdown = None
 
     def __call__(self, tasks, run_task, on_task_complete=None):
-        # from datacube.ui.task_app import run_tasks
-        from ..runner import run_tasks  # TODO: fix version in datacube and use it
-
         if self._executor is None:
             if self.start() is False:
                 raise RuntimeError('Failed to launch worker pool')
@@ -404,8 +455,6 @@ def with_qsub_runner():
       qsub   - None | QSubLauncher
       runner - None | TaskRunner
     """
-
-    from functools import update_wrapper
 
     arg_name = 'runner'
     o_key = '_qsub_state'
@@ -451,33 +500,33 @@ def with_qsub_runner():
 
     def decorate(f):
         opts = [
-           click.option('--parallel',
-                        type=int,
-                        help='Run locally in parallel',
-                        expose_value=False,
-                        callback=add_multiproc_executor),
-           click.option('--dask',
-                        type=HostPort(),
-                        help='Use dask.distributed backend for parallel computation. Supply address of dask scheduler.',
-                        expose_value=False,
-                        callback=add_dask_executor),
-           click.option('--celery',
-                        type=HostPort(),
-                        help='Use celery backend for parallel computation. ' +
-                        'Supply redis server address, or "pbs-launch" to launch redis ' +
-                        'server and workers when running under pbs.',
-                        expose_value=False,
-                        callback=add_celery_executor),
-           click.option('--queue-size',
-                        type=int,
-                        help='Overwrite defaults for queue size',
-                        expose_value=False,
-                        callback=add_qsize),
-           click.option('--qsub',
-                        type=QSubParamType(),
-                        callback=capture_qsub,
-                        help='Launch via qsub, supply comma or new-line separated list of parameters. Try --qsub=help.'
-                        ),
+            click.option('--parallel',
+                         type=int,
+                         help='Run locally in parallel',
+                         expose_value=False,
+                         callback=add_multiproc_executor),
+            click.option('--dask',
+                         type=HostPort(),
+                         help='Use dask.distributed backend for parallel computation. Supply address of dask scheduler.',  # noqa: E501
+                         expose_value=False,
+                         callback=add_dask_executor),
+            click.option('--celery',
+                         type=HostPort(),
+                         help='Use celery backend for parallel computation. ' +
+                         'Supply redis server address, or "pbs-launch" to launch redis ' +
+                         'server and workers when running under pbs.',
+                         expose_value=False,
+                         callback=add_celery_executor),
+            click.option('--queue-size',
+                         type=int,
+                         help='Overwrite defaults for queue size',
+                         expose_value=False,
+                         callback=add_qsize),
+            click.option('--qsub',
+                         type=QSubParamType(),
+                         callback=capture_qsub,
+                         help='Launch via qsub, supply comma or new-line separated list of parameters. Try --qsub=help.'
+                         ),
         ]
 
         for o in opts:

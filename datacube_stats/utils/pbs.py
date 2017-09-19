@@ -1,3 +1,8 @@
+from base64 import b64encode
+import os
+import subprocess
+import platform
+import re
 from collections import namedtuple, OrderedDict
 Node = namedtuple('Node', 'name num_cores offset is_main'.split(' '))
 
@@ -5,17 +10,14 @@ _nodes = None
 
 
 def _hostname():
-    import platform
     return platform.node()
 
 
 def is_under_pbs():
-    import os
     return 'PBS_NODEFILE' in os.environ
 
 
 def parse_nodes_file(fname=None):
-    import os
 
     if fname is None:
         fname = os.environ.get('PBS_NODEFILE')
@@ -63,9 +65,6 @@ def preferred_queue_size():
 
 
 def get_env(extras=[], **more_env):
-    import os
-    import re
-
     pass_envs = set(['PATH', 'LANG', 'LD_LIBRARY_PATH', 'HOME', 'USER'])
     REGEXES = ['^PYTHON.*', '^GDAL.*', '^LC.*', '^DATACUBE.*']
     rgxs = [re.compile(r) for r in REGEXES]
@@ -92,13 +91,11 @@ def generate_env_header(extras=[], **more_env):
 
 
 def wrap_script(script):
-    from base64 import b64encode
     b64s = b64encode(script.encode('ascii')).decode('ascii')
     return 'eval "$(echo {}|base64 -d)"'.format(b64s)
 
 
 def pbsdsh(cpu_num, script, env=None, test_mode=False):
-    import subprocess
 
     if env is None:
         env = get_env()
@@ -115,55 +112,3 @@ def pbsdsh(cpu_num, script, env=None, test_mode=False):
         args,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE)
-
-
-def launch_redis_worker_pool(port=6379):
-    from time import sleep
-    from datacube import _celery_runner as cr
-
-    redis_port = port
-    redis_host = _hostname()
-    redis_password = cr.get_redis_password(generate_if_missing=True)
-
-    redis_shutdown = cr.launch_redis(redis_port, redis_password)
-
-    print('Launched redis at {}:{}'.format(redis_host, redis_port))
-
-    if not redis_shutdown:
-        raise RuntimeError('Failed to launch Redis')
-
-    for i in range(5):
-        if cr.check_redis(redis_host, redis_port, redis_password) is False:
-            sleep(0.5)
-
-    executor = cr.CeleryExecutor(
-        redis_host,
-        redis_port,
-        password=redis_password)
-
-    worker_env = get_env()
-    worker_procs = []
-
-    for node in nodes():
-        nprocs = node.num_cores
-        if node.is_main:
-            nprocs = max(1, nprocs - 2)
-
-        celery_worker_script = 'exec datacube-worker --executor celery {}:{} --nprocs {} >/dev/null 2>/dev/null'.format(
-            redis_host, redis_port, nprocs)
-        proc = pbsdsh(node.offset, celery_worker_script, env=worker_env)
-        worker_procs.append(proc)
-
-    def shutdown():
-        cr.app.control.shutdown()
-
-        print('Waiting for workers to quit')
-
-        # TODO: time limit followed by kill
-        for p in worker_procs:
-            p.wait()
-
-        print('Shutting down redis-server')
-        redis_shutdown()
-
-    return executor, shutdown

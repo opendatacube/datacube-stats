@@ -12,11 +12,6 @@ from functools import partial
 from textwrap import dedent
 from .cli.qsub import with_qsub_runner
 
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
-
 import click
 import numpy as np
 import pandas as pd
