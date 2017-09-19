@@ -8,6 +8,7 @@ import pathlib
 import datacube
 import datacube_stats
 from datacube.ui.task_app import wrap_task
+from datacube.ui.click import verbose_option
 
 from .qsub import with_qsub_runner
 from ..utils.pbs import _hostname
@@ -66,6 +67,7 @@ def log_completed_task(result):
 
 
 @click.command(help='TODO')
+@verbose_option
 @click.argument('num_tasks', nargs=1, type=int)
 @click.option('--op', help='Configure dummy task: sqrt|pow2', default='sqrt')
 @with_qsub_runner()
