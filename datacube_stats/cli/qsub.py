@@ -32,7 +32,16 @@ _LOG = logging.getLogger(__name__)
 
 
 class QSubLauncher(object):
+    """ This class is for self-submitting as a PBS job.
+    """
+
     def __init__(self, params, internal_args=None):
+        """
+        params -- normalised dictionary of qsub options, see `norm_qsub_params`
+        internal_args -- optional extra command line arguments to add
+                         when launching, particularly useful when using auto-mode
+                         that passes through sys.argv arguments
+        """
         self._internal_args = internal_args
         self._params = params
 
@@ -46,6 +55,13 @@ class QSubLauncher(object):
             self._internal_args = self._internal_args + args
 
     def __call__(self, auto=False, *args):
+        """ Submit self via qsub
+
+        auto=True -- re-use arguments used during invocation, removing `--qsub` parameter
+        auto=False -- ignore invocation arguments and just use suplied *args
+
+        args -- command line arguments to launch with under qsub, only used if auto=False
+        """
         if auto:
             args = sys.argv[1:]
             args = remove_args('--qsub', args, n=1)
