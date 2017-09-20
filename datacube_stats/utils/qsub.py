@@ -3,6 +3,8 @@ import yaml
 import sys
 import re
 import logging
+import itertools
+import shlex
 from time import sleep
 
 from pydash import pick
@@ -10,7 +12,7 @@ from pathlib import Path
 from functools import update_wrapper
 from subprocess import Popen, PIPE
 
-from ..utils import pbs
+from . import pbs
 from datacube.executor import (SerialExecutor,
                                mk_celery_executor,
                                _get_concurrent_executor,
@@ -18,15 +20,12 @@ from datacube.executor import (SerialExecutor,
 
 from datacube import _celery_runner as cr
 
-# from datacube.ui.task_app import run_tasks
-from ..runner import run_tasks  # TODO: fix version in datacube and use it
-
 
 NUM_CPUS_PER_NODE = 16
-_l_flags = 'mem ncpus walltime wd'.split(' ')
+QSUB_L_FLAGS = 'mem ncpus walltime wd'.split(' ')
 
-_pass_thru_keys = 'name project queue env_vars wd noask ncpus _internal'.split(' ')
-_valid_keys = _pass_thru_keys + 'walltime nodes mem extra_qsub_args'.split(' ')
+PASS_THRU_KEYS = 'name project queue env_vars wd noask _internal'.split(' ')
+VALID_KEYS = PASS_THRU_KEYS + 'walltime ncpus nodes mem extra_qsub_args'.split(' ')
 
 _LOG = logging.getLogger(__name__)
 
@@ -107,7 +106,7 @@ Examples:
             ctx.exit()
 
         try:
-            p = parse_comma_args(value, _valid_keys)
+            p = parse_comma_args(value, VALID_KEYS)
 
             if 'wd' not in p:
                 p['wd'] = True
@@ -129,7 +128,7 @@ def remove_args(opt, args, n=1):
 
         if a == opt:
             skip = n
-        elif a.startswith(opt+'='):
+        elif a.startswith(opt + '='):
             skip = 0
         else:
             out.append(a)
@@ -175,7 +174,7 @@ def parse_comma_args(s, valid_keys=None):
         if valid_keys:
             k = kv[0]
             if k not in valid_keys:
-                raise ValueError('Unexpected key:'+k)
+                raise ValueError('Unexpected key:' + k)
 
         return kv
 
@@ -195,19 +194,19 @@ def normalise_walltime(x):
                'min': 'm',
                'minutes': 'm'}
 
-    scale = dict(h=60*60,
+    scale = dict(h=60 * 60,
                  m=60,
                  s=1)
 
     def fmt(secs):
-        h = secs//(60*60)
-        m = (secs//60) % 60
+        h = secs // (60 * 60)
+        m = (secs // 60) % 60
         s = secs % 60
         return '{}:{:02}:{:02}'.format(h, m, s)
 
     v, units = m.groups()
     units = aliases.get(units, units)
-    return fmt(int(v)*scale[units])
+    return fmt(int(v) * scale[units])
 
 
 def normalise_mem(x):
@@ -230,23 +229,23 @@ def norm_qsub_params(p):
 
     if ncpus == 0:
         nodes = int(p.get('nodes', 1))
-        ncpus = nodes*NUM_CPUS_PER_NODE
+        ncpus = nodes * NUM_CPUS_PER_NODE
     else:
         nodes = None
 
     mem = normalise_mem(p.get('mem', 'small'))
 
     if nodes:
-        mem = int((mem*NUM_CPUS_PER_NODE*1024 - 512)*nodes)
+        mem = int((mem * NUM_CPUS_PER_NODE * 1024 - 512) * nodes)
     else:
-        mem = int(mem*ncpus*1024)
+        mem = int(mem * ncpus * 1024)
 
     mem = '{}MB'.format(mem)
 
     walltime = normalise_walltime(p.get('walltime'))
 
     extra_qsub_args = p.get('extra_qsub_args', [])
-    if type(extra_qsub_args) == str:
+    if isinstance(extra_qsub_args, str):
         extra_qsub_args = extra_qsub_args.split(' ')
 
     pp = dict(ncpus=ncpus,
@@ -254,7 +253,7 @@ def norm_qsub_params(p):
               walltime=walltime,
               extra_qsub_args=extra_qsub_args)
 
-    pp.update(pick(p, _pass_thru_keys))
+    pp.update(pick(p, PASS_THRU_KEYS))
 
     return pp
 
@@ -269,7 +268,7 @@ def build_qsub_args(**p):
     def add_l_arg(n):
         v = p.get(n)
         if v is not None:
-            if type(v) is bool:
+            if isinstance(v, bool):
                 if v:
                     args.append('-l{}'.format(n))
             else:
@@ -281,10 +280,10 @@ def build_qsub_args(**p):
             flag = flags[n]
             args.extend([flag, v])
 
-    for n in _l_flags:
+    for n in QSUB_L_FLAGS:
         add_l_arg(n)
 
-    for n in flags.keys():
+    for n in flags:
         add_arg(n)
 
     args.extend(p.get('extra_qsub_args', []))
@@ -306,7 +305,7 @@ def self_launch_args(*args):
 def generate_self_launch_script(*args):
     s = "#!/bin/bash\n\n"
     s += pbs.generate_env_header()
-    s += '\n\nexec ' + ' '.join("'{}'".format(s) for s in self_launch_args(*args))
+    s += '\n\nexec ' + ' '.join(shlex.quote(s) for s in self_launch_args(*args))
     return s
 
 
@@ -334,7 +333,7 @@ def qsub_self_launch(qsub_opts, *args):
 
 def launch_redis_worker_pool(port=6379):
     redis_port = port
-    redis_host = pbs._hostname()
+    redis_host = pbs.hostname()
     redis_password = cr.get_redis_password(generate_if_missing=True)
 
     redis_shutdown = cr.launch_redis(redis_port, redis_password)
@@ -379,6 +378,64 @@ def launch_redis_worker_pool(port=6379):
         redis_shutdown()
 
     return executor, shutdown
+
+
+def describe_task(task):
+    """ Convert task to string for logging
+    """
+    if hasattr(task, 'get'):
+        t_idx = task.get('tile_index')
+        if t_idx is not None:
+            return str(t_idx)
+    return repr(task)
+
+
+def run_tasks(tasks, executor, run_task, process_result=None, queue_size=50):
+    """
+
+    :param tasks: iterable of tasks. Usually a generator to create them as required.
+    :param executor: a datacube executor, similar to `distributed.Client` or `concurrent.futures`
+    :param run_task: the function used to run a task. Expects a single argument of one of the tasks
+    :param process_result: a function to do something based on the result of a completed task. It
+                           takes a single argument, the return value from `run_task(task)`
+    :param queue_size: How large the queue of tasks should be. Will depend on how fast tasks are
+                       processed, and how much memory is available to buffer them.
+    """
+    _LOG.debug('Starting running tasks...')
+    results = []
+    task_queue = itertools.islice(tasks, queue_size)
+    for task in task_queue:
+        _LOG.info('Running task: %s', describe_task(task))
+        results.append(executor.submit(run_task, task=task))
+
+        _LOG.debug('Task queue filled, waiting for first result...')
+
+    successful = failed = 0
+    while results:
+        result, results = executor.next_completed(results, None)
+
+        # submit a new _task to replace the one we just finished
+        task = next(tasks, None)
+        if task:
+            _LOG.info('Running _task: %s', describe_task(task))
+            results.append(executor.submit(run_task, task=task))
+
+        # Process the result
+        try:
+            actual_result = executor.result(result)
+            if process_result is not None:
+                process_result(actual_result)
+            successful += 1
+        except Exception as err:  # pylint: disable=broad-except
+            _LOG.exception('Task failed: %s', err)
+            failed += 1
+            continue
+        finally:
+            # Release the _task to free memory so there is no leak in executor/scheduler/worker process
+            executor.release(result)
+
+    _LOG.info('%d successful, %d failed', successful, failed)
+    return successful, failed
 
 
 class TaskRunner(object):
@@ -534,7 +591,8 @@ def with_qsub_runner():
                          callback=add_multiproc_executor),
             click.option('--dask',
                          type=HostPort(),
-                         help='Use dask.distributed backend for parallel computation. Supply address of dask scheduler.',  # noqa: E501
+                         help='Use dask.distributed backend for parallel computation. ' +
+                         'Supply address of dask scheduler.',
                          expose_value=False,
                          callback=add_dask_executor),
             click.option('--celery',
@@ -552,8 +610,8 @@ def with_qsub_runner():
             click.option('--qsub',
                          type=QSubParamType(),
                          callback=capture_qsub,
-                         help='Launch via qsub, supply comma or new-line separated list of parameters. Try --qsub=help.'
-                         ),
+                         help='Launch via qsub, supply comma or new-line separated list of parameters.' +
+                         ' Try --qsub=help.'),
         ]
 
         for o in opts:

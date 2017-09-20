@@ -27,7 +27,6 @@ setup(
             'datacube-stats = datacube_stats.main:main',
             'datacube-stats-qsub = datacube_stats.cli.datacube_stats_qsub:qsub',
             'datacube-tile-check = datacube_stats.cli.tile_check:main',
-            'dc-qsub-test = datacube_stats.cli.qsub_sample_app:main',
         ],
         'datacube.stats': [
             'wofs-summary = datacube_stats.statistics:WofsStats'

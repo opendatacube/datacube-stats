@@ -10,7 +10,7 @@ import copy
 import logging
 from functools import partial
 from textwrap import dedent
-from .cli.qsub import with_qsub_runner
+from .utils.qsub import with_qsub_runner
 
 import click
 import numpy as np

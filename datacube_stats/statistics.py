@@ -342,7 +342,9 @@ class ClearCount(Statistic):
     def compute(self, data):
         # TODO Fix Hardcoded 'time' and pulling out first data var
         _, sample_data_var = next(data.data_vars.items())
-        count_values = sample_data_var.count(dim='time').rename('clear_observations')  # FIXME, Probably buggy! Names don't match.
+
+        # FIXME, Probably buggy! Names don't match.
+        count_values = sample_data_var.count(dim='time').rename('clear_observations')
         return count_values
 
     def measurements(self, input_measurements):
@@ -485,9 +487,6 @@ class NormalisedDifferenceStats(Statistic):
 
 
 class IndexStat(SimpleStatistic):
-    def __init__(self, stat_func):
-        super(IndexStat, self).__init__(stat_func)
-
     def compute(self, data):
         index = super(IndexStat, self).compute(data)
 
@@ -508,9 +507,6 @@ class PerBandIndexStat(SimpleStatistic):
     :param stat_func: A function which takes an xarray.Dataset and returns an xarray.Dataset of indexes
     """
 
-    def __init__(self, stat_func):
-        super(PerBandIndexStat, self).__init__(stat_func)
-
     def compute(self, data):
         index = super(PerBandIndexStat, self).compute(data)
 
@@ -524,8 +520,8 @@ class PerBandIndexStat(SimpleStatistic):
 
         time_values = index.apply(
             index_time).rename(
-            OrderedDict((name, name + '_observed')
-                        for name in index.data_vars))
+                OrderedDict((name, name + '_observed')
+                            for name in index.data_vars))
 
         text_values = time_values.apply(_datetime64_to_inttime).rename(
             OrderedDict((name, name + '_date')
@@ -903,6 +899,7 @@ class ExternalPlugin(Statistic):
 
 
 class MaskMultiCounter(Statistic):
+    # pylint: disable=redefined-builtin
     def __init__(self, vars, nodata_flags=None):
         """
 
@@ -970,14 +967,14 @@ class MaskMultiCounter(Statistic):
                                   proc=mk_incremental_or(),
                                   output_transform=invalid_data_mask)
 
-        vars = {v['name']: v for v in self._vars}
+        _vars = {v['name']: v for v in self._vars}
 
         def apply_mask(ds, mask, nodata=-1):
             if mask is None:
                 return ds
 
             for name, da in ds.data_vars.items():
-                simple = vars[name].get('simple', False)
+                simple = _vars[name].get('simple', False)
                 if not simple:
                     da.values[mask] = nodata
 
@@ -989,11 +986,11 @@ class MaskMultiCounter(Statistic):
 
         return broadcast_proc(proc, valid_proc, combine=apply_mask)
 
-    def compute(self, ds):
+    def compute(self, data):
         proc = self.make_iterative_proc()
 
-        for i in range(ds.time.shape[0]):
-            proc(ds.isel(time=slice(i, i + 1)))
+        for i in range(data.time.shape[0]):
+            proc(data.isel(time=slice(i, i + 1)))
 
         return proc()
 
@@ -1098,9 +1095,11 @@ try:
             is_proj = 'x' in data and 'y' in data
             is_geo = 'longitude' in data and 'latitude' in data
             if is_proj and is_geo:
-                raise StatsProcessingError('Data to process contains both geographic and projected dimensions, unable to proceed')
+                raise StatsProcessingError(
+                    'Data to process contains both geographic and projected dimensions, unable to proceed')
             elif not is_proj and not is_geo:
-                raise StatsProcessingError('Data to process contains neither geographic nor projected dimensions, unable to proceed')
+                raise StatsProcessingError(
+                    'Data to process contains neither geographic nor projected dimensions, unable to proceed')
             elif is_proj:
                 return ('x', 'y', 'variable', 'time'), ('variable', 'y', 'x')
             else:

@@ -3,13 +3,14 @@ import os
 import subprocess
 import platform
 import re
+import functools
+import shlex
 from collections import namedtuple, OrderedDict
-Node = namedtuple('Node', 'name num_cores offset is_main'.split(' '))
 
-_nodes = None
+Node = namedtuple('Node', ['name', 'num_cores', 'offset', 'is_main'])
 
 
-def _hostname():
+def hostname():
     return platform.node()
 
 
@@ -29,28 +30,25 @@ def parse_nodes_file(fname=None):
             ll = [l.strip() for l in f.readlines()]
             return [l for l in ll if len(l) > 0]
 
-    hostname = _hostname()
-    nodes = OrderedDict()
+    main_hostname = hostname()
+    _nodes = OrderedDict()
 
     for idx, l in enumerate(load_lines(fname)):
-        if l in nodes:
-            nodes[l]['num_cores'] += 1
+        if l in _nodes:
+            _nodes[l]['num_cores'] += 1
         else:
-            nodes[l] = dict(
+            _nodes[l] = dict(
                 name=l,
                 num_cores=1,
                 offset=idx,
-                is_main=(
-                    hostname == l))
+                is_main=(main_hostname == l))
 
-    return [Node(**x) for x in nodes.values()]
+    return [Node(**x) for x in _nodes.values()]
 
 
+@functools.lru_cache(maxsize=None)
 def nodes():
-    global _nodes
-    if _nodes is None:
-        _nodes = parse_nodes_file()
-    return _nodes
+    return parse_nodes_file()
 
 
 def total_cores():
@@ -61,13 +59,15 @@ def total_cores():
 
 
 def preferred_queue_size():
-    return total_cores()*2
+    return total_cores() * 2
 
 
-def get_env(extras=[], **more_env):
+def get_env(extras=None, **more_env):
+    extras = extras or []
+
     pass_envs = set(['PATH', 'LANG', 'LD_LIBRARY_PATH', 'HOME', 'USER'])
-    REGEXES = ['^PYTHON.*', '^GDAL.*', '^LC.*', '^DATACUBE.*']
-    rgxs = [re.compile(r) for r in REGEXES]
+    regexes = ['^PYTHON.*', '^GDAL.*', '^LC.*', '^DATACUBE.*']
+    rgxs = [re.compile(r) for r in regexes]
 
     def need_this_env(k):
         if k in pass_envs or k in extras:
@@ -83,16 +83,16 @@ def get_env(extras=[], **more_env):
 
 
 def mk_exports(env):
-    return '\n'.join('export {}="{}"'.format(k, v) for k, v in env.items())
+    return '\n'.join('export {}={}'.format(k, shlex.quote(v)) for k, v in env.items())
 
 
-def generate_env_header(extras=[], **more_env):
+def generate_env_header(extras=None, **more_env):
     return mk_exports(get_env(extras, **more_env))
 
 
 def wrap_script(script):
     b64s = b64encode(script.encode('ascii')).decode('ascii')
-    return 'eval "$(echo {}|base64 -d)"'.format(b64s)
+    return 'eval "$(echo {}|base64 --decode)"'.format(b64s)
 
 
 def pbsdsh(cpu_num, script, env=None, test_mode=False):
