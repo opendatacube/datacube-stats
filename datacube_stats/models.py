@@ -100,10 +100,11 @@ class OutputProduct(object):
       - Input measurements
 
     :param str product_type: Just a string tag, labelling the type of product
+    :param dict stats_metadata: This will be copied to `metadata.stats` subtree in the product definition
     """
 
     def __init__(self, metadata_type, product_type, input_measurements, storage, name, file_path_template,
-                 stat_name, statistic, output_params=None, extras=None):
+                 stat_name, statistic, output_params=None, extras=None, stats_metadata=None):
 
         #: The product name.
         self.name = name
@@ -120,7 +121,8 @@ class OutputProduct(object):
         self.data_measurements = statistic.measurements(input_measurements)
 
         #: The ODC Product (formerly DatasetType)
-        self.product = self._create_product(metadata_type, product_type, self.data_measurements, storage)
+        self.product = self._create_product(metadata_type, product_type, self.data_measurements, storage,
+                                            stats_metadata=stats_metadata or {})
 
         self.output_params = output_params
 
@@ -129,7 +131,7 @@ class OutputProduct(object):
         self.extras = extras or {}
 
     @classmethod
-    def from_json_definition(cls, metadata_type, input_measurements, storage, definition):
+    def from_json_definition(cls, metadata_type, input_measurements, storage, definition, stats_metadata):
         return cls(metadata_type,
                    definition.get('product_type', '!!NOTSET!!'),
                    input_measurements, storage,
@@ -137,7 +139,8 @@ class OutputProduct(object):
                    file_path_template=definition.get('file_path_template'),
                    stat_name=definition['statistic'],
                    statistic=STATS[definition['statistic']](**definition.get('statistic_args', {})),
-                   output_params=definition.get('output_params'))
+                   output_params=definition.get('output_params'),
+                   stats_metadata=stats_metadata)
 
     @property
     def compute(self):
@@ -151,7 +154,7 @@ class OutputProduct(object):
     def make_iterative_proc(self):
         return self.statistic.make_iterative_proc
 
-    def _create_product(self, metadata_type, product_type, data_measurements, storage):
+    def _create_product(self, metadata_type, product_type, data_measurements, storage, stats_metadata):
         product_definition = {
             'name': self.name,
             'description': 'Description for ' + self.name,
@@ -162,6 +165,7 @@ class OutputProduct(object):
                     'name': 'NetCDF'
                 },
                 'product_type': product_type,
+                'stats': stats_metadata,
             },
             'storage': storage,
             'measurements': data_measurements

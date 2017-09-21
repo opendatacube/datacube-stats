@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import xarray
 import yaml
+import pydash
 
 import datacube_stats
 import datacube
@@ -326,12 +327,16 @@ class StatsApp(object):
         measurements = _source_measurement_defs(self.index, self.sources)
 
         metadata_type = self.index.metadata_types.get_by_name(metadata_type)
+
+        stats_metadata = _get_stats_metadata(self.config_file)
+
         for output_spec in self.output_product_specs:
             output_products[output_spec['name']] = OutputProduct.from_json_definition(
                 metadata_type=metadata_type,
                 input_measurements=measurements,
                 storage=self.storage,
-                definition=output_spec)
+                definition=output_spec,
+                stats_metadata=stats_metadata)
 
         # TODO: Write the output product to disk somewhere
 
@@ -676,6 +681,14 @@ def _get_app_metadata(config_file):
             },
         }
     }
+
+
+def _get_stats_metadata(cfg):
+    """ Build metadata.stats subtree for the product definition
+    """
+    period = pydash.get(cfg, 'date_ranges.stats_duration', '*')
+    step = pydash.get(cfg, 'date_ranges.step_size', '*')
+    return dict(period=period, step=step)
 
 
 def _prepare_output_driver(storage):
