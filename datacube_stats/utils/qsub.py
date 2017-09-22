@@ -475,7 +475,7 @@ class TaskRunner(object):
 
         def mk_multiproc():
             qsize = 100
-            executor = _get_concurrent_executor(self._opts)
+            executor = _get_concurrent_executor(self._opts, use_cloud_pickle=True)
             return (executor, qsize, noop)
 
         def mk_serial():
