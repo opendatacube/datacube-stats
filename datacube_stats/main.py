@@ -37,6 +37,11 @@ from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 
+from .utils.query import multi_product_list_cells
+from .utils import report_unmatched_datasets
+from .utils import sorted_interleave
+from .timer import wrap_in_timer
+
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
 DEFAULT_GROUP_BY = 'time'
@@ -168,6 +173,9 @@ class StatsApp(object):
 
         #: An open database connection
         self.index = None
+
+        self.global_attributes = None
+        self.var_attributes = None
 
         #: A function to process the result of a complated task
         #: Takes a single argument of the task result
@@ -442,7 +450,6 @@ class EmptyChunkException(Exception):
 
 
 def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
-    from .utils import sorted_interleave
 
     def by_time(ds):
         return ds.time.values[0]
@@ -521,7 +528,6 @@ def load_masked_tile_lazy(tile, masks,
     Returns an iterator of DataFrames one time-slice at a time
 
     """
-    from .timer import wrap_in_timer
 
     ii = range(tile.shape[0])
     if reverse:
@@ -805,9 +811,6 @@ class GriddedTaskGenerator(object):
         :param index: Datacube Index
         :return:
         """
-        from .utils.query import multi_product_list_cells
-        from .utils import report_unmatched_datasets
-
         workflow = GridWorkflow(index, grid_spec=self.grid_spec)
 
         for time_period in date_ranges:
@@ -832,7 +835,7 @@ class GriddedTaskGenerator(object):
                                                                       group_by=group_by_name,
                                                                       geopolygon=self.geopolygon)
 
-                self._total_unmatched += report_unmatched_datasets(unmatched_[0], lambda s: _LOG.warning(s))
+                self._total_unmatched += report_unmatched_datasets(unmatched_[0], _LOG.warning)
 
                 for tile_index, sources in data.items():
                     task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
@@ -850,8 +853,8 @@ class GriddedTaskGenerator(object):
 
     def __del__(self):
         if self._total_unmatched > 0:
-            _LOG.warning('There were source datasets for which masks were not found, total: {}'.
-                         format(self._total_unmatched))
+            _LOG.warning('There were source datasets for which masks were not found, total: %d',
+                         self._total_unmatched)
 
 
 def _make_grid_spec(storage):
