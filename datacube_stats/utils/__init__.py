@@ -250,6 +250,14 @@ wofs_flag_defs = {'cloud': {'bits': 6, 'description': 'Cloudy', 'values': {0: Fa
                           'values': {128: True}}}
 
 
+def _mk_masker_to_bool(m, v, da):
+    return (da & m) == v
+
+
+def _mk_masker_to_bool_inverted(m, v, da):
+    return (da & m) != v
+
+
 def mk_masker(m, v, invert=False):
     """
 
@@ -260,11 +268,8 @@ def mk_masker(m, v, invert=False):
     x => (x & m) != v , when invert == True
 
     """
-    def to_bool(da):
-        return (da & m) == v
-
-    def to_bool_inverted(da):
-        return (da & m) != v
+    to_bool = functools.partial(_mk_masker_to_bool, m, v)
+    to_bool_inverted = functools.partial(_mk_masker_to_bool_inverted, m, v)
 
     return to_bool_inverted if invert else to_bool
 
