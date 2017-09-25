@@ -123,7 +123,7 @@ def axisindex(a, index, axis=0):
     return a.take(idx)
 
 
-def section_by_index(array, axis, index):
+def section_by_index(array, index, axis=0):
     """
     Take the slice of `array` indexed by entries of `index`
     along the specified `axis`.
@@ -728,7 +728,7 @@ class Medoid(Statistic):
 
             def worker(var_array, axis, nodata):
                 # operates on the underlying `ndarray`
-                result = section_by_index(var_array, axis, index)
+                result = section_by_index(var_array, index, axis)
                 result[not_enough] = nodata
                 return result
 
