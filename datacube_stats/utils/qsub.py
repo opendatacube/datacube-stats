@@ -53,7 +53,7 @@ class QSubLauncher(object):
         else:
             self._internal_args = self._internal_args + args
 
-    def __call__(self, auto=False, *args):
+    def __call__(self, *args, **kwargs):
         """ Submit self via qsub
 
         auto=True -- re-use arguments used during invocation, removing `--qsub` parameter
@@ -61,6 +61,7 @@ class QSubLauncher(object):
 
         args -- command line arguments to launch with under qsub, only used if auto=False
         """
+        auto = kwargs.get('auto', False)
         if auto:
             args = sys.argv[1:]
             args = remove_args('--qsub', args, n=1)
@@ -72,7 +73,7 @@ class QSubLauncher(object):
 
         r, output = qsub_self_launch(self._params, *args)
         click.echo(output)
-        return r
+        return r, output
 
 
 class QSubParamType(click.ParamType):
@@ -331,12 +332,12 @@ def qsub_self_launch(qsub_opts, *args):
     return exit_code, out_txt
 
 
-def launch_redis_worker_pool(port=6379):
+def launch_redis_worker_pool(port=6379, **redis_params):
     redis_port = port
     redis_host = pbs.hostname()
     redis_password = cr.get_redis_password(generate_if_missing=True)
 
-    redis_shutdown = cr.launch_redis(redis_port, redis_password)
+    redis_shutdown = cr.launch_redis(redis_port, redis_password, **redis_params)
 
     _LOG.info('Launched Redis at %s:%d', redis_host, redis_port)
 
@@ -460,7 +461,9 @@ class TaskRunner(object):
 
         def mk_pbs_celery():
             qsize = pbs.preferred_queue_size()
-            executor, shutdown = launch_redis_worker_pool()
+            port = 6379  # TODO: randomise
+            maxmemory = "1024mb"  # TODO: compute maxmemory from qsize
+            executor, shutdown = launch_redis_worker_pool(port=port, maxmemory=maxmemory)
             return (executor, qsize, shutdown)
 
         def mk_dask():
@@ -475,7 +478,7 @@ class TaskRunner(object):
 
         def mk_multiproc():
             qsize = 100
-            executor = _get_concurrent_executor(self._opts, use_cloud_pickle=True)
+            executor = _get_concurrent_executor(self._opts)
             return (executor, qsize, noop)
 
         def mk_serial():

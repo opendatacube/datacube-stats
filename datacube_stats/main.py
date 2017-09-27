@@ -103,7 +103,8 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
     if qsub is not None:
         # TODO: verify config before calling qsub submit
         click.echo(repr(qsub))
-        return qsub(auto=True)
+        r, _ = qsub(auto=True)
+        return r
 
     _log_setup()
 
@@ -126,6 +127,8 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
 
     if failed > 0:
         raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful + failed))
+
+    return 0
 
 
 def _log_setup():
