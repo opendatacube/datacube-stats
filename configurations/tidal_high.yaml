@@ -90,7 +90,8 @@ date_ranges:
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
 #location: '/g/data/r78/bxb547/TIDE_MODEL/output_high'
-location: '/g/data/r78/intertidal/PRODUCT_HIGH'
+#location: '/g/data/r78/intertidal/PRODUCT_HIGH'
+location: '/g/data/r78/intertidal/EBB_FLOW'
 
 input_region:
 #  tile: [12, -43]
@@ -129,13 +130,13 @@ output_products:
    file_path_template: 'COMPOSITE_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
    product_type: COMPOSITE HIGH
 
- - name: tidal_count
-   statistic: clearcount
-   output_params:
-      zlib: True
-      fletcher32: True
-   file_path_template: 'COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
-   product_type: COMPOSITE HIGH 
+# - name: tidal_count
+#   statistic: clearcount
+#   output_params:
+#      zlib: True
+#      fletcher32: True
+#   file_path_template: 'COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
+#   product_type: COMPOSITE HIGH 
 
 tide_class:
   product: high
@@ -149,4 +150,4 @@ tide_class:
   #feature_id: [28, 108, 178, 221, 239] To run only of interest of the polygon
   #Needs sub composite then chose one of these now
   #e, f, ph, pl
-  #sub_class: e 
+  sub_class: f 

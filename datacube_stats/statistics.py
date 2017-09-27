@@ -278,10 +278,10 @@ class ClearCount(Statistic):
 
 
 class MedNdwi(Statistic):
-    """Calculate ndwi out of median image through time"""
+    """Calculate ndwi and then median image through time"""
 
     def compute(self, data):
-        # This is a special case to implement calculating ndwi for ITEM product 
+        # This is a special case to implement, after calculating ndwi as med. Finally median through time for ITEM product
         med = (data.green-data.nir)/(data.green+data.nir)
         # stop all bad data and reset to the following
         med.values[med.values<-1] = np.nan 
@@ -305,6 +305,7 @@ class StdNdwi(Statistic):
     """ Calculate standard deviation on NDWI values """
 
     def compute(self, data):
+        # This is a special case to implementi std, after calculating ndwi as med and then standard deviation through time
         med = (data.green-data.nir)/(data.green+data.nir)
         # stop all bad data and reset to the following
         med.values[med.values<-1] = np.nan
@@ -836,7 +837,6 @@ try:
 
     STATS['precisegeomedian'] = PreciseGeoMedian
     STATS['medndwi'] = MedNdwi
-    STATS['rel'] = RelNdwi
     STATS['std'] = StdNdwi 
     STATS['clearcount'] = ClearCount
 

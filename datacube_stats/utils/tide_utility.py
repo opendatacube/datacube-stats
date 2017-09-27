@@ -4,6 +4,7 @@ from datetime import timedelta, datetime
 from otps.predict_wrapper import predict_tide
 from otps import TimePoint
 from operator import itemgetter
+import pandas as pd
 
 
 def find_median(data):
@@ -18,9 +19,9 @@ def find_median(data):
         i = n//2
         return (data[i - 1] + data[i])/2
    
-# This is hard coded to have 9 intervals for range_percent 10 to support ITEM V1
-# if range_percent changes then it needs reworking here to merge top or bottom intervals 
-def range_tidal_data(all_dates, date_ranges, tide_class, ln, la):
+# This routine is used for ITEM product and it returns a list of dates corresponding to the range interval.
+
+def range_tidal_data(all_dates, tide_class, ln, la):
     perc = tide_class['range_percent']
     per = tide_class['percent']
     fid = tide_class['feature_id'][0]
@@ -28,21 +29,24 @@ def range_tidal_data(all_dates, date_ranges, tide_class, ln, la):
     tide_dict = dict()
     for dt in all_dates:
         tp.append(TimePoint(ln, la, dt))
+    # Calling this routine to get the tide object for each timepoint
     tides = predict_tide(tp)
     if len(tides) == 0:
         print ("No tide height observed from OTPS model within lat/lon range")
         sys.exit()
     for tt in tides:
         tide_dict[datetime.strptime(tt.timepoint.timestamp.isoformat()[0:19], "%Y-%m-%dT%H:%M:%S")] = tt.tide_m
+    # sorting as per tide heights lowest to highest
     tide_list = sorted(tide_dict.items(), key=lambda x: x[1])
     max_height=tide_list[-1][1]
     min_height=tide_list[0][1]
     dr = max_height-min_height
     inc = min_height
+    # This is hard coded to have 9 intervals for range_percent 10 to support ITEM V1
+    # if range_percent changes then it needs reworking here to merge top or bottom intervals 
     per_range = int(100/perc) - 1
-    #print ("Following range is created from min max ("
-    #       + str(min_height) + " " + str(max_height) + ")")
     print ("id, per, min, max, observation, LOT, HOT, median")
+    # Extract list of dates that falls within the input range otherwise return empty list
     for i in range(per_range):
         incmn = inc
         perc = 20 if i == per_range-1 else 10
@@ -51,14 +55,15 @@ def range_tidal_data(all_dates, date_ranges, tide_class, ln, la):
         key = 'range_' + str(i+1)
         range_value = [[x[0].strftime('%Y-%m-%d'), x[1]] for x in tide_list
                if (x[1] >= incmn and x[1] <= inc)]
-        #median = float("%.3f" %(find_median([x[1] for x in range_value])))
-        median = float("%.3f" %(statistics.median([x[1] for x in range_value])))
+        median = float("%.3f" %(find_median([x[1] for x in range_value])))
+        #median = float("%.3f" %(statistics.median([x[1] for x in range_value])))
         if per == (i+1)*10:
             print ("MEDIAN INFO " + str(fid) + "," + str(per) + "," + str(incmn) + "," + str(inc) + "," + str(len(range_value)) + 
                    "," + str(range_value[0][1]) + "," + str(range_value[-1][1]) + "," + str(median))
             return range_value
     return [] 
 
+# This function is used for composite products and also for sub class extraction like ebb/flow/peak high/low 
 
 def extract_otps_computed_data(dates, date_ranges, per, ln, la):
         
@@ -66,6 +71,7 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     tide_dict = dict()
     ndate_list=list()
     mnt=timedelta(minutes=15)
+    # add 15 min before and after to decide the type of tide for each dates
     for dt in dates:
         ndate_list.append(dt-mnt)
         ndate_list.append(dt)
@@ -84,6 +90,7 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     dtlist = tmp_lt[1::3]
     my_data = sorted(dtlist, key=itemgetter(1))
     # print ([[dt[0].strftime("%Y-%m-%d %H:%M:%S"), dt[1]] for dt in tmp_lt])
+    # This list comprehension gathers four type of phases
     tmp_lt = [[tmp_lt[i+1][0].strftime("%Y-%m-%d"), 'ph'] \
              if tmp_lt[i][1] < tmp_lt[i+1][1] and tmp_lt[i+2][1] <  tmp_lt[i+1][1]  else \
              [tmp_lt[i+1][0].strftime("%Y-%m-%d"), 'pl'] if tmp_lt[i][1] > tmp_lt[i+1][1] and \
@@ -99,11 +106,11 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     hlr = max_height - dr*PERC*0.01   # high tide range
     list_low = list()
     list_high = list()
+    # doing for middle percentage to extract list of dates or for any percentage as per input.
     if PERC == 50:
         list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x  in my_data if (x[1] >= lmr) & (x[1] <= hlr) &
                            (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
         print (" 50 PERCENTAGE sorted date tide list " + str(len(high)))
-            #_LOG.info('Created middle dates and tide heights for time period: %s %s', date_ranges, str(list_high))
     else:
         list_low = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] <= lmr) & 
                           (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
@@ -111,6 +118,7 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
                            (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
         #_LOG.info('Created low percentage dates and tide heights for time period: %s %s', date_ranges, str(list_low))
         #_LOG.info('\nCreated high percentage dates and tide heights for time period: %s %s', date_ranges, str(list_high))
+    # Extract list of dates and type of tide phase within the date ranges for composite products
     ebb_flow = str([tt for tt in tmp_lt if (datetime.strptime(tt[0], "%Y-%m-%d") >= date_ranges[0][0]) & 
                    (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])])
     #_LOG.info('\nCreated EBB FLOW for time period: %s %s', date_ranges, ebb_flow)
@@ -118,6 +126,8 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     #         (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])]))
     return dtlist, list_low, list_high, ebb_flow
 
+# This function is used to return a list of hydrologic date range for dry wet geomedian
+ 
 def get_hydrologic_months(tide_class):
     all_dates = list()
     for k,v in tide_class['year'].items():
@@ -133,6 +143,8 @@ def get_hydrologic_months(tide_class):
         date_list = date_list.to_datetime().astype(str).tolist()
         all_dates = all_dates + date_list
     return all_dates 
+
+# return a list of low high dates as per tide phase request
 
 def filter_sub_class(tide_class, list_low, list_high, ebb_flow):
     if tide_class['sub_class'] == 'e':

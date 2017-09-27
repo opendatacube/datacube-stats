@@ -820,7 +820,7 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                 _LOG.info('Getting all dates corresponding to this polygon for all sensor data')
                 all_dates = list_poly_dates(boundary_polygon)
                 if "item" in tide_class['product']:
-                    list_high = range_tidal_data(all_dates, date_ranges, tide_class, lon, lat)
+                    list_high = range_tidal_data(all_dates, tide_class, lon, lat)
                     #_LOG.info("ITEM returns with median %s", range_value)
                 else:
                     all_list, list_low, list_high, ebb_flow = extract_otps_computed_data(all_dates, date_ranges, 

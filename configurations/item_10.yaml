@@ -91,8 +91,9 @@ date_ranges:
 #location: '/short/v10/datacube/wofs-summary'
 #location: '/g/data/r78/bxb547/TIDE_MODEL/output_low'
 #location: '/g/data/r78/ITEM/MERGE_POLY'
-location: '/g/data/r78/ITEM/OUTPUT_GA'
+location: '/g/data/r78/ITEM/junk'
 #location: '/g/data/v10/intertidal/output_data'
+#location: '/g/data/r78/ITEM/OUTPUT_GA'
 
 input_region:
 #  tile: [12, -43]
@@ -142,13 +143,6 @@ output_products:
 #   file_path_template: '{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}_PER_{percent}.nc'
 #   product_type: ITEM
 
-# - name: relative
-#   statistic: rel
-#   output_params:
-#      zlib: True
-#      fletcher32: True
-#   file_path_template: '{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}_PER_{percent}.nc'
-#   product_type: ITEM
 # - name: tidal_count
 #   statistic: clearcount
 #   output_params:

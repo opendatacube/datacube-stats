@@ -81,17 +81,18 @@ sources:
 
 ## Define whether and how to chunk over time
 date_ranges:
-  start_date: 2005-01-01
+  start_date: 1995-01-01
   end_date: 2017-01-01
-  stats_duration: 12y
-  step_size: 12y
+  stats_duration: 22y
+  step_size: 22y
   type: simple
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
 #location: '/g/data/r78/bxb547/TIDE_MODEL/output_low'
 #location: '/g/data/r78/intertidal/big_poly_data'
-location: '/g/data/r78/intertidal/PRODUCT_LOW'
+#location: '/g/data/r78/intertidal/PRODUCT_LOW'
+location: '/g/data/r78/intertidal/EBB_FLOW'
 #location: '/g/data/v10/intertidal/low_composite'
 
 input_region:
@@ -134,14 +135,13 @@ output_products:
    file_path_template: 'COMPOSITE_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
    product_type: COMPOSITE LOW 
 
- - name: tidal_count
-   statistic: clearcount
+# - name: tidal_count
 #   statistic: clearcount
-   output_params:
-      zlib: True
-      fletcher32: True
-   file_path_template: 'COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
-   product_type: COMPOSITE LOW 
+#   output_params:
+#      zlib: True
+#      fletcher32: True
+#   file_path_template: 'COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_PER_{percent}.nc'
+#   product_type: COMPOSITE LOW 
 
 tide_class:
   product: low
@@ -150,9 +150,11 @@ tide_class:
   #In case we need all data just set this parameter or comment it out in case of we don't need post SLC dates
   #  ls7_slc_off: False
   # This is for deciding low high percentile based on global dates
-  global_epoch_start: 2005-01-01
+  #global_epoch_start: 2005-01-01
+  global_epoch_start: 1995-01-01
   global_epoch_end: 2017-01-01
   #Needs sub composite then chose one of these now
   #e, f, ph, pl
-  #sub_class: f
+  #sub_class: e 
   #feature_id: [67, 68, 69, 70, 71, 72, 73]
+  feature_id: [94]
