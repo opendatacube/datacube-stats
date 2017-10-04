@@ -1,49 +1,19 @@
 """
-Test that the stats app can generate tasks and run them.
-"""
-from collections import defaultdict
+Tests for :class:`StatsApp`.
 
-import pytest
+Test that the StatsApp can:
+- use a valid configuration file
+- generate tasks from it
+- run the tasks
+"""
 import mock
+import pytest
 
 from datacube.model import MetadataType
 from datacube_stats.main import OutputProduct
+from datacube_stats.main import StatsApp
 from datacube_stats.models import StatsTask
 from datacube_stats.statistics import StatsConfigurationError, ReducingXarrayStatistic
-
-from datacube_stats.main import StatsApp
-import yaml
-
-
-@pytest.fixture
-def sample_stats_config():
-    config = yaml.safe_load("""
-        date_ranges:
-            start_date: 2015-01-01
-            end_date: 2015-04-01
-        
-        location:
-        sources:
-        -   product: fake_source_product
-            measurements: [red]
-        storage:
-            driver: NetCDFCF
-            tile_size:
-                x: 100
-                y: 100
-            resolution:
-                x: 100
-                y: 100
-            crs: EPSG:3577
-        output_products:
-        -   name: fake_output
-            product_type: sample_statistics
-            statistic: simple
-            statistic_args:
-                reduction_function: mean
-    """)
-
-    return config
 
 
 def test_create_and_validate_stats_app(sample_stats_config):

@@ -430,7 +430,9 @@ Complete example
     output_products:
      - name: landsat_seasonal_mean
        product_type: seasonal_stats
-       statistic: mean
+       statistic: simple
+       statistic_args:
+         reduction_function: mean
        output_params:
          zlib: True
          fletcher32: True
@@ -446,7 +448,7 @@ Complete example
 
      - name: landsat_seasonal_percentile_10
        product_type: seasonal_stats
-       statistic: percentile_10
+       statistic: percentile
        statistic_args:
          q: 10
        output_params:
