@@ -112,18 +112,21 @@ input_region:
 output_products:
  - name: ndvi_stats_annual_10th_percentile_albers
    statistic: percentile_10_no_prov
-   zlib: True
-   fletcher32: True
+   output_params:
+     zlib: True
+     fletcher32: True
    file_path_template: 'NDVI_STATS/{tile_index[0]}_{tile_index[1]}/NDVI_PC10_3577_{tile_index[0]}_{tile_index[1]}_{time_period[0]:%Y%m%d}_{time_period[1]:%Y%m%d}.nc'
 
  - name: ndvi_stats_annual_50th_percentile_albers
    statistic: percentile_50_no_prov
-   zlib: True
-   fletcher32: True
+   output_params:
+     zlib: True
+     fletcher32: True
    file_path_template: 'NDVI_STATS/{tile_index[0]}_{tile_index[1]}/NDVI_PC50_3577_{tile_index[0]}_{tile_index[1]}_{time_period[0]:%Y%m%d}_{time_period[1]:%Y%m%d}.nc'
 
  - name: ndvi_stats_annual_90th_percentile_albers
    statistic: percentile_90_no_prov
-   zlib: True
-   fletcher32: True
+   output_params:
+     zlib: True
+     fletcher32: True
    file_path_template: 'NDVI_STATS/{tile_index[0]}_{tile_index[1]}/NDVI_PC90_3577_{tile_index[0]}_{tile_index[1]}_{time_period[0]:%Y%m%d}_{time_period[1]:%Y%m%d}.nc'

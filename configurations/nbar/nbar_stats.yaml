@@ -117,7 +117,9 @@ input_region:
 ## Define statistics to perform and how to store the data
 output_products:
  - name: landsat_seasonal_mean
-   statistic: mean
+   statistic: simple
+   statistic_args:
+     reduction_function: mean
    output_params:
      zlib: True
      fletcher32: True
@@ -131,7 +133,7 @@ output_products:
    file_path_template: 'SR_N_MEDOID/SR_N_MEDOID_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
 
  - name: landsat_seasonal_percentile_10
-   statistic: percentile_10
+   statistic: percentile
    statistic_args:
      q: 10
    output_params:

@@ -72,8 +72,9 @@ computation:
 output_products:
  - name: fc_medoid
    statistic: medoid_no_prov
-   zlib: True
-   fletcher32: True
+   output_params:
+     zlib: True
+     fletcher32: True
    file_path_template: 'LS8_2014_FC_MEDOID/{epoch_start:%Y}/{x}/LS_FC_MEDOID_3577_{var_name}_{x}_{y}.tiff'
    description: Landsat 8 Fractional Cover 25 metre, 100km tile, Australian Albers Equal Area projection (EPSG:3577)
    product_type: fractional_cover

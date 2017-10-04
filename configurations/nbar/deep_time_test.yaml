@@ -47,6 +47,7 @@ computation:
 output_products:
  - name: deep_time
    statistic: mean
-   zlib: True
-   fletcher32: True
+   output_params:
+     zlib: True
+     fletcher32: True
    file_path_template: 'deep_time_{tile_index[0]}_{tile_index[1]}.nc'

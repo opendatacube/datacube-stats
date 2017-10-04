@@ -107,13 +107,15 @@ computation:
 output_products:
   - name: ndvi_stats
     statistic: ndvi_stats
-    zlib: True
-    fletcher32: True
+    output_params:
+      zlib: True
+      fletcher32: True
     file_path_template: 'NDVI_STATS/{var_name}_{config.input_region[x][0]}_{config.input_region[y][1]}_{time_period[0]:%Y%m%d}.tif'
 
   - name: ndwi_stats
     statistic: ndwi_stats
-    zlib: True
-    fletcher32: True
+    output_params:
+      zlib: True
+      fletcher32: True
     file_path_template: 'NDWI_STATS/{var_name}_{config.input_region[x][0]}_{config.input_region[y][1]}_{time_period[0]:%Y%m%d}.tif'
 
