@@ -109,7 +109,7 @@ eliminating data which doesn't meet the minimum required spatial accuracy:
         group_by: solar_day
         source_filter:
           product: ls5_level1_scene
-          gqa: [-1, 1]
+          gqa_mean_xy: [-1, 1]
         masks:
           - product: ls5_pq_albers
             measurement: pixelquality
@@ -132,7 +132,7 @@ eliminating data which doesn't meet the minimum required spatial accuracy:
         group_by: solar_day
         source_filter:
           product: ls7_level1_scene
-          gqa: [-1, 1]
+          gqa_mean_xy: [-1, 1]
         masks:
           - product: ls7_pq_albers
             measurement: pixelquality
