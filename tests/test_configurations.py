@@ -73,8 +73,10 @@ output_product_schema = Schema({
     'file_path_template': All(str, valid_format_string(valid_filepath_fields)),
 })
 
-spatial_attrs = {Inclusive('x', 'proj'): Any(float, int), Inclusive('y', 'proj'): Any(float, int),
-                 Inclusive('latitude', 'geo'): Any(float, int), Inclusive('longitude', 'geo'): Any(float, int)}
+spatial_attrs = {Inclusive('x', 'proj'): Any(float, int),
+                 Inclusive('y', 'proj'): Any(float, int),
+                 Inclusive('latitude', 'geo'): Any(float, int),
+                 Inclusive('longitude', 'geo'): Any(float, int)}
 
 storage_schema = Schema({
     'driver': In(OUTPUT_DRIVERS.keys(), msg='not a valid output driver'),
@@ -94,9 +96,12 @@ geometry = Schema({
 
 boundary_coords = Schema({
     'crs': str,
-    'x': list,
-    'y': list
+    Inclusive('x', 'proj'): [Any(float, int), Any(float, int)],
+    Inclusive('y', 'proj'): [Any(float, int), Any(float, int)],
+    Inclusive('latitude', 'geo'): [Any(float, int), Any(float, int)],
+    Inclusive('longitude', 'geo'): [Any(float, int), Any(float, int)],
 })
+
 date_ranges_schema = Schema({
     Required('start_date'): Any(datetime.date, Date),
     Required('end_date'): Any(datetime.date, Date),
