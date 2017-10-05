@@ -40,7 +40,7 @@ date_ranges:
 location: '/g/data/u46/users/dra547/MDBA_mk2'
 
 storage:
-  driver: ENVIBIL
+  driver: ENVI BIL
 
   crs: EPSG:4326
   tile_size:

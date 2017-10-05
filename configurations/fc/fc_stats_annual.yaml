@@ -86,7 +86,7 @@ date_ranges:
 location: '/g/data/u46/users/dra547/statstests'
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -147,5 +147,5 @@ output_products:
      zlib: True
      fletcher32: True
    file_path_template: 'LS_FC_GEOMEDIAN/{x}_{y}/LS_FC_GEOMEDIAN_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
-   description: Landsat 5 Fractional Cover 25 metre, 100km tile, Australian Albers Equal Area projection (EPSG:3577)
+#   description: Landsat 5 Fractional Cover 25 metre, 100km tile, Australian Albers Equal Area projection (EPSG:3577)
    product_type: fractional_cover

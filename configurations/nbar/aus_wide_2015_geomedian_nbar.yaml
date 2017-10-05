@@ -59,7 +59,7 @@ date_ranges:
 location: '/g/data/u46/users/dra547/geomedian'
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:

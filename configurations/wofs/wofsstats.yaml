@@ -38,12 +38,6 @@ date_ranges:
   time_intervals_end_date: 09-01 # Until September
 
 
-
-
-
-
-
-
 date_ranges:
   start_date: 1970-01-01
   end_date: 2070-01-01
@@ -51,28 +45,12 @@ date_ranges:
   step_size: 100y
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
 location: '/g/data/u46/users/dra547/wofs/'
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:

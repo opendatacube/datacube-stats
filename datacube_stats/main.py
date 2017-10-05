@@ -726,7 +726,7 @@ def _get_stats_metadata(cfg):
 
 def _prepare_output_driver(storage):
     try:
-        return OUTPUT_DRIVERS[storage['driver'].replace(' ', '')]
+        return OUTPUT_DRIVERS[storage['driver']]
     except KeyError:
         if 'driver' in storage:
             msg = 'Invalid output driver "{}" specified.'

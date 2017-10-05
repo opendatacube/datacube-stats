@@ -40,9 +40,8 @@ OUTPUT_DRIVERS = {}
 class RegisterDriver(abc.ABCMeta):
     def __new__(mcs, name, bases, class_dict):
         cls = type.__new__(mcs, name, bases, class_dict)
-        name = cls.__name__.replace('OutputDriver', '')
-        if name:
-            OUTPUT_DRIVERS[name] = cls
+        if hasattr(cls, '_driver_name'):
+            OUTPUT_DRIVERS[cls._driver_name] = cls
         return cls
 
 
@@ -281,6 +280,7 @@ class NetCDFCFOutputDriver(OutputDriver):
 
     The variables in the file will be 3 dimensional, with a single time dimension + y,x.
     """
+    _driver_name = 'NetCDF CF'
 
     valid_extensions = ['.nc']
 
@@ -366,6 +366,7 @@ class GeotiffOutputDriver(OutputDriver):
 
     Con write all statistics to the same output file, or each statistic to a different file.
     """
+    _driver_name = 'Geotiff'
     valid_extensions = ['.tif', '.tiff']
     default_profile = {
         'compress': 'lzw',
@@ -516,6 +517,7 @@ class ENVIBILOutputDriver(GeotiffOutputDriver):
     """
     Writes out a tif file (with an incorrect extension), then converts it to another GDAL format.
     """
+    _driver_name = 'ENVI BIL'
     valid_extensions = ['.bil']
 
     def close_files(self, completed_successfully):

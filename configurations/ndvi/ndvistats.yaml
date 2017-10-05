@@ -1,8 +1,11 @@
 ## Define inputs to perform statistics on
 sources:
   - product: ls5_nbar_albers
-    measurements: [blue, green, red, nir, swir1, swir2]
+    measurements: [green, red, nir, swir1]
     group_by: solar_day
+    source_filter:
+      product: ls5_level1_scene
+      gqa: [-1, 1]
     masks:
       - product: ls5_pq_albers
         measurement: pixelquality
@@ -21,8 +24,11 @@ sources:
           swir1_saturated: False
           swir2_saturated: False
   - product: ls7_nbar_albers
-    measurements: [blue, green, red, nir, swir1, swir2]
+    measurements: [green, red, nir, swir1]
     group_by: solar_day
+    source_filter:
+      product: ls7_level1_scene
+      gqa: [-1, 1]
     masks:
       - product: ls7_pq_albers
         measurement: pixelquality
@@ -41,8 +47,11 @@ sources:
           swir1_saturated: False
           swir2_saturated: False
   - product: ls8_nbar_albers
-    measurements: [blue, green, red, nir, swir1, swir2]
+    measurements: [green, red, nir, swir1]
     group_by: solar_day
+    source_filter:
+      product: ls8_level1_scene
+      gqa: [-1, 1]
     masks:
       - product: ls8_pq_albers
         measurement: pixelquality
@@ -106,16 +115,24 @@ computation:
 
 output_products:
   - name: ndvi_stats
-    statistic: ndvi_stats
+    statistic: simple_normalised_difference
+    statistic_args:
+      band1: nir
+      band2: red
+      stats: [min, mean, max]
     output_params:
       zlib: True
       fletcher32: True
-    file_path_template: 'NDVI_STATS/{var_name}_{config.input_region[x][0]}_{config.input_region[y][1]}_{time_period[0]:%Y%m%d}.tif'
+    file_path_template: 'NDVI_STATS/{name}_{epoch_start:%Y%m%d}.tif'
 
   - name: ndwi_stats
-    statistic: ndwi_stats
+    statistic: simple_normalised_difference
+    statistic_args:
+      band1: green
+      band2: swir1
+      stats: [min, mean, max]
     output_params:
       zlib: True
       fletcher32: True
-    file_path_template: 'NDWI_STATS/{var_name}_{config.input_region[x][0]}_{config.input_region[y][1]}_{time_period[0]:%Y%m%d}.tif'
+    file_path_template: 'NDWI_STATS/{name}_{epoch_start:%Y%m%d}.tif'
 

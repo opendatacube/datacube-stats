@@ -45,7 +45,7 @@ date_ranges:
 location: '/g/data/u46/users/dra547/wofs/'
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -74,4 +74,4 @@ output_products:
    output_params:
      zlib: True
      fletcher32: True
-   file_path_template: 'WOFS_3577_{tile_index[0]}_{tile_index[1]}_{start_time:%Y%m%d}.nc'
+   file_path_template: 'WOFS_3577_{x}_{y}_{epoch_start:%Y%m%d}.nc'
