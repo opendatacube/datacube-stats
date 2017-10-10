@@ -165,7 +165,7 @@ class OutputProduct(object):
                     'name': 'NetCDF'
                 },
                 'product_type': product_type,
-                'stats': stats_metadata,
+                'statistics': stats_metadata,
             },
             'storage': storage,
             'measurements': data_measurements
