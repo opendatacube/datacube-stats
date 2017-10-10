@@ -320,10 +320,12 @@ def execute_task(task, output_driver, chunking, tide_class):
     geom = None
     try:
         with output_driver(task=task) as output_files:
-            full_chunk = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]} 
-            geom =  tide_class.get('geom')
-            for sub_tile_slice in tile_iter(task.sample_tile, full_chunk):
-            #for sub_tile_slice in tile_iter(task.sample_tile, full_chunk):
+            # check for polygon files where chunking is set to zero and expected tide_class in config file
+            import pdb; pdb.set_trace()
+            if chunking['x'] == 0:
+                chunking = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]}
+                geom =  tide_class.get('geom')
+            for sub_tile_slice in tile_iter(task.sample_tile, chunking):
                 load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer, geom)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
@@ -339,11 +341,8 @@ def execute_task(task, output_driver, chunking, tide_class):
 
 def load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer, geom):
     try:
-        timer.start('loading_data')
         data = _load_data(sub_tile_slice, task.sources)
-        timer.pause('loading_data')
-        #for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-        _LOG.info("geobox received %s", data.geobox)
+        #_LOG.info("geobox received %s", data.geobox)
         for prod_name, stat in task.output_products.items():
             _LOG.info("Doing for stat %s", stat.stat_name)
             for chunk in tile_iter(task.sample_tile, chunking):
@@ -352,22 +351,26 @@ def load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer,
                 timer.start(prod_name)
                 # scale it to represent in float32 for precise geomedian
                 ndata = data/10000 if stat.stat_name == 'precisegeomedian' else data
-                geobox = data.geobox
-                ndata = stat.compute(ndata.isel(x=slice(chunk[2].start, chunk[2].stop), 
-                        y=slice(chunk[1].start, chunk[1].stop)))
-                # mask as per geometry now. Ideally Mask should have been done before computation
-                # But masking before computation is a problem as it gets 0 value
-                mask = geometry_mask([geom], geobox, invert=True)
-                mask = mask[chunk[1].start:chunk[1].stop, chunk[2].start:chunk[2].stop]
-                ndata = ndata.where(mask)
+                # checking for polygon shape
+                if geom:
+                    # For polygon computed data is DataArray
+                    geobox = data.geobox
+                    ndata = stat.compute(ndata.isel(x=slice(chunk[2].start, chunk[2].stop),
+                            y=slice(chunk[1].start, chunk[1].stop)))
+                    # mask as per geometry now. Ideally Mask should have been done before computation
+                    # But masking before computation is a problem as it gets 0 value
+                    mask = geometry_mask([geom], geobox, invert=True)
+                    mask = mask[chunk[1].start:chunk[1].stop, chunk[2].start:chunk[2].stop]
+                    ndata = ndata.where(mask)
+                else:
+                    ndata = stat.compute(ndata)
                 timer.pause(prod_name)
                 # For each of the data variables, shove this chunk into the output results
                 timer.start('writing_data')
-                # Single variable dataset deals here
-                if stat.stat_name == "clearcount" or stat.stat_name == "medndwi" or stat.stat_name == "rel" \
-                       or stat.stat_name == "std":
+                # If it is DataArray deals here
+                if type(ndata) is xarray.DataArray:
                     output_files.write_data(prod_name, ndata.name, chunk, ndata.values)
-                else: 
+                else:
                     for var_name, var in ndata.data_vars.items():  # TODO: Move this loop into output_files
                         output_files.write_data(prod_name, var_name, chunk, var.values)
                 timer.pause('writing_data')
@@ -605,7 +608,7 @@ def _create_task_generator(input_region, tide_class, storage):
 
     if tide_class is not None: 
         _LOG.info('Generating polygon images ')
-        return partial(_generate_non_gridded_my_tasks, input_region=input_region, tide_class=tide_class, storage=storage)
+        return partial(_generate_polygon_tasks, input_region=input_region, tide_class=tide_class, storage=storage)
 
     if 'tile' in input_region:  # Simple, single tile
         return partial(_generate_gridded_tasks, grid_spec=grid_spec, cell_index=input_region['tile'])
@@ -693,7 +696,7 @@ def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopoly
             yield task
 
 
-def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class, input_region, storage):
+def _generate_polygon_tasks(index, sources_spec, date_ranges, tide_class, input_region, storage):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
 
@@ -708,6 +711,7 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
         datasets = dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
         fil_datasets = list()
         dt = list()
+        # check for appropriate products to populate required date list
         if tide_class.get('product') == 'dry' or tide_class.get('product') == 'wet':
             dt = otpstime
         else:
@@ -715,7 +719,6 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
         # get the date list out of dt string and compare within the epoch
         for ds in datasets:
             if ds.time.begin.date().strftime("%Y-%m-%d") in dt:
-                #_LOG.info("location of filter ds %s", ds.local_path)
                 fil_datasets.append(ds)
         if len(fil_datasets) == 0:
             _LOG.info("No matched for product %s on %s", product, str(otpstime))
@@ -751,15 +754,14 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
 
     with fiona.open(input_region['from_file']) as input_region:
         crs = CRS(str(input_region.crs_wkt))
+        # Test for dry/wet products
         if tide_class.get('product') == 'dry' or tide_class.get('product') == 'wet':
             for feature in input_region:
                 # get the year id and geometry
                 odict = feature['properties']
                 if tide_class.get('product') == 'dry':
-                    #tide_class['year'] = int(feature['properties']['DN'])
                     tide_class['year'] = { k:v for k, v in odict.items() if "DY" in k.upper()}
                 else:
-                    #tide_class['year'] = int(feature['properties']['WY1'])
                     tide_class['year'] = { k:v for k, v in odict.items() if "WY" in k.upper()}
                 Id = feature['properties']['ID']
                 if Id in tide_class['feature_id']:
@@ -803,7 +805,7 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                             yield task
             return
 
-         
+        # This is for HLTC and ITEM products
         for feature in input_region:
             lon = feature['properties']['lon']
             lat = feature['properties']['lat']
@@ -842,7 +844,6 @@ def _generate_non_gridded_my_tasks(index, sources_spec, date_ranges, tide_class,
                     prod = ['middle']
                 tile_index=(lon,lat)
                 for time_period, pr in itertools.product(date_ranges, prod) :
-                    #nlon = tide_class['sub_class'].upper() if None not in tide_class.get('sub_class') else pr.upper()
                     if tide_class.get('sub_class'):
                         nlon = tide_class.get('sub_class').upper() + "_" + pr.upper()
                     else:

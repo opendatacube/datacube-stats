@@ -1,4 +1,5 @@
 import statistics
+import sys
 from math import ceil
 from datetime import timedelta, datetime
 from otps.predict_wrapper import predict_tide
@@ -55,8 +56,7 @@ def range_tidal_data(all_dates, tide_class, ln, la):
         key = 'range_' + str(i+1)
         range_value = [[x[0].strftime('%Y-%m-%d'), x[1]] for x in tide_list
                if (x[1] >= incmn and x[1] <= inc)]
-        median = float("%.3f" %(find_median([x[1] for x in range_value])))
-        #median = float("%.3f" %(statistics.median([x[1] for x in range_value])))
+        median = float("%.3f" %(statistics.median([x[1] for x in range_value])))
         if per == (i+1)*10:
             print ("MEDIAN INFO " + str(fid) + "," + str(per) + "," + str(incmn) + "," + str(inc) + "," + str(len(range_value)) + 
                    "," + str(range_value[0][1]) + "," + str(range_value[-1][1]) + "," + str(median))
@@ -110,14 +110,12 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     if PERC == 50:
         list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x  in my_data if (x[1] >= lmr) & (x[1] <= hlr) &
                            (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
-        print (" 50 PERCENTAGE sorted date tide list " + str(len(high)))
+        print (" 50 PERCENTAGE sorted date tide list " + str(len(list_high)))
     else:
         list_low = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] <= lmr) & 
                           (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
         list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in my_data if (x[1] >= hlr) &
                            (x[0] >= date_ranges[0][0]) & (x[0] <= date_ranges[0][1])])
-        #_LOG.info('Created low percentage dates and tide heights for time period: %s %s', date_ranges, str(list_low))
-        #_LOG.info('\nCreated high percentage dates and tide heights for time period: %s %s', date_ranges, str(list_high))
     # Extract list of dates and type of tide phase within the date ranges for composite products
     ebb_flow = str([tt for tt in tmp_lt if (datetime.strptime(tt[0], "%Y-%m-%d") >= date_ranges[0][0]) & 
                    (datetime.strptime(tt[0], "%Y-%m-%d") <= date_ranges[0][1])])

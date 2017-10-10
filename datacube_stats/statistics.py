@@ -22,6 +22,7 @@ from __future__ import absolute_import
 
 import abc
 import collections
+from copy import copy
 from collections import OrderedDict
 from datetime import datetime
 from functools import reduce as reduce_, partial
@@ -31,21 +32,25 @@ import numpy as np
 import xarray
 from pkg_resources import iter_entry_points
 
-from datacube.storage.masking import make_mask
-
-#np.seterr(divide='ignore', invalid='ignore')
+from datacube.storage.masking import make_mask, create_mask_value
+from .utils import da_nodata, mk_masker, first_var
+from .incremental_stats import (mk_incremental_sum, mk_incremental_or,
+                                compose_proc, broadcast_proc)
 
 try:
     from bottleneck import anynan, nansum
 except ImportError:
     nansum = np.nansum
 
-
     def anynan(x, axis=None):
         return np.isnan(x).any(axis=axis)
 
 
 class StatsConfigurationError(RuntimeError):
+    pass
+
+
+class StatsProcessingError(RuntimeError):
     pass
 
 
@@ -69,6 +74,30 @@ def argnanmedoid(x, axis=1):
     i = np.argmin(dist_sum)
 
     return i
+
+
+def medoid_indices(arr, invalid=None):
+    """
+    The indices of the medoid.
+
+    :arg arr: input array
+    :arg invalid: mask for invalid data containing NaNs
+    """
+    # vectorized version of `argnanmedoid`
+    bands, times, ys, xs = arr.shape
+
+    diff = (arr.reshape(bands, times, 1, ys, xs) -
+            arr.reshape(bands, 1, times, ys, xs))
+
+    dist = np.linalg.norm(diff, axis=0)
+    dist_sum = nansum(dist, axis=0)
+
+    if invalid is None:
+        # compute it in case it's not already available
+        invalid = anynan(arr, axis=0)
+
+    dist_sum[invalid] = np.inf
+    return np.argmin(dist_sum, axis=0)
 
 
 def nanmedoid(x, axis=1):
@@ -148,6 +177,28 @@ def axisindex(a, index, axis=0):
     step = prod(shape[axis:])
     idx = _blah(lshape, step * a.shape[axis]) + _blah(rshape) + index * step
     return a.take(idx)
+
+
+def section_by_index(array, axis, index):
+    """
+    Take the slice of `array` indexed by entries of `index`
+    along the specified `axis`.
+    """
+    # alternative `axisindex` implementation
+    # that avoids the index arithmetic
+    # uses `numpy` fancy indexing instead
+
+    # possible index values for each dimension represented
+    # as `numpy` arrays all having the shape of `index`
+    indices = np.ix_(*[np.arange(dim) for dim in index.shape])
+
+    # the slice is taken along `axis`
+    # except for the array `index` itself, the other indices
+    # do nothing except trigger `numpy` fancy indexing
+    fancy_index = indices[:axis] + (index,) + indices[axis:]
+
+    # result has the same shape as `index`
+    return array[fancy_index]
 
 
 def argpercentile(a, q, axis=0):
@@ -237,6 +288,8 @@ class Statistic(object):
         """
         Compute a statistic on the given Dataset.
 
+        # FIXME: Explain a little bit better, Dataset in, Dataset out, measurements match measurements()
+
         :param xarray.Dataset data:
         :return: xarray.Dataset
         """
@@ -248,12 +301,39 @@ class Statistic(object):
 
         Base implementation simply copies input measurements to output_measurements.
 
+        # FIXME: Explain the purpose of this
+
         :rtype: list(dict)
         """
         output_measurements = [
             {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
-            for measurement in input_measurements.values()]
+            for measurement in input_measurements]
         return output_measurements
+
+    def is_iterative(self):
+        """
+        Should return True if class supports iterative computation one time slice at a time.
+
+        :rtype: Bool
+        """
+        return False
+
+    def make_iterative_proc(self):
+        """
+        Should return `None` if `is_iterative()` returns `False`.
+
+        Should return processing function `proc` that closes over internal
+        state that get updated one time slice at time, if `is_iterative()`
+        returns `True`.
+
+        proc(dataset_slice)  # Update internal state, called many times
+        result = proc()  # Extract final result, called once
+
+
+        See `incremental_stats.assemble_updater`
+
+        """
+        return None
 
 
 class ClearCount(Statistic):
@@ -261,9 +341,10 @@ class ClearCount(Statistic):
 
     def compute(self, data):
         # TODO Fix Hardcoded 'time' and pulling out first data var
-        #_, sample_data_var = next(data.data_vars.items())
-        _, sample_data_var = next(iter(data.data_vars.items())) 
-        count_values = sample_data_var.count(dim='time').rename('count_observations')
+        _, sample_data_var = next(data.data_vars.items())
+
+        # FIXME, Probably buggy! Names don't match.
+        count_values = sample_data_var.count(dim='time').rename('clear_observations')
         return count_values
 
     def measurements(self, input_measurements):
@@ -271,7 +352,7 @@ class ClearCount(Statistic):
             {
                 'name': 'count_observations',
                 'dtype': 'int16',
-                'nodata': 0,
+                'nodata': -1,
                 'units': '1'
             }
         ]
@@ -282,11 +363,11 @@ class MedNdwi(Statistic):
 
     def compute(self, data):
         # This is a special case to implement, after calculating ndwi as med. Finally median through time for ITEM product
-        med = (data.green-data.nir)/(data.green+data.nir)
+        med = (data.green - data.nir) / (data.green + data.nir)
         # stop all bad data and reset to the following
-        med.values[med.values<-1] = np.nan 
-        med.values[med.values>1] = np.nan
-        med.values[med.values==10] = np.nan
+        med.values[med.values < -1] = np.nan
+        med.values[med.values > 1] = np.nan
+        med.values[med.values == 10] = np.nan
         med = med.median(dim='time', keep_attrs=True, skipna=True)
         return med.rename('ndwi')
 
@@ -306,11 +387,11 @@ class StdNdwi(Statistic):
 
     def compute(self, data):
         # This is a special case to implementi std, after calculating ndwi as med and then standard deviation through time
-        med = (data.green-data.nir)/(data.green+data.nir)
+        med = (data.green - data.nir) / (data.green + data.nir)
         # stop all bad data and reset to the following
-        med.values[med.values<-1] = np.nan
-        med.values[med.values>1] = np.nan
-        med.values[med.values==10] = np.nan
+        med.values[med.values < -1] = np.nan
+        med.values[med.values > 1] = np.nan
+        med.values[med.values == 10] = np.nan
         med = med.std(dim='time', keep_attrs=True, skipna=True)
         return med.rename('std')
 
@@ -323,29 +404,7 @@ class StdNdwi(Statistic):
                 'units': '1'
             }
         ]
-        
 
-class Std(Statistic):
-    """Calculate standard deviation through time"""
-
-    def compute(self, data):
-        #index = data.reduce(dim='time', func=np.std, keep_attrs=True)
-        return data.std(dim='time', keep_attrs=True, skipna=True)
-        #def index_dataset(var):
-        #    return axisindex(data.data_vars[var.name].values, var.values)
-
-        #data_values = index.apply(index_dataset)
-        #return data_values        
-
-    def measurements(self, input_measurements):
-        output_measurements = [
-                {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
-                for measurement in input_measurements]
-        for key in output_measurements:
-            key['dtype'] = 'float32'
-            key['nodata'] = np.nan
-
-        return output_measurements
 
 class NoneStat(Statistic):
     def compute(self, data):
@@ -401,10 +460,16 @@ class WofsStats(Statistic):
         self.freq_only = freq_only
 
     def compute(self, data):
+        is_integer_type = np.issubdtype(data.water.dtype, np.integer)
+
+        if not is_integer_type:
+            raise StatsProcessingError("Attempting to count bit flags on non-integer data. Provided data is: {}"
+                                       .format(data.water))
+
         # 128 == clear and wet, 132 == clear and wet and masked for sea
         # The PQ sea mask that we use is dodgy and should be ignored. It excludes lots of useful data
-        wet = ((data.water == 128) + (data.water == 132)).sum(dim='time')
-        dry = (data.water == 0).sum(dim='time')
+        wet = ((data.water == 128) | (data.water == 132)).sum(dim='time')
+        dry = ((data.water == 0) | (data.water == 4)).sum(dim='time')
         clear = wet + dry
         frequency = wet / clear
         if self.freq_only:
@@ -470,9 +535,6 @@ class NormalisedDifferenceStats(Statistic):
 
 
 class IndexStat(SimpleStatistic):
-    def __init__(self, stat_func):
-        super(IndexStat, self).__init__(stat_func)
-
     def compute(self, data):
         index = super(IndexStat, self).compute(data)
 
@@ -493,9 +555,6 @@ class PerBandIndexStat(SimpleStatistic):
     :param stat_func: A function which takes an xarray.Dataset and returns an xarray.Dataset of indexes
     """
 
-    def __init__(self, stat_func):
-        super(PerBandIndexStat, self).__init__(stat_func)
-
     def compute(self, data):
         index = super(PerBandIndexStat, self).compute(data)
 
@@ -509,8 +568,8 @@ class PerBandIndexStat(SimpleStatistic):
 
         time_values = index.apply(
             index_time).rename(
-            OrderedDict((name, name + '_observed')
-                        for name in index.data_vars))
+                OrderedDict((name, name + '_observed')
+                            for name in index.data_vars))
 
         text_values = time_values.apply(_datetime64_to_inttime).rename(
             OrderedDict((name, name + '_date')
@@ -519,10 +578,10 @@ class PerBandIndexStat(SimpleStatistic):
         def index_source(var):
             return data.source.values[var.values]
 
-        time_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
-                                                                   for name in index.data_vars))
+        source_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
+                                                                     for name in index.data_vars))
 
-        return xarray.merge([data_values, time_values, text_values, count_values])
+        return xarray.merge([data_values, time_values, text_values, source_values])
 
     def measurements(self, input_measurements):
         index_measurements = [
@@ -641,7 +700,7 @@ class PerStatIndexStat(SimpleStatistic):
 
         for metadata_producer in self._metadata_producers:
             var_name, var_data = metadata_producer.compute(data, index)
-            data_values[var_data] = var_data
+            data_values[var_name] = var_data
 
         return data_values
 
@@ -682,9 +741,10 @@ class PercentileNoProv(Statistic):
         return data_values
 
 
-class Medoid(PerStatIndexStat):
+class MedoidSimple(PerStatIndexStat):
     def __init__(self):
-        super(Medoid, self).__init__(stat_func=_compute_medoid, extra_metadata_producers=[ObservedDaysSince()])
+        super(MedoidSimple, self).__init__(stat_func=_compute_medoid,
+                                           extra_metadata_producers=[ObservedDaysSince()])
 
 
 class MedoidNoProv(PerStatIndexStat):
@@ -692,10 +752,155 @@ class MedoidNoProv(PerStatIndexStat):
         super(MedoidNoProv, self).__init__(stat_func=_compute_medoid)
 
 
+def select_names(wanted_names, all_names):
+    """ Only select the measurements names in the wanted list. """
+    if wanted_names is None:
+        # default: include everything
+        return all_names
+
+    invalid = [name
+               for name in wanted_names
+               if name not in all_names]
+
+    if invalid:
+        msg = 'Specified measurements not found: {}'
+        raise StatsConfigurationError(msg.format(invalid))
+
+    return wanted_names
+
+
+class Medoid(Statistic):
+    """
+    Medoid (a multi-dimensional generalization of median) of a set of
+    observations through time.
+
+    :arg minimum_valid_observations: if not enough observations are available,
+                                     medoid will return `nodata` (default 0)
+    :arg input_measurements: list of measurements that contribute to medoid
+                             calculation
+    :arg output_measurements: list of reported measurements
+    :arg metadata_producers: list of additional metadata producers
+    """
+    def __init__(self,
+                 minimum_valid_observations=0,
+                 input_measurements=None,
+                 output_measurements=None,
+                 metadata_producers=None):
+
+        self.minimum_valid_observations = minimum_valid_observations
+        self.input_measurements = input_measurements
+        self.output_measurements = output_measurements
+
+        # attach observation time (in days) if no other metadata requested
+        if metadata_producers is None:
+            self._metadata_producers = [ObservedDaysSince()]
+        else:
+            self._metadata_producers = metadata_producers
+
+    def measurements(self, input_measurements):
+        base = super(Medoid, self).measurements(input_measurements)
+
+        selected_names = select_names(self.output_measurements,
+                                      [m['name'] for m in base])
+
+        selected = [m for m in base if m['name'] in selected_names]
+
+        extra = [producer.measurement()
+                 for producer in self._metadata_producers]
+
+        return selected + extra
+
+    def compute(self, data):
+        # calculate medoid using only the fields in `input_measurements`
+        input_data = data[select_names(self.input_measurements,
+                                       list(data.data_vars))]
+
+        # calculate medoid indices
+        arr = input_data.to_array().values
+        invalid = anynan(arr, axis=0)
+        index = medoid_indices(arr, invalid)
+
+        # pixels for which there is not enough data
+        count_valid = np.count_nonzero(~invalid, axis=0)
+        not_enough = count_valid < self.minimum_valid_observations
+
+        # only report the measurements requested
+        output_data = data[select_names(self.output_measurements,
+                                        list(data.data_vars))]
+
+        def reduction(var):
+            """ Extracts data at `index` for a `var` of type `DataArray`. """
+
+            def worker(var_array, axis, nodata):
+                # operates on the underlying `ndarray`
+                result = section_by_index(var_array, axis, index)
+                result[not_enough] = nodata
+                return result
+
+            return var.reduce(worker, dim='time', nodata=da_nodata(var))
+
+        def attach_metadata(result):
+            """ Attach additional metadata to the `result`. """
+            # used to attach time stamp on the medoid observations
+            for metadata_producer in self._metadata_producers:
+                var_name, var_data = metadata_producer.compute(data, index)
+                nodata = metadata_producer.measurement()['nodata']
+                var_data.data[not_enough] = nodata
+                result[var_name] = var_data
+
+            return result
+
+        return attach_metadata(output_data.apply(reduction,
+                                                 keep_attrs=True))
+
+    def __repr__(self):
+        if self.minimum_valid_observations == 0:
+            msg = 'Medoid'
+        else:
+            msg = 'Medoid<minimum_valid_observations={}>'
+        return msg.format(self.minimum_valid_observations)
+
+
+class FlagCounter(Statistic):
+    """
+    Count number of flagged pixels
+
+    Requires:
+    - The name of a `measurement` to base the count upon
+    - A list of `flags` that must be set in the measurement
+    """
+
+    def __init__(self, measurement, flags):
+        self.measurement = measurement
+        self.flags = flags
+
+    def compute(self, data):
+        datavar = data[self.measurement]
+
+        is_integer_type = np.issubdtype(datavar.dtype, np.integer)
+
+        if not is_integer_type:
+            raise StatsProcessingError("Attempting to count bit flags on non-integer data. Provided data is: {}"
+                                       .format(datavar))
+
+        mask = make_mask(datavar, **self.flags)
+        count = mask.sum(dim='time')
+        return count.to_dataset().rename({self.measurement: 'count'})
+
+    def measurements(self, input_measurements):
+        measurement_names = set(m['name'] for m in input_measurements)
+        assert self.measurement in measurement_names
+
+        return [{'name': 'count',
+                 'dtype': 'int16',
+                 'nodata': -1,
+                 'units': '1'}]
+
+
 class MaskedCount(Statistic):
     """
     Use the provided flags to count the number of True values through time.
-    
+
     """
 
     def __init__(self, flags):
@@ -713,6 +918,134 @@ class MaskedCount(Statistic):
                  'nodata': 65536}]  # No Data is required somewhere, but doesn't really make sense
 
 
+class ExternalPlugin(Statistic):
+    """
+    Run externally defined plugin.
+
+    """
+    def __init__(self, impl, *args, **kwargs):
+        from pydoc import locate  # TODO: probably should use importlib, but this works so easily
+
+        impl_class = locate(impl)
+
+        if impl_class is None:
+            raise StatsProcessingError("Failed to load external plugin: '{}'".format(impl))
+
+        self._impl = impl_class(*args, **kwargs)
+
+    def compute(self, data):
+        return self._impl.compute(data)
+
+    def measurements(self, input_measurements):
+        return self._impl.measurements(input_measurements)
+
+    def is_iterative(self):
+        return self._impl.is_iterative()
+
+    def make_iterative_proc(self):
+        return self._impl.make_iterative_proc()
+
+
+class MaskMultiCounter(Statistic):
+    # pylint: disable=redefined-builtin
+    def __init__(self, vars, nodata_flags=None):
+        """
+
+        vars:
+           - name: <output_variable_name: String>
+             simple: <optional Bool, default: False>
+             flags:
+               field_name1: expected_value1
+               field_name2: expected_value2
+
+        # optional, define input nodata as a mask
+        # when all inputs match this, then output will be set to nodata
+        # this allows to distinguish 0 from nodata
+
+        nodata_flags:
+           contiguous: False
+
+        If variable is marked simple, then there is no distinction between 0 and nodata.
+        """
+        self._vars = [v.copy() for v in vars]
+        self._nodata_flags = nodata_flags
+        self._valid_pq_mask = None
+
+    def measurements(self, input_measurements):
+        nodata = -1
+        bit_defs = input_measurements[0]['flags_definition']
+
+        if self._nodata_flags is not None:
+            self._valid_pq_mask = mk_masker(*create_mask_value(bit_defs, **self._nodata_flags), invert=True)
+
+        for v in self._vars:
+            flags = v['flags']
+            v['_mask'] = create_mask_value(bit_defs, **flags)
+            v['mask'] = mk_masker(*v['_mask'])
+
+        return [dict(name=v['name'],
+                     dtype='int16',
+                     units='1',
+                     nodata=nodata) for v in self._vars]
+
+    def is_iterative(self):
+        return True
+
+    def make_iterative_proc(self):
+        def _to_mask(ds):
+            da = first_var(ds)
+            return xarray.Dataset({v['name']: v['mask'](da) for v in self._vars},
+                                  attrs=ds.attrs)
+
+        # PQ -> BoolMasks: DataSet<Bool> -> Sum: DataSet<int16>
+        proc = compose_proc(_to_mask,
+                            proc=mk_incremental_sum(dtype='int16'))
+
+        if self._valid_pq_mask is None:
+            return proc
+
+        def invalid_data_mask(da):
+            mm = da.values
+            if mm.all():  # All pixels had at least one valid observation
+                return None
+            return np.logical_not(mm, out=mm)
+
+        # PQ -> ValidMask:DataArray<Bool> -> OR:DataArray<Bool> |> InvertMask:ndarray<Bool>|None
+        valid_proc = compose_proc(lambda ds: self._valid_pq_mask(first_var(ds)),
+                                  proc=mk_incremental_or(),
+                                  output_transform=invalid_data_mask)
+
+        _vars = {v['name']: v for v in self._vars}
+
+        def apply_mask(ds, mask, nodata=-1):
+            if mask is None:
+                return ds
+
+            for name, da in ds.data_vars.items():
+                simple = _vars[name].get('simple', False)
+                if not simple:
+                    da.values[mask] = nodata
+
+            return ds
+
+        # Counts      ----\
+        #                  +----------- Counts[ InvalidMask ] = nodata
+        # InvalidMask ----/
+
+        return broadcast_proc(proc, valid_proc, combine=apply_mask)
+
+    def compute(self, data):
+        proc = self.make_iterative_proc()
+
+        for i in range(data.time.shape[0]):
+            proc(data.isel(time=slice(i, i + 1)))
+
+        return proc()
+
+    def __repr__(self):
+        return 'MaskMultiCounter<{}>'.format(','.join([v['name'] for v in self._vars]))
+
+
 STATS = {
     'simple': ReducingXarrayStatistic,
     # 'min': SimpleXarrayReduction('min'),
@@ -722,6 +1055,7 @@ STATS = {
     'percentile_no_prov': PercentileNoProv,
     'medoid': Medoid,
     'medoid_no_prov': MedoidNoProv,
+    'medoid_simple': MedoidSimple,
     'simple_normalised_difference': NormalisedDifferenceStats,
     # 'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
     #                                         stats=['min', 'mean', 'max']),
@@ -733,6 +1067,11 @@ STATS = {
     'wofs_summary': WofsStats,
     'clear_count': ClearCount,
     'masked_count': MaskedCount,
+    'masked_multi_count': MaskMultiCounter,
+    'flag_counter': FlagCounter,
+    'external': ExternalPlugin,
+    'medndwi': MedNdwi,
+    'std': StdNdwi,
 }
 
 
@@ -761,12 +1100,10 @@ try:
     from hdmedians import nangeomedian
     import warnings
 
-
     def apply_geomedian(inarray, f, axis=3, eps=1e-3, **kwargs):
         assert len(inarray.shape) == 4
         assert axis == 3
 
-        maxiters = kwargs.get('maxiters', 500) 
         xs, ys, bands, times = inarray.shape
         output = np.ndarray((xs, ys, bands), dtype=inarray.dtype)
         with warnings.catch_warnings():  # Don't print error about computing mean of empty slice
@@ -774,11 +1111,10 @@ try:
             for ix in range(xs):
                 for iy in range(ys):
                     try:
-                        output[ix, iy, :] = f(inarray[ix, iy, :, :], eps=eps, maxiters=maxiters, axis=1)
+                        output[ix, iy, :] = f(inarray[ix, iy, :, :], eps=eps, axis=1)
                     except ValueError:
                         output[ix, iy, :] = np.nan
         return output
-
 
     class GeoMedian(Statistic):
         def __init__(self, eps=1e-3):
@@ -790,15 +1126,101 @@ try:
             :param xarray.Dataset data:
             :return: xarray.Dataset
             """
+            from_, to = self._vars_to_transpose(data)
             # Assert data shape/dims
-            data = data.to_array(dim='variable').transpose('x', 'y', 'variable', 'time').copy()
+            data = data.to_array(dim='variable').transpose(*from_).copy()
 
             data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
 
-            return data.transpose('variable', 'y', 'x').to_dataset(dim='variable')
+            return data.transpose(*to).to_dataset(dim='variable')
 
+        @staticmethod
+        def _vars_to_transpose(data):
+            """
+            We need to be able to handle data given to use in either Geographic or Projected form.
 
-    #STATS['geomedian'] = GeoMedian
+            The Data Cube provided xarrays will contain different dimensions, latitude/longitude or x/y, which means
+            the array reshaping takes different arguments.
+            """
+            is_proj = 'x' in data and 'y' in data
+            is_geo = 'longitude' in data and 'latitude' in data
+            if is_proj and is_geo:
+                raise StatsProcessingError(
+                    'Data to process contains both geographic and projected dimensions, unable to proceed')
+            elif not is_proj and not is_geo:
+                raise StatsProcessingError(
+                    'Data to process contains neither geographic nor projected dimensions, unable to proceed')
+            elif is_proj:
+                return ('x', 'y', 'variable', 'time'), ('variable', 'y', 'x')
+            else:
+                return ('longitude', 'latitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
+
+    STATS['geomedian'] = GeoMedian
+except ImportError:
+    pass
+
+try:
+    from pcm import gmpcm
+
+    class NewGeomedianStatistic(Statistic):
+        def __init__(self, eps=1e-3):
+            super(NewGeomedianStatistic, self).__init__()
+            self.eps = eps
+
+        def compute(self, data):
+            """
+            :param xarray.Dataset data:
+            :return: xarray.Dataset
+            """
+            # We need to reshape our data into Y, X, Band, Time
+
+            squashed_together_dimensions, normal_datacube_dimensions = self._vars_to_transpose(data)
+
+            squashed = data.to_array(dim='variable').transpose(*squashed_together_dimensions)
+            assert squashed.dims == squashed_together_dimensions
+
+            # Grab a copy of the coordinates we need for creating the output DataArray
+            output_coords = copy(squashed.coords)
+            del output_coords['time']
+
+            # Call Dale's function here
+            squashed = gmpcm(squashed.data)
+
+            # Jam the raw numpy array back into a pleasantly labelled DataArray
+            output_dims = squashed_together_dimensions[:-1]
+            as_datarray = xarray.DataArray(squashed, dims=output_dims, coords=output_coords)
+
+            return as_datarray.transpose(*normal_datacube_dimensions).to_dataset(dim='variable')
+
+        @staticmethod
+        def _vars_to_transpose(data):
+            """
+            We need to be able to handle data given to use in either Geographic or Projected form.
+
+            The Data Cube provided xarrays will contain different dimensions, latitude/longitude or x/y, which means
+            the array reshaping takes different arguments.
+
+            The dimension ordering returned by this function is specific to the Geometric Median PCM functions
+            included from the `pcm` module.
+
+            :return: pcm input array dimension order, datacube dimension ordering
+            """
+            is_projected = 'x' in data.dims and 'y' in data.dims
+            is_geographic = 'longitude' in data.dims and 'latitude' in data.dims
+
+            if is_projected and is_geographic:
+                raise StatsProcessingError('Data to process contains BOTH geographic and projected dimensions, '
+                                           'unable to proceed')
+            elif not is_projected and not is_geographic:
+                raise StatsProcessingError('Data to process contains NEITHER geographic nor projected dimensions, '
+                                           'unable to proceed')
+            elif is_projected:
+                return ('y', 'x', 'variable', 'time'), ('variable', 'y', 'x')
+            else:
+                return ('latitude', 'longitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
+
+    STATS['new_geomedian'] = NewGeomedianStatistic
+
 
     class PreciseGeoMedian(Statistic):
         def __init__(self, eps=1e-6, maxiters=5000):
@@ -832,15 +1254,11 @@ try:
             for key in output_measurements:
                 key['dtype'] = 'float32'
                 key['nodata'] = np.nan
-        
+
             return output_measurements
 
+
     STATS['precisegeomedian'] = PreciseGeoMedian
-    STATS['medndwi'] = MedNdwi
-    STATS['std'] = StdNdwi 
-    STATS['clearcount'] = ClearCount
-
-
 
 
 except ImportError:
