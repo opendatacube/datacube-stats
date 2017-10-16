@@ -1,0 +1,79 @@
+dist: trusty
+sudo: false  # Use the new travis docker based infrastructure
+
+git:
+  # We need a deeper depth for 'git descibe' to ensure
+  # we can reach the last tagged version.
+  depth: 99999
+
+language: python
+matrix:
+  include:
+    - python: "3.6"
+
+cache:
+  directories:
+    - $HOME/.cache/pip
+
+
+install:
+  - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+  - bash miniconda.sh -f -b -p $HOME/miniconda
+  - export PATH="$HOME/miniconda/bin:$PATH"
+  - hash -r
+
+  # travis specific goo
+  - conda config --set always_yes yes --set changeps1 no
+  - conda config --show-sources
+  - conda config --show
+
+  - conda config --prepend channels conda-forge
+  - conda update --all
+
+  # print conda info
+  - conda info -a
+
+  - conda create -n datacube datacube pytest mock boltons pytest-cov coveralls
+  - source activate datacube
+  - pip install pydash boltons pylint yamllint pytest-cov pep8
+  - pip install . --no-deps --upgrade
+
+  - pip freeze
+
+script:
+  - pytest --cov datacube_stats
+
+after_success:
+  - test $TRAVIS_PYTHON_VERSION = "3.6" && coveralls
+
+before_deploy:
+  - python setup.py sdist --dist-dir dist/$TRAVIS_PYTHON_VERSION
+  - DEPLOY_PATH=$TRAVIS_REPO_SLUG/${TRAVIS_TAG:-$TRAVIS_BRANCH}  # eg GeoscienceAustralia/agdc_statistics
+
+# On success, upload a package to an S3 Bucket. Used for continuous deployment.
+deploy:
+  # Deploy the source dist tarball to s3 for tags or the develop branch, so that it can be installed on other systems
+  # For tags, the object will be GeoscienceAustralia/agdc_statistics/
+  # For develop, the object will be GeoscienceAustralia/agdc_statistics/master/
+  - provider: s3
+    access_key_id: "AKIAJMZN4F5L5KXPQKVQ"
+    secret_access_key:
+      secure: "Tdro0JnATrM7/5NPo88Ejf6sOPTT5uTESkyAnWskn7n6XSqcoyESj0BOz+C5puxoyh9OrEPOOOORYqyyawBe9FXVh9Ja3BweKN6mpOcbx87zA6DfEYS8/Nn1N0xtSIEsJBMOtcY+bWXPEMbhqqPNV4OFIAOJ8Abg1HjOI1/BFhEkeZk3gyLPfaRJqoXNNbtOFXItqVbnbNeiyWgIsrpnXs97gFk2WuE1wsYkB7ltrPe2TtyLlQPUfUq4F3nwvxb+7Kl7u7kjFIdvS2DMf8BA1cESOmxb+OnpCxA8GDp/MP9lGnSTwqrkv9s5QDxN9ndxwfpeq72gw1E77jMB9fYnGZoI+IDxI1X0fPM5nnmXyPClITv9IHRw/qNUFUXOGjSTLZwjLBy1HujEzKQzGmi1FZM7O1+lkEWAyOwTLoDBQwxpPeapHyKtLK3CD3gXR/dxqqIM5zckQvpHydR7NpMN1km+dO3+2/eptmpsy69/dCbLkOxYC/A7UriR8xD//EeCxw3xFdV0+JiGsA+8QsJij1mUCWY/TJdgCnO7tOAd76QZwf6v4bd0UwoS95wilY5I3dFR2T1BoQ+e43kfguW7rGN5ttakq7obWL6zMzVMULOYEhinFc2dehMeUCkE4cFzsk6bam5+QzoemXU8VBLiS4nCG0NP1phrDCvFNVdB5jo="
+    bucket: "datacube-core-deployment"
+    region: "ap-southeast-2"
+    local_dir: dist
+    upload_dir: $DEPLOY_PATH
+    skip_cleanup: true
+    on:
+      all_branches: true  # Let the condition below decide if the branch is to be deployed
+      condition: $TRAVIS_BRANCH = "master" || ! -z "${TRAVIS_TAG}"  # master branch or tags
+      repo: GeoscienceAustralia/agdc_statistics
+      python: "3.6"
+
+notifications:
+  slack:
+    on_success: change
+    on_failure: always
+    on_pull_requests: false
+    rooms:
+      secure: kUlIXKlqxpnfNwJxgZdLy5XtfeYnc5Iq+OdvtyMFBJ94Iw3gP64KH8C/pUPqJblwiINj/vi5AF1TSaVG5VgSVF5zwEhAa4Ad0V9OZvsfJuLoE5/nFvkCdXeOU70/aMitF5SG7x6Q9LYhDqUDtS/XyGy48f2eiXN0Sa6/3KGQbyFXRvMDQercNR8LXXXjJZ0VjMsUD2Zl5FVy3FMHItVUTVlyMiBc/1fPJiSxOPz8ySSjeANnKuFIQN7/h+IbIrEVIJh8/T8SkOpuYceXBosr4HDfcTt3mFp0gT4Gc4TvYIjN/ykzomSY2+fkr0txSb7ao7+ZZvZ6XWfB6A/MnGNbmwSFmYX5fbBs493ErsIrCealsqvtyE2lvAj58vOv/5sFtBcD9d2hPUCCm345D7TGh6KMrSELfg4fhTiGfg181I6ZdQUR6veb9H1aPmE2Kh+XnZOaGP/uI7GkUeCRH92pPPjWf6/7YdxwFTsgggKxdE3FZVwYjO6DJBJ12iuXcOVz6MFXCpeiYNZPzXBtCF+tngGS9NEG6/CM1wP5CfbJEEbYXB0eL+qRQRkCgzYKQgvtreOfsfbMP1Oi2vBTq/JfdY888B3HVXJxUm1RPAAw4DsynbKzyCqoRECz6+X2zCR7i5DlcoEKuKURRA9DA0WPnMqUHAJsUS2n7jj58ANHo0o=

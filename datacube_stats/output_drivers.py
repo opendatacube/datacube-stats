@@ -10,6 +10,7 @@ import logging
 import operator
 import subprocess
 import tempfile
+import pydash
 from collections import OrderedDict
 from functools import reduce as reduce_
 from pathlib import Path
@@ -113,7 +114,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
     """
     valid_extensions = []
 
-    def __init__(self, task, storage, output_path, app_info=None):
+    def __init__(self, task, storage, output_path, app_info=None, global_attributes=None, var_attributes=None):
         self._storage = storage
 
         self._output_path = output_path
@@ -131,6 +132,12 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         self._geobox = task.geobox
         self._output_products = task.output_products
+
+        #: dict of str to str
+        self.global_attributes = global_attributes
+
+        #: dict of str to dict of str to str
+        self.var_attributes = var_attributes if var_attributes is not None else {}
 
     def close_files(self, completed_successfully):
         # Turn file_handles into paths
@@ -179,7 +186,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         make sure it is valid and doesn't already exist
         Make sure parent directories exist
         Switch it around for a temporary filename.
-        
+
         :return: Path to write output to
         """
         output_path = self._generate_output_filename(output_product, **kwargs)
@@ -205,19 +212,18 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     def _generate_output_filename(self, output_product, **kwargs):
         # Fill parameters from config file filename specification
-        x, y = self._task.tile_index
-        epoch_start, epoch_end = self._task.time_period
-        extra_params = kwargs.copy()
-        extra_params.update(self._task.extras)
+        params = {}
+        if self._task.tile_index is not None:
+            params['x'], params['y'] = self._task.tile_index
+
+        params['epoch_start'], params['epoch_end'] = self._task.time_period
+        params['name'] = output_product.name
+        params['stat_name'] = output_product.stat_name
+        params.update(output_product.extras)
+        params.update(kwargs)
 
         output_path = Path(self._output_path,
-                           output_product.file_path_template.format(
-                               x=x, y=y,
-                               epoch_start=epoch_start,
-                               epoch_end=epoch_end,
-                               name=output_product.name,
-                               stat_name=output_product.stat_name.upper(),
-                               **extra_params))
+                           output_product.file_path_template.format(**params))
         return output_path
 
     def _find_source_datasets(self, stat, uri=None):
@@ -225,11 +231,11 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         Find all the source datasets for a task
 
         Put them in order so that they can be assigned to a stacked output aligned against it's time dimension
-        :return: (datasets, sources)
-        datasets is a bunch of strings to dump, indexed on time
-        sources is a more structured form. An x-array of lists of dataset sources, indexed on time
-        
 
+        :return: (datasets, sources)
+
+        datasets is a bunch of strings to dump, indexed on time
+        sources is more structured. An x-array of lists of dataset sources, indexed on time
         """
         task = self._task
         geobox = self._task.geobox
@@ -242,6 +248,9 @@ class OutputDriver(with_metaclass(RegisterDriver)):
             # Align the data `Tile` with potentially many mask `Tile`s along their time axis
             all_sources = xarray.align(prod['data'].sources,
                                        *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
+            # TODO: The following can fail if prod['data'] and prod['masks'] have different times
+            # Which can happen in the case of a missing PQ Scene, where there is a scene overlap
+            # ie. Two overlapped NBAR scenes, One PQ scene (the later)
             if len(all_sources[0]) == 0:
                 _LOG.info("source files %s and mask data %s", prod['data'].sources, prod['masks'])
                 raise StatsOutputError('supplied sources do not align to the same time.\n'
@@ -270,7 +279,6 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         if not sources:
             raise StatsOutputError('No valid sources found, or supplied sources do not align to the same time.\n'
                                    'Unable to write dataset metadata.')
-        #valid_data=GeoPolygon.from_sources_extents(sources, geobox))
         datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
         datasets = datasets_to_doc(datasets)
         return datasets
@@ -310,20 +318,31 @@ class NetCDFCFOutputDriver(OutputDriver):
         return nco
 
     def _create_netcdf_var_params(self, stat):
+        def build_attrs(name, attrs):
+            return pydash.assign(dict(long_name=name,
+                                      coverage_content_type='modelResult'),  # defaults
+                                 attrs,                                      # Defined by plugin
+                                 self.var_attributes.get(name, {}))          # From config, highest priority
+
         chunking = self._storage['chunking']
         chunking = [chunking[dim] for dim in self._storage['dimension_order']]
 
         variable_params = {}
         for measurement in stat.data_measurements:
             name = measurement['name']
-            variable_params[name] = stat.output_params.copy()
-            variable_params[name]['chunksizes'] = chunking
-            variable_params[name].update(
+
+            v_params = stat.output_params.copy()
+            v_params['chunksizes'] = chunking
+            v_params.update(
                 {k: v for k, v in measurement.items() if k in _NETCDF_VARIABLE__PARAMETER_NAMES})
+
+            v_params['attrs'] = build_attrs(name, v_params.get('attr', {}))
+
+            variable_params[name] = v_params
         return variable_params
 
-    @staticmethod
-    def _nco_from_sources(sources, geobox, measurements, variable_params, filename):
+    def _nco_from_sources(self, sources, geobox, measurements, variable_params, filename):
+
         coordinates = OrderedDict((name, geometry.Coordinate(coord.values, coord.units))
                                   for name, coord in sources.coords.items())
         coordinates.update(geobox.coordinates)
@@ -334,7 +353,9 @@ class NetCDFCFOutputDriver(OutputDriver):
                                                             units=variable['units']))
                                 for variable in measurements)
 
-        return create_netcdf_storage_unit(filename, geobox.crs, coordinates, variables, variable_params)
+        return create_netcdf_storage_unit(filename, crs=geobox.crs, coordinates=coordinates,
+                                          variables=variables, variable_params=variable_params,
+                                          global_attributes=self.global_attributes)
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
         self._output_file_handles[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(

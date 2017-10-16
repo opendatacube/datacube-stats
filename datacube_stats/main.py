@@ -221,16 +221,16 @@ class StatsApp(object):
         stats_app.storage = config['storage']
         stats_app.sources = config['sources']
         stats_app.output_product_specs = config['output_products']
-        stats_app.filter_product = config.get('filter_product', '')
         # Write files to current directory if not set in config or command line
         stats_app.location = output_location or config.get('location', '')
         stats_app.computation = config.get('computation', {})
         stats_app.date_ranges = _configure_date_ranges(index, config)
-        stats_app.task_generator = _select_task_generator(input_region, stats_app.storage, stats_app.filter_product)
+        stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
         stats_app.output_driver = _prepare_output_driver(stats_app.storage)
         stats_app.global_attributes = config.get('global_attributes', {})
         stats_app.var_attributes = config.get('var_attributes', {})
         stats_app.process_completed = None
+
         return stats_app
 
     def validate(self):
@@ -397,6 +397,8 @@ def execute_task(task, output_driver, chunking, filter_product):
     datacube.set_options(reproject_threads=1)
     process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
 
+    process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
+
     try:
         with output_driver(task=task) as output_files:
             # currently for polygons process will load entirely
@@ -437,7 +439,7 @@ def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
             save(name, cast_back(proc(), stat.data_measurements))
 
 
-def load_process_save_chunk(output_files, chunk, task, timer, geom):
+def load_process_save_chunk(output_files, chunk, task, timer):
     try:
         with timer.time('loading_data'):
             data = load_data(chunk, task.sources)
@@ -447,15 +449,17 @@ def load_process_save_chunk(output_files, chunk, task, timer, geom):
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):
             _LOG.info("Computing %s in tile %s %s. Current timing: %s",
                       prod_name, task.tile_index, chunk, timer)
+
             measurements = stat.data_measurements
             with timer.time(prod_name):
-                # scale it to represent in float32 for precise geomedian
-                result = data / 10000 if stat.stat_name == 'precisegeomedian' else data
-                result = stat.compute(result)
+                result = stat.compute(data)
+
                 if idx == last_idx:  # make sure input data is released early
                     del data
+
                 # restore nodata values back
                 result = cast_back(result, measurements)
+
             # For each of the data variables, shove this chunk into the output results
             with timer.time('writing_data'):
                 for var_name, var in result.data_vars.items():  # TODO: Move this loop into output_files

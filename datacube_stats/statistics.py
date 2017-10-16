@@ -342,6 +342,8 @@ class ClearCount(Statistic):
     def compute(self, data):
         # TODO Fix Hardcoded 'time' and pulling out first data var
         _, sample_data_var = next(data.data_vars.items())
+
+        # FIXME, Probably buggy! Names don't match.
         count_values = sample_data_var.count(dim='time').rename('clear_observations')
         return count_values.to_dataset(name='count_observations')
 

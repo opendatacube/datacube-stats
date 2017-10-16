@@ -1,0 +1,104 @@
+## Define inputs to perform statistics on
+sources:
+  - product: wofs_albers
+    name: wofs_dry
+    measurements: [water]
+    group_by: solar_day
+
+# Overall analysis period is defined as the period of years for which the time interval statistics per epoch are calculated. Overall analysis period is provided by the user and must fall within the temporal bounds of the ARG dataset. Usually the overall analysis period is the total available within the ARG dataset (1987 to present).
+
+# Epoch is defined as a recurring length of time (usually a number of years) within the overall analysis period. Epoch lengths to be provided by the user. Examples of epochs are 5 or 10 year periods, or specific intervals such as might encompass a drought or wet period.
+
+# Time interval is defined as consistent and recurring start and end points within each epoch within the overall analysis period. Time interval start and end points to be provided by the user.
+
+# Overlapping or not overlapping
+
+
+## Define whether and how to chunk over time
+date_ranges:
+  start_date: 1970-01-01
+  end_date: 2020-01-01
+
+
+# Overall timeperiod
+# Recurring epoch
+#
+
+date_ranges:
+# Overall Analysis Period
+  start_date: 1970-01-01
+  end_date: 2070-01-01
+
+# Epoch - duration and overlap. duration = step_size for non-overlapping
+  stats_duration: 5y
+  step_size: 1y
+
+# Only between particular dates for each epoch
+  time_intervals_start_date: 06-01 # June
+  time_intervals_end_date: 09-01 # Until September
+
+
+
+
+
+
+
+
+date_ranges:
+  start_date: 1970-01-01
+  end_date: 2070-01-01
+  stats_duration: 100y
+  step_size: 100y
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Define output directory and file structure
+#location: '/short/v10/datacube/wofs-summary'
+location: '/g/data/u46/users/dra547/wofs/'
+
+storage:
+  driver: NetCDFCF
+
+  crs: EPSG:3577
+  tile_size:
+          x: 100000.0
+          y: 100000.0
+  resolution:
+          x: 25
+          y: -25
+  chunking:
+      x: 200
+      y: 200
+      time: 1
+  dimension_order: [time, y, x]
+
+## Computational
+computation:
+  chunking:
+    x: 400
+    y: 400
+
+## Define statistics to perform and how to store the data
+
+output_products:
+ - name: wofs_summary
+   statistic: wofs_summary
+   output_params:
+     zlib: True
+     fletcher32: True
+   file_path_template: 'WOFS_3577_{x}_{y}_{epoch_start:%Y%m%d}.nc'

@@ -4,9 +4,12 @@ Tests for the custom statistics functions
 """
 from __future__ import absolute_import
 
-from .statistics import nan_percentile, argpercentile, axisindex
+from datacube_stats.statistics import nan_percentile, argpercentile, axisindex
+import datacube_stats.statistics
 import numpy as np
 import xarray as xr
+
+import pytest
 
 
 def test_nan_percentile():
@@ -63,6 +66,7 @@ def test_xarray_reduce():
     assert dataarray.dims == ('x', 'y')
 
 
+@pytest.mark.xfail
 def test_masked_count():
 
     arr = np.random.random((100, 100, 5))
@@ -77,3 +81,23 @@ def test_masked_count():
     result = mc.compute(dataarray)
 
     assert result
+
+
+@pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'NewGeomedianStatistic'),
+                    reason='requires `pcm` module for new geomedian statistics')
+def test_new_geometric_median():
+    from datacube_stats.statistics import NewGeomedianStatistic
+
+    arr = np.random.random((5, 100, 100))
+    dataarray = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
+    dataset = xr.Dataset(data_vars={'band1': dataarray, 'band2': dataarray})
+
+    new_geomedian_stat = NewGeomedianStatistic()
+    result = new_geomedian_stat.compute(dataset)
+
+    assert result
+
+    assert result.band1.dims == result.band2.dims == ('y', 'x')
+
+    # The two bands had the same inputs, so should have the same result
+    assert (result.band1 == result.band2).all()

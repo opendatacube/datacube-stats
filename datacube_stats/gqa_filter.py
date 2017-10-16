@@ -1,5 +1,11 @@
 from __future__ import absolute_import, division, print_function
+"""
+Some functions to filter datasets based on their attached GQA.
 
+This functions probably shouldn't be used any more, since support for 
+this sort of filtering is now built into the ``datacube.index`` code
+and can be performed in the Database, instead of in Python land.
+"""
 import math
 
 from datacube.utils import intersects

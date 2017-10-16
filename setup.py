@@ -15,16 +15,18 @@ setup(
     packages=find_packages(),
     url='https://github.com/data-cube/',
     license='Apache',
-    author='Geosience Australia',
+    author='Geoscience Australia',
     author_email='datacube@ga.gov.au',
     description='Perform statistics operations on a Data Cube',
-    install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio', 'pyyaml', 'cloudpickle', ],
+    install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio', 'pyyaml',
+                      'cloudpickle', 'boltons', 'pydash'],
     setup_requires=['pytest-runner'],
     tests_require=['pytest', 'mock'],
     entry_points={
         'console_scripts': [
             'datacube-stats = datacube_stats.main:main',
             'datacube-stats-qsub = datacube_stats.cli.datacube_stats_qsub:qsub',
+            'datacube-tile-check = datacube_stats.cli.tile_check:main',
         ],
         'datacube.stats': [
             'wofs-summary = datacube_stats.statistics:WofsStats'
