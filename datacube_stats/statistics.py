@@ -342,10 +342,8 @@ class ClearCount(Statistic):
     def compute(self, data):
         # TODO Fix Hardcoded 'time' and pulling out first data var
         _, sample_data_var = next(data.data_vars.items())
-
-        # FIXME, Probably buggy! Names don't match.
         count_values = sample_data_var.count(dim='time').rename('clear_observations')
-        return count_values
+        return count_values.to_dataset(name='count_observations')
 
     def measurements(self, input_measurements):
         return [
@@ -359,17 +357,22 @@ class ClearCount(Statistic):
 
 
 class MedNdwi(Statistic):
+    import warnings
+
     """Calculate ndwi and then median image through time"""
 
     def compute(self, data):
-        # This is a special case to implement, after calculating ndwi as med. Finally median through time for ITEM product
+        # This is a special case to implement, after calculating ndwi as med.
+        # Finally median through time for ITEM product
         med = (data.green - data.nir) / (data.green + data.nir)
         # stop all bad data and reset to the following
-        med.values[med.values < -1] = np.nan
-        med.values[med.values > 1] = np.nan
-        med.values[med.values == 10] = np.nan
-        med = med.median(dim='time', keep_attrs=True, skipna=True)
-        return med.rename('ndwi')
+        with warnings.catch_warnings():  # Don't print error for not knowing nan
+            warnings.simplefilter("ignore")
+            med.values[med.values < -1] = np.nan
+            med.values[med.values > 1] = np.nan
+            med.values[med.values == 10] = np.nan
+            med = med.median(dim='time', keep_attrs=True, skipna=True)
+        return med.to_dataset(name='ndwi')
 
     def measurements(self, input_measurements):
         return [
@@ -383,22 +386,26 @@ class MedNdwi(Statistic):
 
 
 class StdNdwi(Statistic):
-    """ Calculate standard deviation on NDWI values """
+    import warnings
 
+    """ Calculate standard deviation on NDWI values """
     def compute(self, data):
-        # This is a special case to implementi std, after calculating ndwi as med and then standard deviation through time
+        # This is a special case to implementi std, after calculating ndwi as med and
+        # then standard deviation through time
         med = (data.green - data.nir) / (data.green + data.nir)
         # stop all bad data and reset to the following
-        med.values[med.values < -1] = np.nan
-        med.values[med.values > 1] = np.nan
-        med.values[med.values == 10] = np.nan
-        med = med.std(dim='time', keep_attrs=True, skipna=True)
-        return med.rename('std')
+        with warnings.catch_warnings():  # Don't print error not knowing nan
+            warnings.simplefilter("ignore")
+            med.values[med.values < -1] = np.nan
+            med.values[med.values > 1] = np.nan
+            med.values[med.values == 10] = np.nan
+            med = med.std(dim='time', keep_attrs=True, skipna=True)
+        return med.to_dataset(name='stddev')
 
     def measurements(self, input_measurements):
         return [
             {
-                'name': 'std',
+                'name': 'stddev',
                 'dtype': 'float32',
                 'nodata': np.nan,
                 'units': '1'
@@ -1221,6 +1228,11 @@ try:
 
     STATS['new_geomedian'] = NewGeomedianStatistic
 
+except ImportError:
+    pass
+
+try:
+    from hdmedians import nangeomedian
 
     class PreciseGeoMedian(Statistic):
         def __init__(self, eps=1e-6, maxiters=5000):
@@ -1256,8 +1268,6 @@ try:
                 key['nodata'] = np.nan
 
             return output_measurements
-
-
     STATS['precisegeomedian'] = PreciseGeoMedian
 
 

@@ -1,61 +1,56 @@
 """
-Create statistical summaries command
+Create statistical summaries command.
+
+This command is run as ``datacube-stats``, all operation are driven by a configuration file.
 
 """
 from __future__ import absolute_import, print_function
 
+import copy
 import logging
 from functools import partial
 from textwrap import dedent
-
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
+from .utils.qsub import with_qsub_runner
 
 import click
-import cloudpickle
 import numpy as np
 import pandas as pd
 import xarray
 import yaml
-import fiona
-import itertools
+import pydash
 import rasterio.features
-import sys
+import fiona
 
 import datacube_stats
 import datacube
 from datacube import Datacube
 from datacube.api import make_mask, GridWorkflow, Tile
-from datacube.api.query import query_group_by, query_geopolygon, Query
+from datacube.api.query import query_group_by, query_geopolygon
 from datacube.model import GridSpec
 from datacube.utils.geometry import CRS, GeoBox, Geometry
-from datacube.storage.masking import mask_invalid_data
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function
-from datacube.utils.dates import date_sequence
+from datacube_stats.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
-from datacube_stats.runner import run_tasks
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
-from datacube_stats.utils import tile_iter
-from datacube_stats.utils.tide_utility import range_tidal_data, extract_otps_computed_data
-from datacube_stats.utils.tide_utility import extract_otps_computed_data
-from datacube_stats.utils.tide_utility import get_hydrologic_months, filter_sub_class
-from otps.predict_wrapper import predict_tide
-from otps import TimePoint
-from datetime import timedelta
+from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
+from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
+from datacube_stats.utils.tide_utility import range_tidal_data, extract_otps_computed_data, geom_from_file
+from datacube_stats.utils.tide_utility import get_hydrological_months, filter_sub_class, list_poly_dates
 from datetime import datetime
-from operator import itemgetter
+
+from .utils.query import multi_product_list_cells
+from .utils import report_unmatched_datasets
+from .utils import sorted_interleave
+from .timer import wrap_in_timer
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
 DEFAULT_GROUP_BY = 'time'
 DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
-LS7_SLC_DT = datetime.strptime("2003-05-01", "%Y-%m-%d")
 
 
 def _print_version(ctx, param, value):
@@ -78,45 +73,67 @@ def _print_version(ctx, param, value):
     ctx.exit()
 
 
+def list_statistics(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+
+#       click.echo("{:>20} | {}".format(name, inspect.getdoc(stat)))
+    for name, stat in STATS.items():
+        click.echo(name)
+        # click.echo(inspect.getdoc(stat))
+        # click.echo('\n\n')
+#     click.echo(pd.Series({name: inspect.getdoc(stat) for name, stat in STATS.items()}))
+
+    ctx.exit()
+
+
 @click.command(name='datacube-stats')
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
                 callback=to_pathlib)
-@click.option('--queue-size', type=click.IntRange(1, 100000), default=2000,
-              help='Number of tasks to queue at the start')
 @click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
                                                       'single tile_index specified as [X] [Y]')
 @click.option('--output-location', help='Override output location in configuration file')
+@click.option('--year', type=int, help='Override time period in configuration file')
+@click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
 @ui.global_cli_options
-@ui.executor_cli_options
+@with_qsub_runner()
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, executor, queue_size, save_tasks, load_tasks, tile_index, output_location):
+def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
+         tile_index, output_location, year):
+    if qsub is not None:
+        # TODO: verify config before calling qsub submit
+        click.echo(repr(qsub))
+        r, _ = qsub(auto=True)
+        return r
+
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = create_stats_app(config, index, tile_index, output_location)
-    app.queue_size = queue_size
+    app = StatsApp.from_configuration_file(config, index, tile_index, output_location, year)
     app.validate()
 
     if save_tasks:
         app.save_tasks_to_file(save_tasks)
         failed = 0
     elif load_tasks:
-        successful, failed = app.run(executor, load_tasks)
+        successful, failed = app.run(runner, load_tasks)
     else:
-        successful, failed = app.run(executor)
+        successful, failed = app.run(runner)
 
     timer.pause('main')
     _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
 
     if failed > 0:
-        raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful))
+        raise click.ClickException('%s of %s tasks were not completed successfully.' % (failed, successful + failed))
+
+    return 0
 
 
 def _log_setup():
@@ -151,8 +168,8 @@ class StatsApp(object):
         #: How to slice a task up spatially to to fit into memory.
         self.computation = None
 
-        #: Define tide class to accept all attributes
-        self.tide_class = []
+        #: Define filter product to accept all derive product attributes
+        self.filter_product = []
 
         #: An iterable of date ranges.
         self.date_ranges = None
@@ -168,11 +185,53 @@ class StatsApp(object):
         #: An open database connection
         self.index = None
 
+        self.global_attributes = None
+        self.var_attributes = None
+
         #: A function to process the result of a complated task
         #: Takes a single argument of the task result
         self.process_completed = None
 
         self.queue_size = 50
+
+    @classmethod
+    def from_configuration_file(cls, config, index=None, tile_index=None, output_location=None, year=None):
+        """
+        Create a StatsApp to run a processing job, based on a configuration file
+
+        :param config: dictionary based configuration
+        :param index: open database connection
+        :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
+        :return: read to run StatsApp
+        """
+        input_region = config.get('input_region')
+        if tile_index and not input_region:
+            input_region = {'tile': tile_index}
+
+        if year is not None:
+            if 'date_ranges' not in config:
+                config['date_ranges'] = {}
+
+            config['date_ranges']['start_date'] = '{}-01-01'.format(year)
+            config['date_ranges']['end_date'] = '{}-01-01'.format(year + 1)
+
+        stats_app = cls()
+        stats_app.index = index
+        stats_app.config_file = config
+        stats_app.storage = config['storage']
+        stats_app.sources = config['sources']
+        stats_app.output_product_specs = config['output_products']
+        stats_app.filter_product = config.get('filter_product', '')
+        # Write files to current directory if not set in config or command line
+        stats_app.location = output_location or config.get('location', '')
+        stats_app.computation = config.get('computation', {})
+        stats_app.date_ranges = _configure_date_ranges(index, config)
+        stats_app.task_generator = _select_task_generator(input_region, stats_app.storage, stats_app.filter_product)
+        stats_app.output_driver = _prepare_output_driver(stats_app.storage)
+        stats_app.global_attributes = config.get('global_attributes', {})
+        stats_app.var_attributes = config.get('var_attributes', {})
+        stats_app.process_completed = None
+        return stats_app
 
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
@@ -184,7 +243,7 @@ class StatsApp(object):
         assert callable(self.output_driver)
         assert hasattr(self.output_driver, 'open_output_files')
         assert hasattr(self.output_driver, 'write_data')
-        assert callable(self.process_completed)
+        assert self.process_completed is None or callable(self.process_completed)
 
     def _check_consistent_measurements(self):
         """Part of configuration validation"""
@@ -218,7 +277,7 @@ class StatsApp(object):
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
 
-    def run(self, executor, task_file=None):
+    def run(self, runner, task_file=None):
         if task_file:
             tasks = unpickle_stream(task_file)
         else:
@@ -228,15 +287,16 @@ class StatsApp(object):
         output_driver = partial(self.output_driver,
                                 output_path=self.location,
                                 app_info=app_info,
-                                storage=self.storage)
+                                storage=self.storage,
+                                global_attributes=self.global_attributes,
+                                var_attributes=self.var_attributes)
         task_runner = partial(execute_task,
                               output_driver=output_driver,
-                              chunking=self.computation['chunking'], tide_class=self.tide_class)
-        return run_tasks(tasks,
-                         executor,
-                         task_runner,
-                         self.process_completed,
-                         queue_size=self.queue_size)
+                              chunking=self.computation.get('chunking', {}),
+                              filter_product=self.filter_product)
+        return runner(tasks,
+                      task_runner,
+                      self.process_completed)
 
     def save_tasks_to_file(self, filename):
         _LOG.debug('Saving tasks to %s.', filename)
@@ -266,9 +326,12 @@ class StatsApp(object):
         :param output_products: List of output product definitions
         :return:
         """
+        is_iterative = all(op.is_iterative() for op in output_products.values())
+
         for task in self.task_generator(index=self.index, date_ranges=self.date_ranges,
                                         sources_spec=self.sources):
             task.output_products = output_products
+            task.is_iterative = is_iterative
             yield task
 
     def configure_outputs(self, metadata_type='eo'):
@@ -284,30 +347,45 @@ class StatsApp(object):
         measurements = _source_measurement_defs(self.index, self.sources)
 
         metadata_type = self.index.metadata_types.get_by_name(metadata_type)
+
+        stats_metadata = _get_stats_metadata(self.config_file)
+
         for output_spec in self.output_product_specs:
             output_products[output_spec['name']] = OutputProduct.from_json_definition(
                 metadata_type=metadata_type,
                 input_measurements=measurements,
                 storage=self.storage,
-                definition=output_spec)
+                definition=output_spec,
+                stats_metadata=stats_metadata)
 
-        # TODO: Create the output product in the database
+        # TODO: Write the output product to disk somewhere
 
         return output_products
+
+    def __str__(self):
+        return "StatsApp: sources=({}), output_driver={}, output_products=({})".format(
+            ', '.join(source['product'] for source in self.sources),
+            self.ouput_driver,
+            ', '.join(out_spec['name'] for out_spec in self.output_product_specs)
+        )
+
+    def __repr__(self):
+        return str(self)
 
 
 class StatsProcessingException(Exception):
     pass
 
-def geometry_mask(geoms, geobox, all_touched=False, invert=False):
 
+def geometry_mask(geoms, geobox, all_touched=False, invert=False):
     return rasterio.features.geometry_mask([geom.to_crs(geobox.crs) for geom in geoms],
                                            out_shape=geobox.shape,
                                            transform=geobox.affine,
                                            all_touched=all_touched,
                                            invert=invert)
 
-def execute_task(task, output_driver, chunking, tide_class):
+
+def execute_task(task, output_driver, chunking, filter_product):
     """
     Load data, run the statistical operations and write results out to the filesystem.
 
@@ -317,21 +395,21 @@ def execute_task(task, output_driver, chunking, tide_class):
     """
     timer = MultiTimer().start('total')
     datacube.set_options(reproject_threads=1)
-    geom = None
+    process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
+
     try:
         with output_driver(task=task) as output_files:
-            # check for polygon files where chunking is set to zero and expected tide_class in config file
-            import pdb; pdb.set_trace()
-            if chunking['x'] == 0:
+            # currently for polygons process will load entirely
+            if len(chunking) == 0:
                 chunking = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]}
-                geom =  tide_class.get('geom')
+                geom = geom_from_file(filter_product)
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-                load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer, geom)
+                process_chunk(output_files, sub_tile_slice, task, timer, geom)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
     except Exception as e:
         _LOG.error("Error processing task: %s", task)
-        raise StatsProcessingException("Error processing task: %s" % task) from e
+        raise StatsProcessingException("Error processing task: %s" % task)
 
     timer.pause('total')
     _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
@@ -339,43 +417,51 @@ def execute_task(task, output_driver, chunking, tide_class):
     return task
 
 
-def load_process_save_chunk(output_files, sub_tile_slice, chunking, task, timer, geom):
+def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
+    procs = [(stat.make_iterative_proc(), name, stat) for name, stat in task.output_products.items()]
+
+    def update(ds):
+        for proc, name, _ in procs:
+            with timer.time(name):
+                proc(ds)
+
+    def save(name, ds):
+        for var_name, var in ds.data_vars.items():
+            output_files.write_data(name, var_name, chunk, var.values)
+
+    for ds in load_data_lazy(chunk, task.sources, timer=timer):
+        update(ds)
+
+    with timer.time('writing_data'):
+        for proc, name, stat in procs:
+            save(name, cast_back(proc(), stat.data_measurements))
+
+
+def load_process_save_chunk(output_files, chunk, task, timer, geom):
     try:
-        data = _load_data(sub_tile_slice, task.sources)
-        #_LOG.info("geobox received %s", data.geobox)
-        for prod_name, stat in task.output_products.items():
-            _LOG.info("Doing for stat %s", stat.stat_name)
-            for chunk in tile_iter(task.sample_tile, chunking):
-                _LOG.info("Computing %s in tile %s %s. Current timing: %s",
-                          prod_name, task.tile_index, chunk, timer)
-                timer.start(prod_name)
+        with timer.time('loading_data'):
+            data = load_data(chunk, task.sources)
+            # mask as per geometry now
+            data = data.where(geometry_mask([geom], data.geobox, invert=True)) if geom else data
+        last_idx = len(task.output_products) - 1
+        for idx, (prod_name, stat) in enumerate(task.output_products.items()):
+            _LOG.info("Computing %s in tile %s %s. Current timing: %s",
+                      prod_name, task.tile_index, chunk, timer)
+            measurements = stat.data_measurements
+            with timer.time(prod_name):
                 # scale it to represent in float32 for precise geomedian
-                ndata = data/10000 if stat.stat_name == 'precisegeomedian' else data
-                # checking for polygon shape
-                if geom:
-                    # For polygon computed data is DataArray
-                    geobox = data.geobox
-                    ndata = stat.compute(ndata.isel(x=slice(chunk[2].start, chunk[2].stop),
-                            y=slice(chunk[1].start, chunk[1].stop)))
-                    # mask as per geometry now. Ideally Mask should have been done before computation
-                    # But masking before computation is a problem as it gets 0 value
-                    mask = geometry_mask([geom], geobox, invert=True)
-                    mask = mask[chunk[1].start:chunk[1].stop, chunk[2].start:chunk[2].stop]
-                    ndata = ndata.where(mask)
-                else:
-                    ndata = stat.compute(ndata)
-                timer.pause(prod_name)
-                # For each of the data variables, shove this chunk into the output results
-                timer.start('writing_data')
-                # If it is DataArray deals here
-                if type(ndata) is xarray.DataArray:
-                    output_files.write_data(prod_name, ndata.name, chunk, ndata.values)
-                else:
-                    for var_name, var in ndata.data_vars.items():  # TODO: Move this loop into output_files
-                        output_files.write_data(prod_name, var_name, chunk, var.values)
-                timer.pause('writing_data')
+                result = data / 10000 if stat.stat_name == 'precisegeomedian' else data
+                result = stat.compute(result)
+                if idx == last_idx:  # make sure input data is released early
+                    del data
+                # restore nodata values back
+                result = cast_back(result, measurements)
+            # For each of the data variables, shove this chunk into the output results
+            with timer.time('writing_data'):
+                for var_name, var in result.data_vars.items():  # TODO: Move this loop into output_files
+                    output_files.write_data(prod_name, var_name, chunk, var.values)
+
     except EmptyChunkException:
-        _LOG.info("CHUNK ERROR %s ", task.tile_index)
         _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
                    chunk, task)
 
@@ -384,22 +470,37 @@ class EmptyChunkException(Exception):
     pass
 
 
-def _load_data(sub_tile_slice, sources):
+def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
+
+    def by_time(ds):
+        return ds.time.values[0]
+
+    data = [load_masked_data_lazy(sub_tile_slice, source, reverse=reverse, src_idx=idx, timer=timer)
+            for idx, source in enumerate(sources)]
+
+    if len(data) == 1:
+        return data[0]
+
+    return sorted_interleave(*data, key=by_time, reverse=reverse)
+
+
+def load_data(sub_tile_slice, sources):
     """
     Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
 
     :param sub_tile_slice: A portion of a tile, tuple coordinates
     :param sources: a dictionary containing `data`, `spec` and `masks`
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
-   
     """
-    datasets = [_load_masked_data(sub_tile_slice, source_prod)
+    datasets = [load_masked_data(sub_tile_slice, source_prod)
                 for source_prod in sources]  # list of datasets
     datasets = _mark_source_idx(datasets)
     datasets = _remove_emptys(datasets)
     if len(datasets) == 0:
         raise EmptyChunkException()
 
+    # TODO: Add check for compatible data variable attributes
+    # flags_definition between pq products is different and is silently dropped
     datasets = xarray.concat(datasets, dim='time')  # Copies all the data
     if len(datasets.time) == 0:
         raise EmptyChunkException()
@@ -421,12 +522,119 @@ def _remove_emptys(datasets):
             if dataset is not None]
 
 
-def _load_masked_data(sub_tile_slice, source_prod):
-    data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
-                             measurements=source_prod['spec'].get('measurements'),
-                             skip_broken_datasets=True)
+def load_masked_tile_lazy(tile, masks,
+                          mask_nodata=False,
+                          mask_inplace=False,
+                          reverse=True,
+                          src_idx=None,
+                          timer=None,
+                          **kwargs):
+    """Given data tile and an optional list of masks load data and masks apply
+    masks to data and return one time slice at a time.
+
+
+    tile -- Tile object for main data
+    masks -- [(Tile, flags, load_args)] list of triplets describing mask to be applied to data.
+             Tile -- tile objects describing where mask data files are
+             flags -- dictionary of flags to be checked
+             load_args - dictionary of load parameters (e.g. fuse_func, measurements, etc.)
+
+    mask_nodata  -- Convert data to float32 replacing nodata values with nan
+    mask_inplace -- Apply mask without conversion to float
+    reverse      -- Return data earliest observation first
+    src_idx      -- If set adds extra axis called source with supplied value
+    timer        -- Optionally track time
+
+
+    Returns an iterator of DataFrames one time-slice at a time
+
+    """
+
+    ii = range(tile.shape[0])
+    if reverse:
+        ii = ii[::-1]
+
+    def load_slice(i):
+        loc = [slice(i, i+1), slice(None), slice(None)]
+        d = GridWorkflow.load(tile[loc], **kwargs)
+
+        if mask_nodata:
+            d = sensible_mask_invalid_data(d)
+
+        # Load all masks and combine them all into one
+        mask = None
+        for m_tile, flags, load_args in masks:
+            m = GridWorkflow.load(m_tile[loc], **load_args)
+            m, *other = m.data_vars.values()
+            m = make_mask(m, **flags)
+
+            if mask is None:
+                mask = m
+            else:
+                mask &= m
+
+        if mask is not None:
+            # Apply mask in place if asked or if we already performed
+            # conversion to float32, this avoids reallocation of memory and
+            # hence increases the largest data set size one can load without
+            # running out of memory
+            if mask_inplace or mask_nodata:
+                d = sensible_where_inplace(d, mask)
+            else:
+                d = sensible_where(d, mask)
+
+        if src_idx is not None:
+            d.coords['source'] = ('time', np.repeat(src_idx, d.time.size))
+
+        return d
+
+    extract = wrap_in_timer(load_slice, timer, 'loading_data')
+
+    for i in ii:
+        yield extract(i)
+
+
+def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False, src_idx=None, timer=None):
+    data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
+    data_tile = source_prod['data'][sub_tile_slice]
+    data_measurements = source_prod['spec'].get('measurements')
 
     mask_nodata = source_prod['spec'].get('mask_nodata', True)
+    mask_inplace = source_prod['spec'].get('mask_inplace', False)
+    masks = []
+
+    if 'masks' in source_prod and 'masks' in source_prod['spec']:
+        for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
+            flags = mask_spec['flags']
+            mask_fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
+            opts = dict(skip_broken_datasets=True,
+                        fuse_func=mask_fuse_func,
+                        measurements=[mask_spec['measurement']])
+
+            masks.append((mask_tile[sub_tile_slice], flags, opts))
+
+    return load_masked_tile_lazy(data_tile,
+                                 masks,
+                                 mask_nodata=mask_nodata,
+                                 mask_inplace=mask_inplace,
+                                 reverse=reverse,
+                                 src_idx=src_idx,
+                                 timer=timer,
+                                 fuse_func=data_fuse_func,
+                                 measurements=data_measurements,
+                                 skip_broken_datasets=True)
+
+
+def load_masked_data(sub_tile_slice, source_prod):
+    data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
+    data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
+                             measurements=source_prod['spec'].get('measurements'),
+                             fuse_func=data_fuse_func,
+                             skip_broken_datasets=True)
+
+    mask_inplace = source_prod['spec'].get('mask_inplace', False)
+    mask_nodata = source_prod['spec'].get('mask_nodata', True)
+
     if mask_nodata:
         data = sensible_mask_invalid_data(data)
 
@@ -435,48 +643,32 @@ def _load_masked_data(sub_tile_slice, source_prod):
     if completely_empty:
         # Discard empty slice
         return None
+
     if 'masks' in source_prod and 'masks' in source_prod['spec']:
         for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
             if mask_tile is None:
                 # Discard data due to no mask data
                 return None
-            fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
+            mask_fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
             mask = GridWorkflow.load(mask_tile[sub_tile_slice],
                                      measurements=[mask_spec['measurement']],
-                                     fuse_func=fuse_func,
+                                     fuse_func=mask_fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
             mask = make_mask(mask, **mask_spec['flags'])
-            data = sensible_where(data, mask)
+            if mask_inplace:
+                data = sensible_where_inplace(data, mask)
+            else:
+                data = sensible_where(data, mask)
             del mask
     return data
 
 
-def sensible_mask_invalid_data(data):
-    # TODO This should be pushed up to datacube-core
-    # xarray.DataArray.where() converts ints to floats, since NaNs are used to represent nodata
-    # by default, this uses float64, which is way over the top for an int16 value, so
-    # lets convert to float32 first, to save a bunch of memory.
-    data = _convert_to_floats(data)  # This is stripping out variable attributes
-    return mask_invalid_data(data)
-
-
-def sensible_where(data, mask):
-    data = _convert_to_floats(data)  # This is stripping out variable attributes
-    return data.where(mask)
-
-
-def _convert_to_floats(data):
-    # Use float32 instead of float64 if input dtype is int16
-    assert isinstance(data, xarray.Dataset)
-    for name, dataarray in data.data_vars.items():
-        if dataarray.dtype != np.int16:
-            return data
-    return data.apply(lambda d: d.astype(np.float32), keep_attrs=True)
-
-
 def _source_measurement_defs(index, sources):
     """
-    Look up desired measurements from sources in the database index
+
+    Look up desired measurements from sources in the database index. Note that
+    multiple sources are meant to be of the same shape, we only support
+    combining equivalent products from different sensors.
 
     :return: list of measurement definitions
     """
@@ -491,77 +683,44 @@ def _source_measurement_defs(index, sources):
                                           'are %s' % (first_source['product'], first_source['measurements'],
                                                       other_source['product'], other_source['measurements']))
 
-    source_measurements = index.products.get_by_name(first_source['product']).measurements
+    # TODO: should probably check that all products exist and are of compatible shape
+
+    available_measurements = index.products.get_by_name(first_source['product']).measurements
+    requested_measurements = first_source.get('measurements', available_measurements.keys())
 
     try:
-        measurements = [source_measurements[name] for name in first_source['measurements']]
+        return [available_measurements[name] for name in requested_measurements]
     except KeyError:
-        measurements = source_measurements
-
-    return measurements
+        raise StatsConfigurationError('Some of the requested measurements were not present in the product definition')
 
 
 def _get_app_metadata(config_file):
+    config = copy.deepcopy(config_file)
+    if 'global_attributes' in config:
+        del config['global_attributes']
     return {
         'lineage': {
             'algorithm': {
                 'name': 'datacube-stats',
                 'version': datacube_stats.__version__,
                 'repo_url': 'https://github.com/GeoscienceAustralia/agdc_statistics.git',
-                'parameters': {'configuration_file': str(config_file)}
+                'parameters': {'configuration_file': config_file}
             },
         }
     }
 
 
-def _find_periods_with_data(index, product_names, period_duration='1 day',
-                            start_date='1985-01-01', end_date='2000-01-01'):
-    # TODO: Read 'simple' job configuration from file
-    query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
-
-    valid_dates = set()
-    for product in product_names:
-        counts = index.datasets.count_product_through_time(period_duration, product=product,
-                                                           **Query(**query).search_terms)
-        valid_dates.update(time_range for time_range, count in counts if count > 0)
-
-    for time_range in sorted(valid_dates):
-        yield time_range.begin, time_range.end
-
-
-def create_stats_app(config, index=None, tile_index=None, output_location=None):
+def _get_stats_metadata(cfg):
+    """ Build metadata.stats subtree for the product definition
     """
-    Create a StatsApp to run a processing job, based on a configuration file
-
-    :param config: dictionary based configuration
-    :param index: open database connection
-    :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
-    :return: read to run StatsApp
-    """
-    input_region = config.get('input_region')
-    if tile_index and not input_region:
-        input_region = {'tile': tile_index}
-
-    stats_app = StatsApp()
-    stats_app.index = index
-    stats_app.config_file = config
-    stats_app.storage = config['storage']
-    stats_app.sources = config['sources']
-    stats_app.output_product_specs = config['output_products']
-    stats_app.location = config.get('location', output_location)  # Write files to current directory if not set in config
-    stats_app.computation = config.get('computation', DEFAULT_COMPUTATION_OPTIONS)
-    stats_app.tide_class = config['tide_class']
-    stats_app.date_ranges = _configure_date_ranges(index, config)
-    stats_app.task_generator = _create_task_generator(config.get('input_region'), stats_app.tide_class, stats_app.storage)
-    stats_app.output_driver = _prepare_output_driver(stats_app.storage)
-    stats_app.process_completed = do_nothing  # TODO: Save dataset to database
-
-    return stats_app
+    period = pydash.get(cfg, 'date_ranges.stats_duration', '*')
+    step = pydash.get(cfg, 'date_ranges.step_size', '*')
+    return dict(period=period, step=step)
 
 
 def _prepare_output_driver(storage):
     try:
-        return OUTPUT_DRIVERS[storage['driver']]
+        return OUTPUT_DRIVERS[storage['driver'].replace(' ', '')]
     except KeyError:
         if 'driver' in storage:
             msg = 'Invalid output driver "{}" specified.'
@@ -575,70 +734,151 @@ def _configure_date_ranges(index, config):
     if 'date_ranges' not in config:
         raise StatsConfigurationError(dedent("""\
         No Date Range specification was found in the stats configuration file, please add a section similar to:
-        
+
         date_ranges:
           start_date: 2010-01-01
           end_date: 2011-01-01
           stats_duration: 3m
           step_size: 3m
-        
+
         This will produce 4 x quarterly statistics from the year 2010.
         """))
-    date_ranges, sources = config['date_ranges'], config['sources']
-    if date_ranges.get('type', 'simple') == 'simple':
-        return list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
-                                  end=pd.to_datetime(date_ranges['end_date']),
-                                  stats_duration=date_ranges['stats_duration'],
-                                  step_size=date_ranges['step_size']))
+    date_ranges = config['date_ranges']
+    if 'start_date' not in date_ranges or 'end_date' not in date_ranges:
+        raise StatsConfigurationError("Must specified both `start_date` and `end_date`"
+                                      " in `date_ranges:` section of configuration")
+
+    output = list()
+
+    if 'stats_duration' not in date_ranges and 'step_size' not in date_ranges:
+        start = pd.to_datetime(date_ranges['start_date'])
+        end = pd.to_datetime(date_ranges['end_date'])
+        output = [(start, end)]
+
+    elif date_ranges.get('type', 'simple') == 'simple':
+        output = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
+                                    end=pd.to_datetime(date_ranges['end_date']),
+                                    stats_duration=date_ranges['stats_duration'],
+                                    step_size=date_ranges['step_size']))
     elif date_ranges['type'] == 'find_daily_data':
+        sources = config['sources']
         product_names = [source['product'] for source in sources]
-        return list(_find_periods_with_data(index, product_names=product_names,
-                                            start_date=date_ranges['start_date'],
-                                            end_date=date_ranges['end_date']))
+        output = list(_find_periods_with_data(index, product_names=product_names,
+                                              start_date=date_ranges['start_date'],
+                                              end_date=date_ranges['end_date']))
     else:
         raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
                                       'type=find_daily_data')
+    _LOG.debug("Selecting data for date ranges: %s", output)
 
-def _create_task_generator(input_region, tide_class, storage):
-    grid_spec = _make_grid_spec(storage)
-   
+    if not output:
+        raise StatsConfigurationError('Time period configuration results in 0 periods of interest.')
+    return output
+
+
+def _select_task_generator(input_region, storage, filter_product):
     if input_region is None:
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
-        return partial(_generate_gridded_tasks, grid_spec=grid_spec)
+        return GriddedTaskGenerator(storage)
+    elif 'feature_id' in filter_product['args']:
+        _LOG.info('Generating date filtered polygon images.')
+        return Generate_Polygon_Tasks(input_region=input_region, filter_product=filter_product, storage=storage)
 
-    if tide_class is not None: 
-        _LOG.info('Generating polygon images ')
-        return partial(_generate_polygon_tasks, input_region=input_region, tide_class=tide_class, storage=storage)
-
-    if 'tile' in input_region:  # Simple, single tile
-        return partial(_generate_gridded_tasks, grid_spec=grid_spec, cell_index=input_region['tile'])
+    elif 'tile' in input_region:  # Simple, single tile
+        return GriddedTaskGenerator(storage, cell_index=input_region['tile'])
 
     elif 'geometry' in input_region:  # Larger spatial region
         # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
         _LOG.info('Found geojson `input_region`, outputing tiles.')
-        geopolygon = Geometry(input_region['geometry'], CRS('EPSG:4326'))
-        return partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=geopolygon)
+
+        bounds = Geometry(input_region['geometry'], CRS('EPSG:4326'))  # GeoJSON is always 4326
+        return GriddedTaskGenerator(storage, geopolygon=bounds)
 
     elif 'from_file' in input_region:
         _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])
-        import fiona
-        import shapely.ops
-        from shapely.geometry import shape, mapping
-        with fiona.open(input_region['from_file']) as input_region:
-            joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
-            final = joined.convex_hull
-            crs = CRS(str(input_region.crs_wkt))
-            boundary_polygon = Geometry(mapping(final), crs)
 
-        return partial(_generate_gridded_tasks, grid_spec=grid_spec, geopolygon=boundary_polygon)
+        bounds = boundary_polygon_from_file(input_region['from_file'])
+        return GriddedTaskGenerator(storage, geopolygon=bounds)
 
     else:
         _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
-        return partial(_generate_non_gridded_tasks, input_region=input_region, storage=storage)
+        return NonGriddedTaskGenerator(input_region=input_region, storage=storage)
 
 
-def do_nothing(task):
-    pass
+def boundary_polygon_from_file(filename):
+    # TODO: This should be refactored and moved into datacube.utils.geometry
+    import fiona
+    import shapely.ops
+    from shapely.geometry import shape, mapping
+    with fiona.open(filename) as input_region:
+        joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
+        final = joined.convex_hull
+        crs = CRS(input_region.crs_wkt)
+        boundary_polygon = Geometry(mapping(final), crs)
+    return boundary_polygon
+
+
+class GriddedTaskGenerator(object):
+    def __init__(self, storage, geopolygon=None, cell_index=None):
+        self.grid_spec = _make_grid_spec(storage)
+        self.geopolygon = geopolygon
+        self.cell_index = cell_index
+        self._total_unmatched = 0
+
+    def __call__(self, index, sources_spec, date_ranges):
+        """
+        Generate the required tasks through time and across a spatial grid.
+
+        Input region can be limited by specifying either/or both of `geopolygon` and `cell_index`, which
+        will both result in only datasets covering the poly or cell to be included.
+
+        :param index: Datacube Index
+        :return:
+        """
+        workflow = GridWorkflow(index, grid_spec=self.grid_spec)
+
+        for time_period in date_ranges:
+            _LOG.info('Making output product tasks for time period: %s', time_period)
+            timer = MultiTimer().start('creating_tasks')
+
+            # Tasks are grouped by tile_index, and may contain sources from multiple places
+            # Each source may be masked by multiple masks
+            tasks = {}
+            for source_spec in sources_spec:
+                group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
+                source_filter = source_spec.get('source_filter', None)
+
+                all_products = [source_spec['product']] + [m['product'] for m in source_spec.get('masks', [])]
+
+                product_query = {all_products[0]: {'source_filter': source_filter}}
+
+                (data, *masks), unmatched_ = multi_product_list_cells(all_products, workflow,
+                                                                      product_query=product_query,
+                                                                      cell_index=self.cell_index,
+                                                                      time=time_period,
+                                                                      group_by=group_by_name,
+                                                                      geopolygon=self.geopolygon)
+
+                self._total_unmatched += report_unmatched_datasets(unmatched_[0], _LOG.warning)
+
+                for tile_index, sources in data.items():
+                    task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
+                    task.sources.append({
+                        'data': sources,
+                        'masks': [mask.get(tile_index) for mask in masks],
+                        'spec': source_spec,
+                    })
+
+            timer.pause('creating_tasks')
+            if tasks:
+                _LOG.info('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
+            for task in tasks.values():
+                yield task
+
+    def __del__(self):
+        if self._total_unmatched > 0:
+            _LOG.warning('There were source datasets for which masks were not found, total: %d',
+                         self._total_unmatched)
 
 
 def _make_grid_spec(storage):
@@ -651,248 +891,116 @@ def _make_grid_spec(storage):
                     resolution=[storage['resolution'][dim] for dim in crs.dimensions])
 
 
-def _generate_gridded_tasks(index, sources_spec, date_ranges, grid_spec, geopolygon=None, cell_index=None):
-    """
-    Generate the required tasks through time and across a spatial grid.
-    
-    Input region can be limited by specifying either/or both of `geopolygon` and `cell_index`, which
-    will both result in only datasets covering the poly or cell to be included.
+class NonGriddedTaskGenerator(object):
+    def __init__(self, input_region, storage):
+        self.input_region = input_region
+        self.storage = storage
 
-    :param index: Datacube Index
-    :return:
-    """
-    workflow = GridWorkflow(index, grid_spec=grid_spec)
+    def __call__(self, index, sources_spec, date_ranges):
+        """
+        Make stats tasks for a single defined spatial region, not part of a grid.
 
-    for time_period in date_ranges:
-        _LOG.info('Making output product tasks for time period: %s', time_period)
-        timer = MultiTimer().start('creating_tasks')
+        :param index: database index
+        :param input_region: dictionary of query parameters defining the target input region. Usually
+                             x/y spatial boundaries.
+        :return:
+        """
+        make_tile = ArbitraryTileMaker(index, self.input_region, self.storage)
 
-        # Tasks are grouped by tile_index, and may contain sources from multiple places
-        # Each source may be masked by multiple masks
-        tasks = {}
-        for source_spec in sources_spec:
-            group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
-            source_filter = source_spec.get('source_filter', None)
-            data = workflow.list_cells(product=source_spec['product'], time=time_period,
-                                       group_by=group_by_name, geopolygon=geopolygon,
-                                       cell_index=cell_index, source_filter=source_filter)
-            masks = [workflow.list_cells(product=mask['product'], time=time_period,
-                                         group_by=group_by_name, geopolygon=geopolygon,
-                                         cell_index=cell_index)
-                     for mask in source_spec.get('masks', [])]
+        for time_period in date_ranges:
+            task = StatsTask(time_period)
 
-            for tile_index, sources in data.items():
-                task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
+            for source_spec in sources_spec:
+                group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
+
+                # Build Tile
+                data = make_tile(product=source_spec['product'], time=time_period, group_by=group_by_name)
+
+                masks = [make_tile(product=mask['product'], time=time_period, group_by=group_by_name)
+                         for mask in source_spec.get('masks', [])]
+
+                if len(data.sources.time) == 0:
+                    continue
+
                 task.sources.append({
-                    'data': sources,
-                    'masks': [mask.get(tile_index) for mask in masks],
+                    'data': data,
+                    'masks': masks,
                     'spec': source_spec,
                 })
 
-        timer.pause('creating_tasks')
-        if tasks:
-            _LOG.info('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
-        for task in tasks.values():
-            yield task
+            if task.sources:
+                _LOG.info('Created task for time period: %s', time_period)
+                yield task
 
 
-def _generate_polygon_tasks(index, sources_spec, date_ranges, tide_class, input_region, storage):
+class ArbitraryTileMaker(object):
     """
-    Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
+    Create a :class:`Tile` which can be used by :class:`GridWorkflow` to later load the required data.
 
-    :param index: database index
-    :param input_region: dictionary of query parameters defining the target input region. Usually
-                         x/y spatial boundaries.
-    :return:
     """
-    dc = Datacube(index=index)
+    def __init__(self, index, input_region, storage):
+        self.dc = Datacube(index=index)
+        self.input_region = input_region
+        self.storage = storage
 
-    def make_tile(product, time, group_by, otpstime, geopoly):
-        datasets = dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
+    def __call__(self, product, time, group_by):
+        # Find the sources for each layer
+        datasets = self.dc.find_datasets(product=product, time=time, **self.input_region)
+        group_by = query_group_by(group_by=group_by)
+        sources = self.dc.group_datasets(datasets, group_by)
+
+        # Find the geopolygon for the tile of interest
+        output_crs = CRS(self.storage['crs'])
+        output_resolution = [self.storage['resolution'][dim] for dim in output_crs.dimensions]
+
+        geopoly = query_geopolygon(**self.input_region)
+        geopoly = geopoly.to_crs(output_crs)
+
+        geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
+
+        return Tile(sources, geobox)
+
+
+class FilteredTileMaker(object):
+    """
+    Create a :class:`Tile` which can be used by :class:`Generate_Polygon_Tasks` to later load the
+    filtered datasets.
+
+    """
+    def __init__(self, index, filter_product, storage):
+        self.dc = Datacube(index=index)
+        self.filter_product = filter_product
+        self.storage = storage
+
+    def __call__(self, product, time, group_by, filter_time, geopoly, poly_dates):
+        # Find the sources for each layer
+        if poly_dates == 1:
+            return self.dc
+        datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
         fil_datasets = list()
-        dt = list()
         # check for appropriate products to populate required date list
-        if tide_class.get('product') == 'dry' or tide_class.get('product') == 'wet':
-            dt = otpstime
-        else:
-            dt= [dd[0] for dd in otpstime]
+        if self.filter_product.get('method') == 'by_hydrological_months':
+            dt = filter_time
+        else:  # Fot ITEM/low/high products
+            dt = [dd[0] for dd in filter_time]
         # get the date list out of dt string and compare within the epoch
         for ds in datasets:
             if ds.time.begin.date().strftime("%Y-%m-%d") in dt:
                 fil_datasets.append(ds)
         if len(fil_datasets) == 0:
-            _LOG.info("No matched for product %s on %s", product, str(otpstime))
+            _LOG.info("No matched for product %s on %s", product, str(filter_time))
             return None
         datasets = fil_datasets
+        output_crs = CRS(self.storage['crs'])
+        output_resolution = [self.storage['resolution'][dim] for dim in output_crs.dimensions]
         group_by = query_group_by(group_by=group_by)
-        sources = dc.group_datasets(datasets, group_by)
-        res = storage['resolution']
-        geobox = GeoBox.from_geopolygon(geopoly, (res['y'], res['x']))
+        sources = self.dc.group_datasets(datasets, group_by)
+        geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
         return Tile(sources, geobox)
 
-    def list_poly_dates(geom):
-        datasets = list()
-        all_times = list()
-        for source_spec in sources_spec:
-            for mask in source_spec.get('masks', []):
-                group_by_name = source_spec.get('group_by', 'solar_day')
-                gl_range = (tide_class['global_epoch_start'], tide_class['global_epoch_end'])
-                if (mask['product'] == 'ls7_pq_albers') and (datetime.strptime(gl_range[0], "%Y-%m-%d") > LS7_SLC_DT) and \
-                    (tide_class.get('ls7_slc_off') is None):
-                    continue
-                if (tide_class.get('ls7_slc_off') is None) and (mask['product'] == 'ls7_pq_albers') and  \
-                    (datetime.strptime(gl_range[1], "%Y-%m-%d")  > LS7_SLC_DT):
-                    gl_range = (gl_range[0], LS7_SLC_DT)
-             
-                ds = dc.find_datasets(product=mask['product'], time=gl_range, geopolygon=geom, group_by=group_by_name)
-                group_by = query_group_by(group_by=group_by_name)
-                sources = dc.group_datasets(ds, group_by)
-                if len(ds) > 0 :
-                    all_times = all_times + [dd for dd in sources.time.data.astype('M8[s]').astype('O').tolist()
-                                 if dd.strftime("%Y-%m-%dT%H:%M:%S") != '2015-11-26T01:29:55']
-        return sorted(all_times)
 
-    with fiona.open(input_region['from_file']) as input_region:
-        crs = CRS(str(input_region.crs_wkt))
-        # Test for dry/wet products
-        if tide_class.get('product') == 'dry' or tide_class.get('product') == 'wet':
-            for feature in input_region:
-                # get the year id and geometry
-                odict = feature['properties']
-                if tide_class.get('product') == 'dry':
-                    tide_class['year'] = { k:v for k, v in odict.items() if "DY" in k.upper()}
-                else:
-                    tide_class['year'] = { k:v for k, v in odict.items() if "WY" in k.upper()}
-                Id = feature['properties']['ID']
-                if Id in tide_class['feature_id']:
-                    geom = feature['geometry']
-                    boundary_polygon = Geometry(geom, crs)
-                    boundary_polygon = boundary_polygon.to_crs(CRS('EPSG:3577'))
-                    tide_class['geom'] = boundary_polygon
-                    years = "_".join(x for x in [v for k, v in tide_class['year'].items()])
-                    tile_index=(str(Id), years)
-                    list_time = get_hydrologic_months(tide_class)  
-                    for time_period in date_ranges:
-                        task = StatsTask(time_period=time_period, tile_index=tile_index)
-                        for source_spec in sources_spec:
-                            group_by_name = source_spec.get('group_by', 'solar_day')
-
-                        # Build Tile
-                            ep_range = time_period
-                            if (source_spec['product'] == 'ls7_nbar_albers') and (ep_range[0] > LS7_SLC_DT)  \
-                                    and (tide_class.get('ls7_slc_off') is None):
-                                continue
-                            if (tide_class.get('ls7_slc_off') is None) and (source_spec['product'] == 'ls7_nbar_albers') \
-                                    and (ep_range[1]  > LS7_SLC_DT):
-                                ep_range = (ep_range[0], LS7_SLC_DT)
-                            data = make_tile(product=source_spec['product'], time=ep_range,
-                                             group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon) 
-                            masks = [make_tile(product=mask['product'], time=ep_range,
-                                             group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon)
-                                     for mask in source_spec.get('masks', [])]
-
-                            if data is None:
-                                continue
-                            _LOG.info("source details for %s and values %s", source_spec['product'], 
-                                      str(data.sources.time.values))  
-                            task.sources.append({
-                                'data': data,
-                                'masks': masks,
-                                'spec': source_spec,
-                            })
-                        if task.sources:
-                            _LOG.info('Created task for time period: %s', time_period)
-                            yield task
-            return
-
-        # This is for HLTC and ITEM products
-        for feature in input_region:
-            lon = feature['properties']['lon']
-            lat = feature['properties']['lat']
-            Id = feature['properties']['ID']
-            #filter out only on selected features
-            if Id in tide_class['feature_id']:
-            #To run a limited polygons
-            #if Id < 10:
-                geom = feature['geometry']
-                boundary_polygon = Geometry(geom, crs)
-                boundary_polygon = boundary_polygon.to_crs(CRS('EPSG:3577')) 
-                tide_class['geom'] = boundary_polygon
-                _LOG.info("feature %d captured for longitude and latitude %.02f  %.02f", Id, lon, lat)
-                _LOG.info('Getting all dates corresponding to this polygon for all sensor data')
-                all_dates = list_poly_dates(boundary_polygon)
-                if "item" in tide_class['product']:
-                    list_high = range_tidal_data(all_dates, tide_class, lon, lat)
-                    #_LOG.info("ITEM returns with median %s", range_value)
-                else:
-                    all_list, list_low, list_high, ebb_flow = extract_otps_computed_data(all_dates, date_ranges, 
-                                                                                     tide_class['percent'], lon, lat)
-                # filter out dates as per sub classification of ebb flow
-                if tide_class.get('sub_class'):
-                    list_low, list_high, ebb_flow = filter_sub_class(tide_class, list_low, list_high, ebb_flow)
-                    _LOG.info("SUB class dates extracted %s for list low %s  and for list high %s", tide_class['sub_class'] , list_low, list_high) 
-                prod = list()
-                if "low_high" in tide_class['product']:
-                    prod = ['low', 'high']
-                elif "low" in tide_class['product']:
-                    prod = ['low']
-                elif "high" in tide_class['product']:
-                    prod = ['high']
-                elif "item" in tide_class['product']:
-                    prod = ['item']
-                else:
-                    prod = ['middle']
-                tile_index=(lon,lat)
-                for time_period, pr in itertools.product(date_ranges, prod) :
-                    if tide_class.get('sub_class'):
-                        nlon = tide_class.get('sub_class').upper() + "_" + pr.upper()
-                    else:
-                        nlon = pr.upper()
-                    nlon = nlon + "_" + str(Id) + "_" + str(lon)
-                    tile_index=(nlon,lat)
-                    list_time = list_low if pr == 'low' else list_high
-                    # Needs to update metadata for ebb flow classification
-                    if "item" not in tide_class['product']:  
-                        key = set(e[0] for e in list_time)
-                        ebb_flow_class = [ff for ff in eval(ebb_flow) if ff[0] in key]
-                        tide_class['ebb_flow'] = {'ebb_flow':ebb_flow_class}
-                        _LOG.info('\nCreated EBB FLOW for feature %d , length %d, time period: %s \t%s', 
-                              Id, len(ebb_flow_class), date_ranges, str(ebb_flow_class))
-                    _LOG.info('\n %s DATE LIST for feature %d length %d, time period: %s \t%s',
-                              pr.upper(), Id, len(list_time), date_ranges, str(list_time))
-                    task = StatsTask(time_period=time_period, tile_index=tile_index,
-                                     extras={'percent': tide_class['percent']})
-                    _LOG.info("doing for product %s for percentage %s ", pr, str(tide_class['percent']))
-                    for source_spec in sources_spec:
-                        group_by_name = source_spec.get('group_by', 'solar_day')
-
-                        # Build Tile
-                        ep_range = time_period
-                        if (source_spec['product'] == 'ls7_nbar_albers') and (ep_range[0] > LS7_SLC_DT)  \
-                                and (tide_class.get('ls7_slc_off') is None):
-                            continue
-                        if (tide_class.get('ls7_slc_off') is None) and (source_spec['product'] == 'ls7_nbar_albers') \
-                                and (ep_range[1]  > LS7_SLC_DT):
-                            ep_range = (ep_range[0], LS7_SLC_DT)
-
-                        data = make_tile(product=source_spec['product'], time=ep_range,
-                                         group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon) 
-                        masks = [make_tile(product=mask['product'], time=ep_range,
-                                         group_by=group_by_name, otpstime=list_time, geopoly=boundary_polygon)
-                                 for mask in source_spec.get('masks', [])]
-                        if data is None:
-                            continue
-                        _LOG.info("source details for %s and values %s", pr, str(data.sources.time.values))  
-                        task.sources.append({
-                            'data': data,
-                            'masks': masks,
-                            'spec': source_spec,
-                        })
-                    if task.sources:
-                        _LOG.info('Created task for time period: %s', time_period)
-                        yield task
-
-def _generate_non_gridded_tasks(index, sources_spec, date_ranges, input_region, storage):
+# def Generate_Polygon_Tasks(index, sources_spec, date_ranges, filter_product, input_region, storage):
+class Generate_Polygon_Tasks(object):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
     :param index: database index
@@ -900,65 +1008,116 @@ def _generate_non_gridded_tasks(index, sources_spec, date_ranges, input_region, 
                          x/y spatial boundaries.
     :return:
     """
-    dc = Datacube(index=index)
+    def __init__(self, input_region, filter_product, storage):
+        self.input_region = input_region
+        self.filter_product = filter_product
+        self.storage = storage
+        self.tile_index = ()
+        self.filter_time = ""
+        self.feature = {}
 
-    def make_tile(product, time, group_by):
-        datasets = dc.find_datasets(product=product, time=time, **input_region)
-        group_by = query_group_by(group_by=group_by)
-        sources = dc.group_datasets(datasets, group_by)
+    def __call__(self, index, sources_spec, date_ranges):
+        """
+        Generate the required tasks through time and across a feature ID of a polygon.
 
-        res = storage['resolution']
+        feature id is passed through filter_product and is processed after filtering the relevant dates
+        that will both result in only datasets covering the poly.
 
-        geopoly = query_geopolygon(**input_region)
-        geopoly = geopoly.to_crs(CRS(storage['crs']))
-        geobox = GeoBox.from_geopolygon(geopoly, (res['y'], res['x']))
+        :param index: Datacube Index
+        :return:
+        """
+        if self.filter_product['args'].get('feature_id') is None:
+            _LOG.info("feature_id must be provided.  EXITING ...")
+            return
+        with fiona.open(self.input_region['from_file']) as input_region:
+            for feature in input_region:
+                Id = feature['properties']['ID']
+                # capture filename and feature id to get boundary info in execute task
+                if Id in self.filter_product['args']['feature_id']:
+                    self.feature = feature['properties']
+                    self.filter_product['filename'] = self.input_region['from_file']
+                    break
+            if len(self.feature) == 0:
+                _LOG.info("No feature id is found. Please check the ID in config file under filter_product")
+                return
+        make_tile = FilteredTileMaker(index, self.filter_product, self.storage)
+        dc = make_tile(product=None, time=None, group_by=None, filter_time=None, geopoly=None, poly_dates=1)
+        boundary_polygon = geom_from_file(self.filter_product)
+        # Get all dates within the date_range
+        all_dates = list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges)
+        # Test for dry/wet products
+        if self.filter_product.get('method') == 'by_hydrological_months':
+            # get the year id and geometry
+            self.filter_product['year'] = {k: v for k, v in self.feature.items() if "DY" in k.upper()} \
+                 if self.filter_product.get('product') == 'dry' else  \
+                 {k: v for k, v in self.feature.items() if "WY" in k.upper()}
+            years = "_".join(x for x in [v for k, v in self.filter_product['year'].items()])
+            nlon = self.filter_product['args']['name'].upper() + '_' + str(Id)
+            self.tile_index = (nlon, years)
+            self.filter_time = get_hydrological_months(self.filter_product)
+        elif self.filter_product.get('method') == 'by_tide_height':
+            lon = self.feature['lon']
+            lat = self.feature['lat']
+            nlon = self.filter_product['args']['name'].upper() + '_' + str(Id) + '_' + str(lon)
+            nlat = str(lat) + '_PER_' + str(self.filter_product['args']['tide_percent'])
+            # get all relevant date time lists
+            if "item" in self.filter_product['args']['name']:
+                self.tile_index = (nlon, nlat)
+                self.filter_time = range_tidal_data(all_dates, self.filter_product, lon, lat)
+            else:
+                all_list, list_low, list_high, ebb_flow = \
+                    extract_otps_computed_data(all_dates, date_ranges,
+                                               self.filter_product['args']['tide_percent'], lon, lat)
+                self.tile_index = (nlon, nlat)
+                self.filter_time = list_low if self.filter_product['args']['name'] == 'low' else list_high
+                # filter out dates as per sub classification of ebb flow
+                if self.filter_product.get('sub_class'):
+                    list_low, list_high, ebb_flow = filter_sub_class(self.filter_product, list_low, list_high, ebb_flow)
+                    _LOG.info("SUB class dates extracted %s for list low %s  and for list high %s",
+                              self.filter_product['sub_class'], list_low, list_high)
+                    nlon = self.filter_product['args']['sub_class'].upper() + "_" + \
+                        + self.filter_product['args']['name'].upper()
+                    self.tile_index = (nlon, lat)
+                    self.filter_time = list_low if self.filter_product['name'] == 'low' else list_high
+                    key = set(e[0] for e in self.filter_time)
+                    ebb_flow_class = [ff for ff in eval(ebb_flow) if ff[0] in key]
+                    # dynamically store ebb flow information
+                    self.filter_product['args']['ebb_flow'] = {'ebb_flow': ebb_flow_class}
+                    _LOG.info('\nCreated EBB FLOW for feature %d , length %d, time period: %s \t%s',
+                              Id, len(ebb_flow_class), date_ranges, str(ebb_flow_class))
+                _LOG.info('\n %s DATE LIST for feature %d length %d, time period: %s \t%s',
+                          self.filter_product['args']['name'].upper(), str(self.filter_product['args']['feature_id']),
+                          len(self.filter_time), date_ranges, str(self.filter_time))
+        for time_period in date_ranges:
+            task = StatsTask(time_period=time_period, tile_index=self.tile_index)
+            for source_spec in sources_spec:
+                group_by_name = source_spec.get('group_by', 'solar_day')
 
-        return Tile(sources, geobox)
+                # Build Tile
+                ep_range = time_period
+                if source_spec.get('time'):
+                    ep_range[0] = datetime.strptime(source_spec['time'][0], "%Y-%m-%d")
+                    ep_range[1] = datetime.strptime(source_spec['time'][1], "%Y-%m-%d")
+                data = make_tile(product=source_spec['product'], time=ep_range,
+                                 group_by=group_by_name, filter_time=self.filter_time,
+                                 geopoly=boundary_polygon, poly_dates=0)
+                masks = [make_tile(product=mask['product'], time=ep_range,
+                                   group_by=group_by_name, filter_time=self.filter_time,
+                                   geopoly=boundary_polygon, poly_dates=0)
+                         for mask in source_spec.get('masks', [])]
+                if data is None:
+                    continue
+                _LOG.info("source details for %s and values %s", source_spec['product'],
+                          str(data.sources.time.values))
+                task.sources.append({
+                    'data': data,
+                    'masks': masks,
+                    'spec': source_spec,
+                    })
 
-    for time_period in date_ranges:
-        task = StatsTask(time_period)
-
-        for source_spec in sources_spec:
-            group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
-
-            # Build Tile
-            data = make_tile(product=source_spec['product'], time=time_period,
-                             group_by=group_by_name)
-
-            masks = [make_tile(product=mask['product'], time=time_period,
-                               group_by=group_by_name)
-                     for mask in source_spec.get('masks', [])]
-
-            if len(data.sources.time) == 0:
-                continue
-
-            task.sources.append({
-                'data': data,
-                'masks': masks,
-                'spec': source_spec,
-            })
-        if task.sources:
-            _LOG.info('Created task for time period: %s', time_period)
-            yield task
-                    
-
-
-
-def pickle_stream(objs, filename):
-    idx = 0
-    with open(filename, 'wb') as stream:
-        for idx, obj in enumerate(objs, start=1):
-            cloudpickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
-    return idx
-
-
-def unpickle_stream(filename):
-    with open(filename, 'rb') as stream:
-        while True:
-            try:
-                yield pickle.load(stream)
-            except EOFError:
-                break
+            if task.sources:
+                _LOG.info('Created task for time period: %s', time_period)
+                yield task
 
 
 if __name__ == '__main__':
