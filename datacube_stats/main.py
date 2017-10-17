@@ -1100,8 +1100,12 @@ class Generate_Polygon_Tasks(object):
                 # Build Tile
                 ep_range = time_period
                 if source_spec.get('time'):
-                    ep_range[0] = datetime.strptime(source_spec['time'][0], "%Y-%m-%d")
-                    ep_range[1] = datetime.strptime(source_spec['time'][1], "%Y-%m-%d")
+                    # No need to do if start date is more than the allowed date
+                    if ep_range[0] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+                        continue
+                    # reset the end date in case it is more than filtered allowed date
+                    if ep_range[1] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+                        ep_range = (date_ranges[0][0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
                 data = make_tile(product=source_spec['product'], time=ep_range,
                                  group_by=group_by_name, filter_time=self.filter_time,
                                  geopoly=boundary_polygon, poly_dates=0)

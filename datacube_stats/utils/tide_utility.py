@@ -36,23 +36,25 @@ def geom_from_file(filter_product):
 # Return all sensor dates related to the feature id
 def list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges):
 
-    datasets = list()
     all_times = list()
     for source_spec in sources_spec:
         for mask in source_spec.get('masks', []):
             group_by_name = source_spec.get('group_by', 'solar_day')
             gl_range = (date_ranges[0][0], date_ranges[0][1])
             if source_spec.get('time'):
-                gl_range[0] = datetime.strptime(source_spec['time'][0], "%Y-%m-%d")
-                gl_range[1] = datetime.strptime(source_spec['time'][1], "%Y-%m-%d")
+                # No need to do if start date is more than the allowed date
+                if gl_range[0] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+                    continue
+                # reset the end date in case it is more than filtered allowed date
+                if gl_range[1] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+                    gl_range = (date_ranges[0][0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
             ds = dc.find_datasets(product=mask['product'], time=gl_range,
                                   geopolygon=boundary_polygon, group_by=group_by_name)
             group_by = query_group_by(group_by=group_by_name)
             sources = dc.group_datasets(ds, group_by)
             # Here is a data error specific to this date so before adding exclude it
             if len(ds) > 0:
-                all_times = all_times + [dd for dd in sources.time.data.astype('M8[s]').astype('O').tolist()
-                                         if dd.strftime("%Y-%m-%dT%H:%M:%S") != '2015-11-26T01:29:55']
+                all_times = all_times + [dd for dd in sources.time.data.astype('M8[s]').astype('O').tolist()]
     return sorted(all_times)
 
 
