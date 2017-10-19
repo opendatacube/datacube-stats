@@ -1075,7 +1075,7 @@ class GeneratePolygonTasks(object):
                     poly_y = lat
                 self.poly_index = (poly_x, poly_y)
                 _LOG.info('\n DATE LIST for feature %d length %d, time period: %s \t%s',
-                          str(ID), len(self.filter_time), date_ranges, str(self.filter_time))
+                          ID, len(self.filter_time), date_ranges, str(self.filter_time))
         for time_period in date_ranges:
             task = StatsTask(time_period=time_period, tile_index=self.poly_index)
             for source_spec in sources_spec:
