@@ -83,18 +83,15 @@ sources:
 date_ranges:
   start_date: 1986-01-01
   end_date: 2017-01-01
-  stats_duration: 31y
-  step_size: 31y
-  type: simple
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
-location: '/g/data/r78/bxb547/GW_works/data_multi_year'
+location: '/g/data/r78/tmp'
 
 input_region:
-#  tile: [12, -43]
   #from_file: /g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp
   from_file: /g/data/r78/bxb547/GW_works/bur_dry_albers.shp
+  feature_id: [3]
 #
 storage:
   driver: NetCDFCF
@@ -122,13 +119,12 @@ output_products:
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'GW_{x}_{y}.nc'
+   file_path_template: 'GW_DRY_{x}_{y}.nc'
    product_type: COMPOSITE DRY
 
 filter_product:
   method: by_hydrological_months
   args:
-     name: dry
+     type: dry
 # Here is to consider these months for the following year from polygon data
      months: ['07', '11']
-     feature_id: [3]

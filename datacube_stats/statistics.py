@@ -368,11 +368,10 @@ class MedNdwi(Statistic):
         # Finally median through time for ITEM product
         med = (data.green - data.nir) / (data.green + data.nir)
         # stop all bad data and reset to the following
-        with warnings.catch_warnings():  # Don't print error for not knowing nan
-            warnings.simplefilter("ignore")
+        with warnings.catch_warnings():  # Don't print error while comparing nan
+            warnings.simplefilter("ignore", category=RuntimeWarning)
             med.values[med.values < -1] = np.nan
             med.values[med.values > 1] = np.nan
-            med.values[med.values == 10] = np.nan
             med = med.median(dim='time', keep_attrs=True, skipna=True)
         return med.to_dataset(name='ndwi')
 
@@ -396,11 +395,10 @@ class StdNdwi(Statistic):
         # then standard deviation through time
         med = (data.green - data.nir) / (data.green + data.nir)
         # stop all bad data and reset to the following
-        with warnings.catch_warnings():  # Don't print error not knowing nan
-            warnings.simplefilter("ignore")
+        with warnings.catch_warnings():  # Don't print error while comparing nan
+            warnings.simplefilter("ignore", category=RuntimeWarning)
             med.values[med.values < -1] = np.nan
             med.values[med.values > 1] = np.nan
-            med.values[med.values == 10] = np.nan
             med = med.std(dim='time', keep_attrs=True, skipna=True)
         return med.to_dataset(name='stddev')
 

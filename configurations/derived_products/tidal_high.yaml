@@ -85,15 +85,13 @@ sources:
 date_ranges:
   start_date: 1995-01-01
   end_date: 2017-01-01
-  stats_duration: 22y
-  step_size: 22y
-  type: simple
 
 ## Define output directory and file structure
 location: '/g/data/v10/intertidal/junk'
 
 input_region:
    from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp 
+   feature_id: [94]
 #
 storage:
   driver: NetCDFCF
@@ -121,7 +119,7 @@ output_products:
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'COMPOSITE_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+   file_path_template: 'COMPOSITE_HIGH_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
    product_type: tidal_composite
 
 # - name: tidal_count
@@ -129,16 +127,14 @@ output_products:
 #   output_params:
 #      zlib: True
 #      fletcher32: True
-#   file_path_template: 'COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+#   file_path_template: 'COUNT_HIGH_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
 #   product_type: tidal_composite
 
 filter_product:
   method: by_tide_height
   args:
-     name: high
      tide_percent: 20
+     type: high
      #Needs sub composite then chose one of these now
      #e, f, ph, pl
      #sub_class: e 
-     #feature_id: [67, 68, 69, 70, 71, 72, 73]
-     feature_id: [94]

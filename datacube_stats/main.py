@@ -39,7 +39,7 @@ from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 from datacube_stats.utils.tide_utility import range_tidal_data, extract_otps_computed_data, geom_from_file
-from datacube_stats.utils.tide_utility import get_hydrological_months, filter_sub_class, list_poly_dates
+from datacube_stats.utils.tide_utility import get_hydrological_months, list_poly_dates, get_ebb_flow
 from datetime import datetime
 
 from .utils.query import multi_product_list_cells
@@ -225,7 +225,8 @@ class StatsApp(object):
         stats_app.location = output_location or config.get('location', '')
         stats_app.computation = config.get('computation', {})
         stats_app.date_ranges = _configure_date_ranges(index, config)
-        stats_app.task_generator = _select_task_generator(input_region, stats_app.storage)
+        stats_app.filter_product = config.get('filter_product', {})
+        stats_app.task_generator = _select_task_generator(input_region, stats_app.storage, stats_app.filter_product)
         stats_app.output_driver = _prepare_output_driver(stats_app.storage)
         stats_app.global_attributes = config.get('global_attributes', {})
         stats_app.var_attributes = config.get('var_attributes', {})
@@ -284,6 +285,9 @@ class StatsApp(object):
             tasks = self.generate_tasks(self.configure_outputs())
 
         app_info = _get_app_metadata(self.config_file)
+        input_region = self.config_file['input_region'] if self.config_file.get('input_region') else ''
+        geom = geom_from_file(input_region['from_file'], input_region['feature_id'])\
+            if (len(input_region) > 0 and input_region.get('feature_id')) else ''
         output_driver = partial(self.output_driver,
                                 output_path=self.location,
                                 app_info=app_info,
@@ -293,7 +297,7 @@ class StatsApp(object):
         task_runner = partial(execute_task,
                               output_driver=output_driver,
                               chunking=self.computation.get('chunking', {}),
-                              filter_product=self.filter_product)
+                              geom=geom)
         return runner(tasks,
                       task_runner,
                       self.process_completed)
@@ -385,7 +389,7 @@ def geometry_mask(geoms, geobox, all_touched=False, invert=False):
                                            invert=invert)
 
 
-def execute_task(task, output_driver, chunking, filter_product):
+def execute_task(task, output_driver, chunking, geom=None):
     """
     Load data, run the statistical operations and write results out to the filesystem.
 
@@ -404,7 +408,6 @@ def execute_task(task, output_driver, chunking, filter_product):
             # currently for polygons process will load entirely
             if len(chunking) == 0:
                 chunking = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]}
-                geom = geom_from_file(filter_product)
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
                 process_chunk(output_files, sub_tile_slice, task, timer, geom)
     except OutputFileAlreadyExists as e:
@@ -439,7 +442,7 @@ def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
             save(name, cast_back(proc(), stat.data_measurements))
 
 
-def load_process_save_chunk(output_files, chunk, task, timer):
+def load_process_save_chunk(output_files, chunk, task, timer, geom):
     try:
         with timer.time('loading_data'):
             data = load_data(chunk, task.sources)
@@ -784,9 +787,9 @@ def _select_task_generator(input_region, storage, filter_product):
     if input_region is None:
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return GriddedTaskGenerator(storage)
-    elif 'feature_id' in filter_product['args']:
+    elif 'feature_id' in input_region:
         _LOG.info('Generating date filtered polygon images.')
-        return Generate_Polygon_Tasks(input_region=input_region, filter_product=filter_product, storage=storage)
+        return GeneratePolygonTasks(input_region=input_region, filter_product=filter_product, storage=storage)
 
     elif 'tile' in input_region:  # Simple, single tile
         return GriddedTaskGenerator(storage, cell_index=input_region['tile'])
@@ -942,12 +945,39 @@ class ArbitraryTileMaker(object):
     Create a :class:`Tile` which can be used by :class:`GridWorkflow` to later load the required data.
 
     """
-    def __init__(self, index, input_region, storage):
+    def __init__(self, index, input_region, storage, filter_product=None):
         self.dc = Datacube(index=index)
         self.input_region = input_region
         self.storage = storage
+        self.filter_product = filter_product
 
-    def __call__(self, product, time, group_by):
+    def __call__(self, product, time, group_by, filter_time=None, geopoly=None, poly_dates=0):
+        if poly_dates == 1:
+            return self.dc
+        # Do for a specific poly whose boundary is known
+        if geopoly:
+            datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
+            fil_datasets = list()
+            # check for appropriate products to populate required date list
+            if self.filter_product.get('method') == 'by_hydrological_months':
+                dt = filter_time
+            else:  # Fot ITEM/low/high products
+                dt = [dd[0] for dd in filter_time]
+            # get the date list out of dt string and compare within the epoch
+            for ds in datasets:
+                if ds.time.begin.date().strftime("%Y-%m-%d") in dt:
+                    fil_datasets.append(ds)
+            if len(fil_datasets) == 0:
+                _LOG.info("No matched for product %s on %s", product, str(filter_time))
+                return None
+            datasets = fil_datasets
+            output_crs = CRS(self.storage['crs'])
+            output_resolution = [self.storage['resolution'][dim] for dim in output_crs.dimensions]
+            group_by = query_group_by(group_by=group_by)
+            sources = self.dc.group_datasets(datasets, group_by)
+            geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
+            return Tile(sources, geobox)
+
         # Find the sources for each layer
         datasets = self.dc.find_datasets(product=product, time=time, **self.input_region)
         group_by = query_group_by(group_by=group_by)
@@ -965,46 +995,12 @@ class ArbitraryTileMaker(object):
         return Tile(sources, geobox)
 
 
-class FilteredTileMaker(object):
-    """
-    Create a :class:`Tile` which can be used by :class:`Generate_Polygon_Tasks` to later load the
-    filtered datasets.
-
-    """
-    def __init__(self, index, filter_product, storage):
-        self.dc = Datacube(index=index)
-        self.filter_product = filter_product
-        self.storage = storage
-
-    def __call__(self, product, time, group_by, filter_time, geopoly, poly_dates):
-        # Find the sources for each layer
-        if poly_dates == 1:
-            return self.dc
-        datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
-        fil_datasets = list()
-        # check for appropriate products to populate required date list
-        if self.filter_product.get('method') == 'by_hydrological_months':
-            dt = filter_time
-        else:  # Fot ITEM/low/high products
-            dt = [dd[0] for dd in filter_time]
-        # get the date list out of dt string and compare within the epoch
-        for ds in datasets:
-            if ds.time.begin.date().strftime("%Y-%m-%d") in dt:
-                fil_datasets.append(ds)
-        if len(fil_datasets) == 0:
-            _LOG.info("No matched for product %s on %s", product, str(filter_time))
-            return None
-        datasets = fil_datasets
-        output_crs = CRS(self.storage['crs'])
-        output_resolution = [self.storage['resolution'][dim] for dim in output_crs.dimensions]
-        group_by = query_group_by(group_by=group_by)
-        sources = self.dc.group_datasets(datasets, group_by)
-        geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
-        return Tile(sources, geobox)
+class PolygonException(Exception):
+    pass
 
 
 # def Generate_Polygon_Tasks(index, sources_spec, date_ranges, filter_product, input_region, storage):
-class Generate_Polygon_Tasks(object):
+class GeneratePolygonTasks(object):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
     :param index: database index
@@ -1016,7 +1012,7 @@ class Generate_Polygon_Tasks(object):
         self.input_region = input_region
         self.filter_product = filter_product
         self.storage = storage
-        self.tile_index = ()
+        self.poly_index = ()
         self.filter_time = ""
         self.feature = {}
 
@@ -1030,70 +1026,58 @@ class Generate_Polygon_Tasks(object):
         :param index: Datacube Index
         :return:
         """
-        if self.filter_product['args'].get('feature_id') is None:
-            _LOG.info("feature_id must be provided.  EXITING ...")
-            return
+        assert 'feature_id' in self.input_region
         with fiona.open(self.input_region['from_file']) as input_region:
             for feature in input_region:
-                Id = feature['properties']['ID']
+                ID = feature['properties']['ID']
                 # capture filename and feature id to get boundary info in execute task
-                if Id in self.filter_product['args']['feature_id']:
+                if ID in self.input_region['feature_id']:
                     self.feature = feature['properties']
-                    self.filter_product['filename'] = self.input_region['from_file']
                     break
-            if len(self.feature) == 0:
-                _LOG.info("No feature id is found. Please check the ID in config file under filter_product")
-                return
-        make_tile = FilteredTileMaker(index, self.filter_product, self.storage)
+        if len(self.feature) == 0:
+            _LOG.info("Feature id %s not found in the polygon", str(ID))
+            raise PolygonException()
+        make_tile = ArbitraryTileMaker(index, input_region, self.storage, self.filter_product)
         dc = make_tile(product=None, time=None, group_by=None, filter_time=None, geopoly=None, poly_dates=1)
-        boundary_polygon = geom_from_file(self.filter_product)
+        boundary_polygon = geom_from_file(self.input_region['from_file'], self.input_region['feature_id'])
         # Get all dates within the date_range
         all_dates = list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges)
         # Test for dry/wet products
         if self.filter_product.get('method') == 'by_hydrological_months':
-            # get the year id and geometry
+            # get the year id and geometry for dry or wet type
             self.filter_product['year'] = {k: v for k, v in self.feature.items() if "DY" in k.upper()} \
-                 if self.filter_product.get('product') == 'dry' else  \
+                 if self.filter_product.get('type') == 'dry' else  \
                  {k: v for k, v in self.feature.items() if "WY" in k.upper()}
-            years = "_".join(x for x in [v for k, v in self.filter_product['year'].items()])
-            nlon = self.filter_product['args']['name'].upper() + '_' + str(Id)
-            self.tile_index = (nlon, years)
+            poly_y = "_".join(x for x in [v for k, v in self.filter_product['year'].items()])
+            poly_x = self.filter_product['args']['name'].upper() + '_' + str(ID)
+            self.poly_index = (poly_x, poly_y)
             self.filter_time = get_hydrological_months(self.filter_product)
         elif self.filter_product.get('method') == 'by_tide_height':
             lon = self.feature['lon']
             lat = self.feature['lat']
-            nlon = self.filter_product['args']['name'].upper() + '_' + str(Id) + '_' + str(lon)
-            nlat = str(lat) + '_PER_' + str(self.filter_product['args']['tide_percent'])
+            poly_x = str(ID) + '_' + str(lon)
+            poly_y = str(lat) + '_PER_' + str(self.filter_product['args']['tide_percent'])
             # get all relevant date time lists
-            if "item" in self.filter_product['args']['name']:
-                self.tile_index = (nlon, nlat)
-                self.filter_time = range_tidal_data(all_dates, self.filter_product, lon, lat)
+            if self.filter_product['args'].get('tide_range'):
+                # It is ITEM product
+                self.poly_index = (poly_x, poly_y)
+                self.filter_time = range_tidal_data(all_dates, ID, self.filter_product, lon, lat)
             else:
+                # This is for low/high composite
                 all_list, list_low, list_high, ebb_flow = \
                     extract_otps_computed_data(all_dates, date_ranges,
                                                self.filter_product['args']['tide_percent'], lon, lat)
-                self.tile_index = (nlon, nlat)
-                self.filter_time = list_low if self.filter_product['args']['name'] == 'low' else list_high
+                self.filter_time = list_low if self.filter_product['args']['type'] == 'low' else list_high
                 # filter out dates as per sub classification of ebb flow
                 if self.filter_product.get('sub_class'):
-                    list_low, list_high, ebb_flow = filter_sub_class(self.filter_product, list_low, list_high, ebb_flow)
-                    _LOG.info("SUB class dates extracted %s for list low %s  and for list high %s",
-                              self.filter_product['sub_class'], list_low, list_high)
-                    nlon = self.filter_product['args']['sub_class'].upper() + "_" + \
-                        + self.filter_product['args']['name'].upper()
-                    self.tile_index = (nlon, lat)
-                    self.filter_time = list_low if self.filter_product['name'] == 'low' else list_high
-                    key = set(e[0] for e in self.filter_time)
-                    ebb_flow_class = [ff for ff in eval(ebb_flow) if ff[0] in key]
-                    # dynamically store ebb flow information
-                    self.filter_product['args']['ebb_flow'] = {'ebb_flow': ebb_flow_class}
-                    _LOG.info('\nCreated EBB FLOW for feature %d , length %d, time period: %s \t%s',
-                              Id, len(ebb_flow_class), date_ranges, str(ebb_flow_class))
-                _LOG.info('\n %s DATE LIST for feature %d length %d, time period: %s \t%s',
-                          self.filter_product['args']['name'].upper(), str(self.filter_product['args']['feature_id']),
-                          len(self.filter_time), date_ranges, str(self.filter_time))
+                    self.filter_time = get_ebb_flow(self.filter_product, list_low, list_high, ebb_flow)
+                    poly_x = self.filter_product['args']['subclass'] + "_" + str(lon)
+                    poly_y = lat
+                self.poly_index = (poly_x, poly_y)
+                _LOG.info('\n DATE LIST for feature %d length %d, time period: %s \t%s',
+                          str(ID), len(self.filter_time), date_ranges, str(self.filter_time))
         for time_period in date_ranges:
-            task = StatsTask(time_period=time_period, tile_index=self.tile_index)
+            task = StatsTask(time_period=time_period, tile_index=self.poly_index)
             for source_spec in sources_spec:
                 group_by_name = source_spec.get('group_by', 'solar_day')
 
@@ -1105,7 +1089,7 @@ class Generate_Polygon_Tasks(object):
                         continue
                     # reset the end date in case it is more than filtered allowed date
                     if ep_range[1] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
-                        ep_range = (date_ranges[0][0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
+                        ep_range = (ep_range[0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
                 data = make_tile(product=source_spec['product'], time=ep_range,
                                  group_by=group_by_name, filter_time=self.filter_time,
                                  geopoly=boundary_polygon, poly_dates=0)

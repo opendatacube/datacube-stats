@@ -79,19 +79,17 @@ sources:
           swir2_saturated: False
 
 
-## Define whether and how to chunk over time
+## Define date ranges  
 date_ranges:
-  start_date: 2013-01-01
+  start_date: 2014-01-01
   end_date: 2015-01-01
-  stats_duration: 2y
-  step_size: 2y
-  type: simple
 
 ## Define output directory and file structure
 location: '/g/data/v10/ITEM/junk'
 
 input_region:
   from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp
+  feature_id: [208]
 #
 storage:
   driver: NetCDFCF
@@ -119,7 +117,7 @@ output_products:
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: '{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
+   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
    product_type: ITEM
 
 # - name: standard_deviation 
@@ -127,7 +125,7 @@ output_products:
 #   output_params:
 #      zlib: True
 #      fletcher32: True
-#   file_path_template: '{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
+#   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
 #   product_type: ITEM
 
 # - name: tidal_count
@@ -135,13 +133,12 @@ output_products:
 #   output_params:
 #      zlib: True
 #      fletcher32: True
-#   file_path_template: 'PIXEL_COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+#   file_path_template: 'ITEM_PIXEL_COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
 #   product_type: ITEM
 #
 filter_product:
   method: by_tide_height
   args:
-     name: item
-     tide_range: 60
-     tide_percent: 10
-     feature_id: [208]
+     # tide_range used to differentiate item with low/high composite and for exploring future incremental change
+     tide_range: 10
+     tide_percent: 60
