@@ -1048,7 +1048,7 @@ class GeneratePolygonTasks(object):
                  if self.filter_product.get('type') == 'dry' else  \
                  {k: v for k, v in self.feature.items() if "WY" in k.upper()}
             poly_y = "_".join(x for x in [v for k, v in self.filter_product['year'].items()])
-            poly_x = self.filter_product['args']['name'].upper() + '_' + str(ID)
+            poly_x = str(ID)
             self.poly_index = (poly_x, poly_y)
             self.filter_time = get_hydrological_months(self.filter_product)
         elif self.filter_product.get('method') == 'by_tide_height':
