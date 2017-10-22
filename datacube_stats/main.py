@@ -999,7 +999,6 @@ class PolygonException(Exception):
     pass
 
 
-# def Generate_Polygon_Tasks(index, sources_spec, date_ranges, filter_product, input_region, storage):
 class GeneratePolygonTasks(object):
     """
     Make stats tasks for a defined spatial region, that doesn't fit into a standard grid.
@@ -1020,7 +1019,7 @@ class GeneratePolygonTasks(object):
         """
         Generate the required tasks through time and across a feature ID of a polygon.
 
-        feature id is passed through filter_product and is processed after filtering the relevant dates
+        feature id is passed through input_region and is processed after filtering the relevant dates
         that will both result in only datasets covering the poly.
 
         :param index: Datacube Index
