@@ -1,5 +1,4 @@
 from pathlib import Path
-import pytest
 
 from datacube.utils import geometry
 from affine import Affine
@@ -57,18 +56,38 @@ storage:
   dimension_order: [time, y, x]
 
 input_region:
-   tile: [12, -43]
+   #tile: [12, -43]
+   from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp
+   feature_id: [280]
 
 ## Define statistics to perform and how to store the data
+#output_products:
+# - name: landsat_seasonal_mean
+#   statistic: simple
+#   statistic_args:
+#      reduction_function: mean
+#   output_params:
+#     zlib: True
+#     fletcher32: True
+#   file_path_template: 'SR_N_MEAN/SR_N_MEAN_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
+
 output_products:
- - name: landsat_seasonal_mean
-   statistic: simple
-   statistic_args:
-      reduction_function: mean
+ - name: med_ndwi
+   statistic: medndwi
+   # statistic: std
    output_params:
-     zlib: True
-     fletcher32: True
-   file_path_template: 'SR_N_MEAN/SR_N_MEAN_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
+      zlib: True
+      fletcher32: True
+   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
+   product_type: ITEM
+
+filter_product:
+  method: by_tide_height
+  args:
+     # tide_range used to differentiate item with low/high composite and for exploring future incremental change
+     tide_range: 10
+     tide_percent: 10
+
 """
 
 CONFIG_FILENAME = 'config.yaml'
@@ -80,10 +99,10 @@ def sample_geometry():
     return json
 
 
-running_on_nci_environment = Path('/g/data/u46').exists()
+RUNNING_ON_NCI_ENV = Path('/g/data/u46').exists()
 
 
-@pytest.mark.xfail(not running_on_nci_environment,
+@pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
                    reason="This test currently expects to be run in the DEA environment on NCI.")
 def test_input_region_single_tile():
     runner = CliRunner()
@@ -98,13 +117,25 @@ def test_input_region_single_tile():
 
         tmpdir = Path(tmpdir)
         outputfile = tmpdir / 'SR_N_MEAN' / 'SR_N_MEAN_3577_12_-43_20150101.nc'
-
         assert outputfile.exists()
 
 
-@pytest.mark.xfail
+@pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
+                   reason="This test currently expects to be run in the DEA environment on NCI.")
 def test_input_region_from_shapefile():
-    assert False
+    runner = CliRunner()
+    with runner.isolated_filesystem() as tmpdir:
+        with open(CONFIG_FILENAME, 'w') as f:
+            f.write(CONFIG_TEMPLATE)
+
+        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME])
+        assert 'error' not in result.output.lower()
+        assert 'exception' not in result.output.lower()
+        assert result.exit_code == 0
+
+        tmpdir = Path(tmpdir)
+        outputfile = tmpdir / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_medndwi.nc'
+        assert outputfile.exists()
 
 
 @pytest.mark.xfail
