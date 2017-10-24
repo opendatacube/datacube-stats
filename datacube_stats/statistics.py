@@ -359,9 +359,8 @@ class ClearCount(Statistic):
 
 
 class MedNdwi(Statistic):
+    """ Calculate ndwi and then median image through time"""
     import warnings
-
-    """Calculate ndwi and then median image through time"""
 
     def compute(self, data):
         # This is a special case to implement, after calculating ndwi as med.
@@ -387,9 +386,9 @@ class MedNdwi(Statistic):
 
 
 class StdNdwi(Statistic):
+    """ Calculate standard deviation on NDWI values """
     import warnings
 
-    """ Calculate standard deviation on NDWI values """
     def compute(self, data):
         # This is a special case to implementi std, after calculating ndwi as med and
         # then standard deviation through time

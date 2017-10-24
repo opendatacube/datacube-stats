@@ -814,7 +814,6 @@ def _select_task_generator(input_region, storage, filter_product):
 
 def boundary_polygon_from_file(filename):
     # TODO: This should be refactored and moved into datacube.utils.geometry
-    import fiona
     import shapely.ops
     from shapely.geometry import shape, mapping
     with fiona.open(filename) as input_region:
@@ -1011,9 +1010,46 @@ class GeneratePolygonTasks(object):
         self.input_region = input_region
         self.filter_product = filter_product
         self.storage = storage
-        self.poly_index = ()
-        self.filter_time = ""
         self.feature = {}
+
+    def get_filter_product(self, all_dates, date_ranges):
+        # Test for dry/wet products
+        if self.filter_product.get('method') == 'by_hydrological_months':
+            # get the year id and geometry for dry or wet type
+            self.filter_product['year'] = {k: v for k, v in self.feature.items() if "DY" in k.upper()} \
+                if self.filter_product.get('type') == 'dry' else \
+                {k: v for k, v in self.feature.items() if "WY" in k.upper()}
+            poly_y = "_".join(x for x in [v for k, v in self.filter_product['year'].items()])
+            poly_index = (str(self.feature['ID']), poly_y)
+            filter_time = get_hydrological_months(self.filter_product)
+        elif self.filter_product.get('method') == 'by_tide_height':
+            poly_x = str(self.feature['ID']) + '_' + str(self.feature['lon'])
+            poly_y = str(self.feature['lat']) + '_PER_' + str(self.filter_product['args']['tide_percent'])
+            poly_index = (poly_x, poly_y)
+            # get all relevant date time lists
+            if self.filter_product['args'].get('tide_range'):
+                # It is ITEM product
+                filter_time = range_tidal_data(all_dates, self.feature['ID'], self.filter_product['args']['tide_range'],
+                                               self.filter_product['args']['tide_percent'], self.feature['lon'],
+                                               self.feature['lat'])
+            else:
+                # This is for low/high composite
+                all_list, list_low, list_high, ebb_flow = \
+                    extract_otps_computed_data(all_dates, date_ranges,
+                                               self.filter_product['args']['tide_percent'], self.feature['lon'],
+                                               self.feature['lat'])
+                filter_time = list_low if self.filter_product['args']['type'] == 'low' else list_high
+                # filter out dates as per sub classification of ebb flow
+                if self.filter_product['args'].get('sub_class'):
+                    filter_time = get_ebb_flow(self.filter_product, list_low, list_high, ebb_flow)
+                    poly_x = self.filter_product['args']['sub_class'] + "_" + str(self.feature['lon'])
+                    poly_index = (poly_x, self.feature['lat'])
+                _LOG.info('\n DATE LIST for feature %d length %d, time period: %s \t%s',
+                          self.feature['ID'], len(filter_time), date_ranges, str(filter_time))
+        else:
+            poly_index = ()
+            filter_time = []
+        return poly_index, filter_time
 
     def __call__(self, index, sources_spec, date_ranges):
         """
@@ -1028,55 +1064,24 @@ class GeneratePolygonTasks(object):
         assert 'feature_id' in self.input_region
         with fiona.open(self.input_region['from_file']) as input_region:
             for feature in input_region:
-                ID = feature['properties']['ID']
+                feature_id = feature['properties']['ID']
                 # capture filename and feature id to get boundary info in execute task
-                if ID in self.input_region['feature_id']:
+                if feature_id in self.input_region['feature_id']:
                     self.feature = feature['properties']
                     break
         if len(self.feature) == 0:
-            _LOG.info("Feature id %s not found in the polygon", str(ID))
+            _LOG.info("Feature id %s not found in the polygon", str(feature_id))
             raise PolygonException()
         make_tile = ArbitraryTileMaker(index, input_region, self.storage, self.filter_product)
         dc = make_tile(product=None, time=None, group_by=None, filter_time=None, geopoly=None, poly_dates=1)
         boundary_polygon = geom_from_file(self.input_region['from_file'], self.input_region['feature_id'])
         # Get all dates within the date_range
         all_dates = list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges)
-        # Test for dry/wet products
-        if self.filter_product.get('method') == 'by_hydrological_months':
-            # get the year id and geometry for dry or wet type
-            self.filter_product['year'] = {k: v for k, v in self.feature.items() if "DY" in k.upper()} \
-                 if self.filter_product.get('type') == 'dry' else  \
-                 {k: v for k, v in self.feature.items() if "WY" in k.upper()}
-            poly_y = "_".join(x for x in [v for k, v in self.filter_product['year'].items()])
-            poly_x = str(ID)
-            self.poly_index = (poly_x, poly_y)
-            self.filter_time = get_hydrological_months(self.filter_product)
-        elif self.filter_product.get('method') == 'by_tide_height':
-            lon = self.feature['lon']
-            lat = self.feature['lat']
-            poly_x = str(ID) + '_' + str(lon)
-            poly_y = str(lat) + '_PER_' + str(self.filter_product['args']['tide_percent'])
-            # get all relevant date time lists
-            if self.filter_product['args'].get('tide_range'):
-                # It is ITEM product
-                self.poly_index = (poly_x, poly_y)
-                self.filter_time = range_tidal_data(all_dates, ID, self.filter_product, lon, lat)
-            else:
-                # This is for low/high composite
-                all_list, list_low, list_high, ebb_flow = \
-                    extract_otps_computed_data(all_dates, date_ranges,
-                                               self.filter_product['args']['tide_percent'], lon, lat)
-                self.filter_time = list_low if self.filter_product['args']['type'] == 'low' else list_high
-                # filter out dates as per sub classification of ebb flow
-                if self.filter_product.get('sub_class'):
-                    self.filter_time = get_ebb_flow(self.filter_product, list_low, list_high, ebb_flow)
-                    poly_x = self.filter_product['args']['subclass'] + "_" + str(lon)
-                    poly_y = lat
-                self.poly_index = (poly_x, poly_y)
-                _LOG.info('\n DATE LIST for feature %d length %d, time period: %s \t%s',
-                          ID, len(self.filter_time), date_ranges, str(self.filter_time))
+        # Set the poly index and get filter time as per product
+        poly_index, filter_time = self.get_filter_product(all_dates, date_ranges)
+
         for time_period in date_ranges:
-            task = StatsTask(time_period=time_period, tile_index=self.poly_index)
+            task = StatsTask(time_period=time_period, tile_index=poly_index)
             for source_spec in sources_spec:
                 group_by_name = source_spec.get('group_by', 'solar_day')
 
@@ -1090,10 +1095,10 @@ class GeneratePolygonTasks(object):
                     if ep_range[1] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
                         ep_range = (ep_range[0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
                 data = make_tile(product=source_spec['product'], time=ep_range,
-                                 group_by=group_by_name, filter_time=self.filter_time,
+                                 group_by=group_by_name, filter_time=filter_time,
                                  geopoly=boundary_polygon, poly_dates=0)
                 masks = [make_tile(product=mask['product'], time=ep_range,
-                                   group_by=group_by_name, filter_time=self.filter_time,
+                                   group_by=group_by_name, filter_time=filter_time,
                                    geopoly=boundary_polygon, poly_dates=0)
                          for mask in source_spec.get('masks', [])]
                 if data is None:
