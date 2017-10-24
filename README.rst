@@ -314,11 +314,12 @@ The tiling regime is determined by the ``tile_size`` parameter of the `Output st
 Feature ID
 ~~~~~~~~~~
 
-For a multiple polygon shape file, specific feature id can be passed on to do for that feature.
+For a multiple polygon shape file, specific feature id can be passed on with a shape file.
 
 .. code-block:: yaml
 
     input_region:
+      from_file: /home/user/ITEMv2_tidalmodel.shp
       feature_id: [3]
 
 
@@ -406,9 +407,11 @@ Any extra arguments to pass to the output driver for an individual output band:
 Filter product
 ~~~~~~~~~~~~~~
 
-To filter out sources that correspond to any derive products. It currently supports two methods
-to filter out list of dates. Filtering along hydrological months, can be used by passing
-'by_hydrological_months' or by_tide_height through method parameter:
+To filter out sources that correspond to any derived products. It currently supports two methods
+to filter out list of dates. Filtering in hydrological months ('by_hydrological_months'), can be
+used to filter months from July to November for the year after the dry or wet years collected from
+the polygon. Specific month range can also be specified. Second method of filtering is 'by_tide_height',
+which uses OTPS model to get tide_height:
 
 .. code-block:: yaml
 
@@ -417,6 +420,14 @@ to filter out list of dates. Filtering along hydrological months, can be used by
          args:
            tide_range: 10
            tide_percent: 20
+
+.. code-block:: yaml
+
+       filter_product:
+         method: by_hydrological_months
+         args:
+           type: dry
+           months: ['07', '11']
 
 
 
