@@ -851,6 +851,14 @@ class GriddedTaskGenerator(object):
             # Each source may be masked by multiple masks
             tasks = {}
             for source_spec in sources_spec:
+                ep_range = time_period
+                if source_spec.get('time'):
+                    # No need to do if start date is more than the allowed date
+                    if ep_range[0] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+                        continue
+                    # reset the end date in case it is more than filtered allowed date
+                    if ep_range[1] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+                        ep_range = (ep_range[0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
                 source_filter = source_spec.get('source_filter', None)
 
@@ -861,14 +869,14 @@ class GriddedTaskGenerator(object):
                 (data, *masks), unmatched_ = multi_product_list_cells(all_products, workflow,
                                                                       product_query=product_query,
                                                                       cell_index=self.cell_index,
-                                                                      time=time_period,
+                                                                      time=ep_range,
                                                                       group_by=group_by_name,
                                                                       geopolygon=self.geopolygon)
 
                 self._total_unmatched += report_unmatched_datasets(unmatched_[0], _LOG.warning)
 
                 for tile_index, sources in data.items():
-                    task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
+                    task = tasks.setdefault(tile_index, StatsTask(time_period=ep_range, tile_index=tile_index))
                     task.sources.append({
                         'data': sources,
                         'masks': [mask.get(tile_index) for mask in masks],
@@ -917,12 +925,20 @@ class NonGriddedTaskGenerator(object):
             task = StatsTask(time_period)
 
             for source_spec in sources_spec:
+                ep_range = time_period
+                if source_spec.get('time'):
+                    # No need to do if start date is more than the allowed date
+                    if ep_range[0] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+                        continue
+                    # reset the end date in case it is more than filtered allowed date
+                    if ep_range[1] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+                        ep_range = (ep_range[0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
                 # Build Tile
-                data = make_tile(product=source_spec['product'], time=time_period, group_by=group_by_name)
+                data = make_tile(product=source_spec['product'], time=ep_range, group_by=group_by_name)
 
-                masks = [make_tile(product=mask['product'], time=time_period, group_by=group_by_name)
+                masks = [make_tile(product=mask['product'], time=ep_range, group_by=group_by_name)
                          for mask in source_spec.get('masks', [])]
 
                 if len(data.sources.time) == 0:
