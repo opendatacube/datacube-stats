@@ -311,6 +311,18 @@ The tiling regime is determined by the ``tile_size`` parameter of the `Output st
     input_region:
       tile: [16, -39]
 
+Feature ID
+~~~~~~~~~~
+
+For a multiple polygon shape file, specific feature id can passed on to do the statistics.
+
+.. code-block:: yaml
+
+    input_region:
+      feature_id: [3]
+
+
+
 Spatial extents
 ~~~~~~~~~~~~~~~
 
@@ -390,6 +402,24 @@ Any extra arguments to pass to the output driver for an individual output band:
        output_params:
          zlib: True
          fletcher32: True
+
+Filter product
+~~~~~~~~~~~~~~
+
+To filter out sources that correspond to any derive products. It currently supports two methods
+to filter out list of dates. Filtering along hydrological months, can be used by using
+'by_hydrological_months' or by_tide_height through method parameter:
+
+.. code-block:: yaml
+
+       filter_product:
+         method: by_tide_height
+         args:
+           tide_range: 10
+           tide_percent: 20
+
+
+
 
 File naming
 ~~~~~~~~~~~
