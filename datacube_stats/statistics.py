@@ -293,7 +293,6 @@ class Statistic(object):
         :param xarray.Dataset data:
         :return: xarray.Dataset
         """
-        return data
 
     def measurements(self, input_measurements):
         """
@@ -360,10 +359,7 @@ class ClearCount(Statistic):
 
 class NoneStat(Statistic):
     def compute(self, data):
-        class Empty:
-            data_vars = {}
-
-        return Empty()
+        return data
 
     def measurements(self, input_measurements):
         return input_measurements

@@ -754,8 +754,6 @@ def _configure_date_ranges(index, config):
         raise StatsConfigurationError("Must specified both `start_date` and `end_date`"
                                       " in `date_ranges:` section of configuration")
 
-    output = list()
-
     if 'stats_duration' not in date_ranges and 'step_size' not in date_ranges:
         start = pd.to_datetime(date_ranges['start_date'])
         end = pd.to_datetime(date_ranges['end_date'])
@@ -911,13 +909,24 @@ def _make_grid_spec(storage):
 
 
 class NonGriddedTaskGenerator(object):
+    """
+    Make stats tasks for a single defined spatial region, not part of a grid.
+
+    Usage:
+
+    ngtg = NonGriddedTaskGenerator(input_region, storage)
+
+    tasks = ngtg(index, sources_spec, date_ranges)
+
+    :param input_region:
+    :param storage:
+    """
     def __init__(self, input_region, storage):
         self.input_region = input_region
         self.storage = storage
 
     def __call__(self, index, sources_spec, date_ranges):
         """
-        Make stats tasks for a single defined spatial region, not part of a grid.
 
         :param index: database index
         :param input_region: dictionary of query parameters defining the target input region. Usually

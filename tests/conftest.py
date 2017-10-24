@@ -1,5 +1,8 @@
 import pytest
 import yaml
+from mock import mock
+
+from datacube.model import MetadataType
 
 
 @pytest.fixture
@@ -31,3 +34,34 @@ def sample_stats_config():
     """)
 
     return config
+
+
+@pytest.fixture
+def mock_index():
+    fake_index = mock.MagicMock()
+    fake_index.metadata_types.get_by_name.return_value = mock.MagicMock(spec=MetadataType)
+
+    # Check is performed validating the name of query fields
+    fake_index.datasets.get_field_names.return_value = {'time', 'source_filter'}
+
+    fake_index.products.get_by_name.return_value.measurements = {'red': {
+        'name': 'mock_measurement',
+        'dtype': 'int8',
+        'nodata': -999,
+        'units': '1'}}
+
+    fake_index.metadata_types.get_by_name.return_value = MetadataType(
+        {
+            'name': 'eo',
+            'dataset': dict(
+                id=['id'],
+                label=['ga_label'],
+                creation_time=['creation_dt'],
+                measurements=['image', 'bands'],
+                sources=['lineage', 'source_datasets']
+            )
+        },
+        dataset_search_fields={}
+    )
+
+    return fake_index
