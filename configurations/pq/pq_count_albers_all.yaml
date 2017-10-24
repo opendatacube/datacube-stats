@@ -86,7 +86,7 @@ var_attributes:
 
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
