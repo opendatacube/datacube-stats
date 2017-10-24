@@ -314,7 +314,7 @@ The tiling regime is determined by the ``tile_size`` parameter of the `Output st
 Feature ID
 ~~~~~~~~~~
 
-For a multiple polygon shape file, specific feature id can passed on to do the statistics.
+For a multiple polygon shape file, specific feature id can be passed on to do for that feature.
 
 .. code-block:: yaml
 
@@ -407,7 +407,7 @@ Filter product
 ~~~~~~~~~~~~~~
 
 To filter out sources that correspond to any derive products. It currently supports two methods
-to filter out list of dates. Filtering along hydrological months, can be used by using
+to filter out list of dates. Filtering along hydrological months, can be used by passing
 'by_hydrological_months' or by_tide_height through method parameter:
 
 .. code-block:: yaml
