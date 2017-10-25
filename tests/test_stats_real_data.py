@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from datacube.utils import geometry
@@ -7,6 +8,8 @@ from datacube_stats.main import main
 
 import pytest
 
+
+MODULE_EXISTS = 'otps' in sys.modules
 CONFIG_TEMPLATE = """
 ## Define inputs to perform statistics on
 sources:
@@ -56,20 +59,72 @@ storage:
   dimension_order: [time, y, x]
 
 input_region:
-   #tile: [12, -43]
-   from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp
-   feature_id: [280]
+   tile: [12, -43]
 
 ## Define statistics to perform and how to store the data
-#output_products:
-# - name: landsat_seasonal_mean
-#   statistic: simple
-#   statistic_args:
-#      reduction_function: mean
-#   output_params:
-#     zlib: True
-#     fletcher32: True
-#   file_path_template: 'SR_N_MEAN/SR_N_MEAN_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
+output_products:
+ - name: landsat_seasonal_mean
+   statistic: simple
+   statistic_args:
+      reduction_function: mean
+   output_params:
+     zlib: True
+     fletcher32: True
+   file_path_template: 'SR_N_MEAN/SR_N_MEAN_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
+
+"""
+
+CONFIG_TEMPLATE_ITEM = """
+## Define inputs to perform statistics on
+sources:
+  - product: ls8_nbar_albers
+    measurements: [blue, green, red, nir, swir1, swir2]
+    group_by: solar_day
+    resampling: bilinear
+    masks:
+      - product: ls8_pq_albers
+        measurement: pixelquality
+        group_by: solar_day
+        fuse_func: datacube.helpers.ga_pq_fuser
+        flags:
+          contiguous: True
+          cloud_acca: no_cloud
+          cloud_fmask: no_cloud
+          cloud_shadow_acca: no_cloud_shadow
+          cloud_shadow_fmask: no_cloud_shadow
+          blue_saturated: False
+          green_saturated: False
+          red_saturated: False
+          nir_saturated: False
+          swir1_saturated: False
+          swir2_saturated: False
+
+## Define whether and how to chunk over time
+date_ranges:
+  start_date: 2015-01-01
+  end_date: 2015-04-01
+  stats_duration: 3m
+  step_size: 3m
+
+storage:
+  driver: NetCDFCF
+
+  crs: EPSG:3577
+  tile_size:
+          x: 100000.0
+          y: 100000.0
+  resolution:
+          x: 25000
+          y: -25000
+  chunking:
+      x: 200
+      y: 200
+      time: 1
+  dimension_order: [time, y, x]
+
+input_region:
+   from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp
+   feature_id: [280]
 
 output_products:
  - name: med_ndwi
@@ -120,13 +175,12 @@ def test_input_region_single_tile():
         assert outputfile.exists()
 
 
-@pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
-                   reason="This test currently expects to be run in the DEA environment on NCI.")
+@pytest.mark.xfail(not MODULE_EXISTS, reason="otps module is not available")
 def test_input_region_from_shapefile():
     runner = CliRunner()
     with runner.isolated_filesystem() as tmpdir:
         with open(CONFIG_FILENAME, 'w') as f:
-            f.write(CONFIG_TEMPLATE)
+            f.write(CONFIG_TEMPLATE_ITEM)
 
         result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME])
         assert 'error' not in result.output.lower()

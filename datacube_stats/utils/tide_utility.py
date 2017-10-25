@@ -4,10 +4,10 @@ import logging
 from datetime import timedelta, datetime
 from datacube.api.query import query_group_by
 
-from otps.predict_wrapper import predict_tide
-from otps import TimePoint
+
 from operator import itemgetter
 import pandas as pd
+import pytest
 
 DERIVED_PRODS = ['dry', 'wet', 'item', 'low', 'high']
 FILTER_METHOD = {
@@ -19,6 +19,8 @@ HYDRO_START_CAL = '01/07/'
 HYDRO_END_CAL = '30/11/'
 
 _LOG = logging.getLogger('tide_utility')
+
+MODULE_EXISTS = 'otps' in sys.modules
 
 
 # Return the geom for a feature id
@@ -61,7 +63,11 @@ def list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges):
 
 
 # This routine is used for ITEM product and it returns a list of dates corresponding to the range interval.
+@pytest.mark.xfail(not MODULE_EXISTS, reason="otps module is not available")
 def range_tidal_data(all_dates, feature_id, tide_range, per, ln, la):
+    from otps.predict_wrapper import predict_tide
+    from otps import TimePoint
+
     tp = list()
     tide_dict = dict()
     for dt in all_dates:
@@ -103,7 +109,11 @@ def input_range_data(per_range, tide_list, feature_id, per):
 
 # This function is used for composite products and also for sub class extraction
 # like ebb/flow/peak high/low on the basis of 15 minutes before and after
+@pytest.mark.fail(not MODULE_EXISTS, reason="otps module is not packaged")
 def extract_otps_computed_data(dates, date_ranges, per, ln, la):
+    from otps.predict_wrapper import predict_tide
+    from otps import TimePoint
+
     tp = list()
     tide_dict = dict()
     new_date_list = list()
@@ -194,7 +204,8 @@ def filter_sub_class(sub_class, list_low, list_high, ebb_flow):
 
 
 def get_ebb_flow(filter_product, list_low, list_high, ebb_flow):
-    list_low, list_high, ebb_flow = filter_sub_class(filter_product['args']['sub_class'], list_low, list_high, ebb_flow)
+    list_low, list_high, ebb_flow = filter_sub_class(filter_product['args']['sub_class'],
+                                                     list_low, list_high, ebb_flow)
     _LOG.info("SUB class dates extracted %s for list low %s  and for list high %s",
               filter_product['args']['sub_class'], list_low, list_high)
     filter_time = list_low if filter_product['args']['type'] == 'low' else list_high
