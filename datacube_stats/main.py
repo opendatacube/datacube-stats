@@ -129,6 +129,9 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
 
     timer = MultiTimer().start('main')
 
+    if len(tile_index) == 0:
+        tile_index = None
+
     _, config = next(read_documents(stats_config_file))
     app = StatsApp.from_configuration_file(config, index,
                                            gather_tile_indexes(tile_index, tile_index_file),
