@@ -82,6 +82,22 @@ def list_statistics(ctx, param, value):
     ctx.exit()
 
 
+def gather_tile_indexes(tile_index, tile_index_file):
+    if tile_index is None and tile_index_file is None:
+        return None
+
+    assert tile_index is None or tile_index_file is None, \
+        "must not specify both tile_index and tile_index_file"
+
+    if tile_index:
+        return [tile_index]
+
+    with open(tile_index_file) as fl:
+        return [tuple(int(x) for x in l.split())
+                for l in fl]
+
+
+# pylint: disable=too-many-locals
 @click.command(name='datacube-stats')
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
@@ -90,6 +106,9 @@ def list_statistics(ctx, param, value):
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
                                                       'single tile_index specified as [X] [Y]')
+@click.option('--tile-index-file',
+              type=click.Path(exists=True, readable=True, dir_okay=False),
+              help="A file consisting of tile indexes specified as [X] [Y] per line")
 @click.option('--output-location', help='Override output location in configuration file')
 @click.option('--year', type=int, help='Override time period in configuration file')
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
@@ -99,19 +118,21 @@ def list_statistics(ctx, param, value):
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
-         tile_index, output_location, year):
+         tile_index, tile_index_file, output_location, year):
     if qsub is not None:
         # TODO: verify config before calling qsub submit
         click.echo(repr(qsub))
-        r, _ = qsub(auto=True)
-        return r
+        exit_code, _ = qsub(auto=True)
+        return exit_code
 
     _log_setup()
 
     timer = MultiTimer().start('main')
 
     _, config = next(read_documents(stats_config_file))
-    app = StatsApp.from_configuration_file(config, index, tile_index, output_location, year)
+    app = StatsApp.from_configuration_file(config, index,
+                                           gather_tile_indexes(tile_index, tile_index_file),
+                                           output_location, year)
     app.validate()
 
     if save_tasks:
@@ -187,18 +208,18 @@ class StatsApp(object):
         self.queue_size = 50
 
     @classmethod
-    def from_configuration_file(cls, config, index=None, tile_index=None, output_location=None, year=None):
+    def from_configuration_file(cls, config, index=None, tile_indexes=None, output_location=None, year=None):
         """
         Create a StatsApp to run a processing job, based on a configuration file
 
         :param config: dictionary based configuration
         :param index: open database connection
-        :param tile_index: Only process a single tile of a gridded job. (useful for debugging)
+        :param tile_indexes: list of tiles for a gridded job. (useful for debugging)
         :return: read to run StatsApp
         """
         input_region = config.get('input_region')
-        if tile_index and not input_region:
-            input_region = {'tile': tile_index}
+        if tile_indexes and not input_region:
+            input_region = {'tile': tile_indexes}
 
         if year is not None:
             if 'date_ranges' not in config:
@@ -763,8 +784,8 @@ def _select_task_generator(input_region, storage):
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return GriddedTaskGenerator(storage)
 
-    elif 'tile' in input_region:  # Simple, single tile
-        return GriddedTaskGenerator(storage, cell_index=input_region['tile'])
+    elif 'tile' in input_region:  # List of tiles
+        return GriddedTaskGenerator(storage, tile_indexes=input_region['tile'])
 
     elif 'geometry' in input_region:  # Larger spatial region
         # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
@@ -798,10 +819,10 @@ def boundary_polygon_from_file(filename):
 
 
 class GriddedTaskGenerator(object):
-    def __init__(self, storage, geopolygon=None, cell_index=None):
+    def __init__(self, storage, geopolygon=None, tile_indexes=None):
         self.grid_spec = _make_grid_spec(storage)
         self.geopolygon = geopolygon
-        self.cell_index = cell_index
+        self.tile_indexes = tile_indexes
         self._total_unmatched = 0
 
     def __call__(self, index, sources_spec, date_ranges):
@@ -819,40 +840,56 @@ class GriddedTaskGenerator(object):
         for time_period in date_ranges:
             _LOG.info('Making output product tasks for time period: %s', time_period)
             timer = MultiTimer().start('creating_tasks')
+            created_tasks = 0
 
-            # Tasks are grouped by tile_index, and may contain sources from multiple places
-            # Each source may be masked by multiple masks
-            tasks = {}
-            for source_spec in sources_spec:
-                group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
-                source_filter = source_spec.get('source_filter', None)
+            if self.tile_indexes is not None:
+                for tile_index in self.tile_indexes:
+                    for task in self.collect_tasks(workflow, time_period, sources_spec, tile_index):
+                        created_tasks += 1
+                        yield task
+            else:
+                for task in self.collect_tasks(workflow, time_period, sources_spec):
+                    created_tasks += 1
+                    yield task
 
-                all_products = [source_spec['product']] + [m['product'] for m in source_spec.get('masks', [])]
-
-                product_query = {all_products[0]: {'source_filter': source_filter}}
-
-                (data, *masks), unmatched_ = multi_product_list_cells(all_products, workflow,
-                                                                      product_query=product_query,
-                                                                      cell_index=self.cell_index,
-                                                                      time=time_period,
-                                                                      group_by=group_by_name,
-                                                                      geopolygon=self.geopolygon)
-
-                self._total_unmatched += report_unmatched_datasets(unmatched_[0], _LOG.warning)
-
-                for tile_index, sources in data.items():
-                    task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile_index))
-                    task.sources.append({
-                        'data': sources,
-                        'masks': [mask.get(tile_index) for mask in masks],
-                        'spec': source_spec,
-                    })
-
+            # is timing it still appropriate here?
             timer.pause('creating_tasks')
-            if tasks:
-                _LOG.info('Created %s tasks for time period: %s. In: %s', len(tasks), time_period, timer)
-            for task in tasks.values():
-                yield task
+            if created_tasks:
+                _LOG.info('Created %s tasks for time period: %s. In: %s',
+                          created_tasks, time_period, timer)
+
+    def collect_tasks(self, workflow, time_period, sources_spec, tile_index=None):
+        """ Collect tasks for a time period. """
+        # Tasks are grouped by tile_index, and may contain sources from multiple places
+        # Each source may be masked by multiple masks
+        tasks = {}
+
+        for source_spec in sources_spec:
+            group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
+
+            products = [source_spec['product']] + [mask['product']
+                                                   for mask in source_spec.get('masks', [])]
+
+            product_query = {products[0]: {'source_filter': source_spec.get('source_filter', None)}}
+
+            (data, *masks), unmatched_ = multi_product_list_cells(products, workflow,
+                                                                  product_query=product_query,
+                                                                  cell_index=tile_index,
+                                                                  time=time_period,
+                                                                  group_by=group_by_name,
+                                                                  geopolygon=self.geopolygon)
+
+            self._total_unmatched += report_unmatched_datasets(unmatched_[0], _LOG.warning)
+
+            for tile, sources in data.items():
+                task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile))
+                task.sources.append({
+                    'data': sources,
+                    'masks': [mask.get(tile) for mask in masks],
+                    'spec': source_spec,
+                })
+
+        return tasks.values()
 
     def __del__(self):
         if self._total_unmatched > 0:
