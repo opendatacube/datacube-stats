@@ -13,7 +13,7 @@ setup(
     name='datacube-stats',
     version=__version__,
     packages=find_packages(),
-    url='https://github.com/data-cube/',
+    url='https://github.com/GeoscienceAustralia/agdc_statistics/',
     license='Apache',
     author='Geoscience Australia',
     author_email='datacube@ga.gov.au',
@@ -21,16 +21,14 @@ setup(
     install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio', 'pyyaml',
                       'cloudpickle', 'boltons', 'pydash'],
     setup_requires=['pytest-runner'],
-    tests_require=['pytest', 'mock'],
+    tests_require=['pytest', 'mock', 'hypothesis', 'voluptuous'],
     entry_points={
         'console_scripts': [
             'datacube-stats = datacube_stats.main:main',
-            'datacube-stats-qsub = datacube_stats.cli.datacube_stats_qsub:qsub',
             'datacube-tile-check = datacube_stats.cli.tile_check:main',
         ],
         'datacube.stats': [
             'wofs-summary = datacube_stats.statistics:WofsStats'
         ]
     },
-    scripts=['scripts/launch-distributed-pbs'],
 )
