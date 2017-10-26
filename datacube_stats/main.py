@@ -31,7 +31,8 @@ from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function
 from datacube_stats.utils.dates import date_sequence
 from datacube_stats.models import StatsTask, OutputProduct
-from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
+from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
+    NoSuchOutputDriver
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
@@ -726,8 +727,8 @@ def _get_stats_metadata(cfg):
 
 def _prepare_output_driver(storage):
     try:
-        return OUTPUT_DRIVERS[storage['driver']]
-    except KeyError:
+        return get_driver_by_name(storage['driver'])
+    except NoSuchOutputDriver:
         if 'driver' in storage:
             msg = 'Invalid output driver "{}" specified.'
         else:

@@ -38,6 +38,9 @@ OUTPUT_DRIVERS = {}
 
 
 class RegisterDriver(abc.ABCMeta):
+    """
+    A metaclass which registers all sub-classes of :class:`OutputDriver` into the OUTPUT_DRIVERS dictionary.
+    """
     def __new__(mcs, name, bases, class_dict):
         cls = type.__new__(mcs, name, bases, class_dict)
         if hasattr(cls, '_driver_name'):
@@ -45,8 +48,20 @@ class RegisterDriver(abc.ABCMeta):
         return cls
 
 
+def get_driver_by_name(name):
+    """Search for an output driver, ignoring case and spaces."""
+    for driver_name, driver_class in OUTPUT_DRIVERS.items():
+        if driver_name.lower().replace(' ', '') == name.lower().replace(' ', ''):
+            return driver_class
+    raise NoSuchOutputDriver()
+
+
+class NoSuchOutputDriver(Exception):
+    """The requested output driver is not available."""
+
+
 class StatsOutputError(Exception):
-    pass
+    """Something went wrong while writing to output files."""
 
 
 class OutputFileAlreadyExists(Exception):
