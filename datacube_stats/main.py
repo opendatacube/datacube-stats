@@ -787,8 +787,11 @@ def _select_task_generator(input_region, storage):
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return GriddedTaskGenerator(storage)
 
-    elif 'tile' in input_region:  # List of tiles
-        return GriddedTaskGenerator(storage, tile_indexes=input_region['tile'])
+    elif 'tile' in input_region:  # For one tile
+        return GriddedTaskGenerator(storage, tile_indexes=[input_region['tile']])
+
+    elif 'tiles' in input_region:  # List of tiles
+        return GriddedTaskGenerator(storage, tile_indexes=input_region['tiles'])
 
     elif 'geometry' in input_region:  # Larger spatial region
         # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
@@ -821,14 +824,33 @@ def boundary_polygon_from_file(filename):
     return boundary_polygon
 
 
-# Include date ranges if sensor specific time is mentioned
-def filter_time_from_sensor(ep_range, time_period):
-    if time_period[0] > datetime.strptime(ep_range[1], "%Y-%m-%d"):
-        return ()
-    if time_period[1] > datetime.strptime(ep_range[1], "%Y-%m-%d"):
-        ep_range = (time_period[0], datetime.strptime(ep_range[1], "%Y-%m-%d"))
-        return ep_range
-    return time_period
+def filter_time_from_sensor(source_spec, time_period):
+    """
+    Override date ranges if sensor specific time is within the time_period range
+    """
+    ep_range = time_period
+    if source_spec.get('time'):
+        if time_period[0] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+            _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
+            return None
+        # Filter subset cannot have end date more than time_period end date
+        if datetime.strptime(source_spec['time'][0], "%Y-%m-%d") > time_period[0] and \
+                datetime.strptime(source_spec['time'][1], "%Y-%m-%d") > time_period[1]:
+            ep_range = (datetime.strptime(source_spec['time'][0], "%Y-%m-%d"),
+                        time_period[1])
+        # override time_period with sensor time in case it is a subset of time_period
+        elif datetime.strptime(source_spec['time'][1], "%Y-%m-%d") < time_period[1] and \
+                datetime.strptime(source_spec['time'][0], "%Y-%m-%d") > time_period[0]:
+            ep_range = (datetime.strptime(source_spec['time'][0], "%Y-%m-%d"),
+                        datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
+        elif datetime.strptime(source_spec['time'][0], "%Y-%m-%d") > time_period[0] and \
+                datetime.strptime(source_spec['time'][1], "%Y-%m-%d") < time_period[1]:
+            ep_range = (time_period[0], datetime.strptime(source_spec['time'][0], "%Y-%m-%d"))
+        elif datetime.strptime(source_spec['time'][1], "%Y-%m-%d") < time_period[1] and \
+                datetime.strptime(source_spec['time'][0], "%Y-%m-%d") < time_period[0]:
+            ep_range = (time_period[0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
+        _LOG.info("New time range for %s is %s", source_spec['product'], ep_range)
+    return ep_range
 
 
 class GriddedTaskGenerator(object):
@@ -878,10 +900,9 @@ class GriddedTaskGenerator(object):
         tasks = {}
 
         for source_spec in sources_spec:
-            if source_spec.get('time'):
-                time_period = filter_time_from_sensor(source_spec['time'], time_period)
-                if len(time_period) == 0:
-                    continue
+            ep_range = filter_time_from_sensor(source_spec, time_period)
+            if ep_range is None:
+                continue
             group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
             products = [source_spec['product']] + [mask['product']
@@ -892,14 +913,14 @@ class GriddedTaskGenerator(object):
             (data, *masks), unmatched_ = multi_product_list_cells(products, workflow,
                                                                   product_query=product_query,
                                                                   cell_index=tile_index,
-                                                                  time=time_period,
+                                                                  time=ep_range,
                                                                   group_by=group_by_name,
                                                                   geopolygon=self.geopolygon)
 
             self._total_unmatched += report_unmatched_datasets(unmatched_[0], _LOG.warning)
 
             for tile, sources in data.items():
-                task = tasks.setdefault(tile_index, StatsTask(time_period=time_period, tile_index=tile))
+                task = tasks.setdefault(tile, StatsTask(time_period=ep_range, tile_index=tile))
                 task.sources.append({
                     'data': sources,
                     'masks': [mask.get(tile) for mask in masks],
@@ -953,18 +974,16 @@ class NonGriddedTaskGenerator(object):
 
         for time_period in date_ranges:
             task = StatsTask(time_period)
-
             for source_spec in sources_spec:
-                if source_spec.get('time'):
-                    time_period = filter_time_from_sensor(source_spec['time'], time_period)
-                    if len(time_period) == 0:
-                        continue
+                ep_range = filter_time_from_sensor(source_spec, time_period)
+                if ep_range is None:
+                    continue
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
                 # Build Tile
-                data = make_tile(product=source_spec['product'], time=time_period, group_by=group_by_name)
+                data = make_tile(product=source_spec['product'], time=ep_range, group_by=group_by_name)
 
-                masks = [make_tile(product=mask['product'], time=time_period, group_by=group_by_name)
+                masks = [make_tile(product=mask['product'], time=ep_range, group_by=group_by_name)
                          for mask in source_spec.get('masks', [])]
 
                 if len(data.sources.time) == 0:

@@ -307,11 +307,29 @@ Tile index
 ~~~~~~~~~~
 
 The tiling regime is determined by the ``tile_size`` parameter of the `Output storage format`_ section.
+A list of tiles can be passed on to ``tiles`` parameter.
 
 .. code-block:: yaml
 
     input_region:
       tile: [16, -39]
+
+
+Period of interest
+~~~~~~~~~~~~~~~~~~
+
+The time period can be specified for individual sensors to include only datasets for this period.
+This can be sometime useful to exclude datasets for Landsat 7 due to SLC failure.
+
+.. code-block:: yaml
+
+    sources:
+      product: ls7_nbar_albers
+      name: intertidal_low
+      measurements: [blue, green, red, nir, swir1, swir2]
+      group_by: solar_day
+      time: [1986-01-01, 2003-05-01]
+
 
 Spatial extents
 ~~~~~~~~~~~~~~~
