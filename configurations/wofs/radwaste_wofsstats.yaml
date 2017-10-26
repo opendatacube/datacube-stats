@@ -35,7 +35,7 @@ input_region:
             ] ]
 
 storage:
-  driver: Geotiff
+  driver: GeoTiff
 
   crs: EPSG:4326
   tile_size:

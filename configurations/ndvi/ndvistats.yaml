@@ -92,7 +92,7 @@ input_region:
 
 # Output Storage Format
 storage:
-  driver: Geotiff
+  driver: GeoTiff
 
   crs: EPSG:3577
   resolution:

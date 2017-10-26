@@ -7,7 +7,7 @@ from affine import Affine
 from datacube.model import MetadataType
 from datacube.utils.geometry import GeoBox, CRS
 from datacube_stats.models import OutputProduct, DataSource
-from datacube_stats.output_drivers import GeotiffOutputDriver
+from datacube_stats.output_drivers import GeoTiffOutputDriver
 from datacube_stats.statistics import NoneStat
 from datetime import datetime
 import pytest
@@ -83,7 +83,7 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
     #
     # Run the code we want to test
     #
-    with GeotiffOutputDriver(task=task, storage=storage, output_path=str(tmpdir)) as output_driver:
+    with GeoTiffOutputDriver(task=task, storage=storage, output_path=str(tmpdir)) as output_driver:
         output_driver.write_data(prod_name='sample_prod', measurement_name='sample_input_measurement_1',
                                  tile_index=tile_index, values=values)
 
