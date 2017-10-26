@@ -1,6 +1,8 @@
 Data Cube Statistics Tools
 ##########################
 
+|Build Status| |Coverage Status|
+
 Data Cube Statistics is a an application used to calculate large scale temporal statistics
 on data stored using an `Open Data Cube`_ (`ODC`_) installation. It provides a
 command line application which uses a `YAML <https://en.wikipedia.org/wiki/YAML>`_ configuration
@@ -581,3 +583,8 @@ Release Notes
 .. _dataset metadata documents: http://datacube-core.readthedocs.io/en/stable/ops/config.html#dataset-metadata-document
 .. _strftime syntax: http://strftime.org/
 .. _hdmedians python package: https://github.com/daleroberts/hdmedians
+.. |Build Status| image:: https://travis-ci.org/GeoscienceAustralia/agdc_statistics.svg?branch=master
+   :target: https://travis-ci.org/GeoscienceAustralia/agdc_statistics
+.. |Coverage Status| image:: https://coveralls.io/repos/github/GeoscienceAustralia/agdc_statistics/badge.svg?branch=master
+   :target: https://coveralls.io/github/GeoscienceAustralia/agdc_statistics?branch=master
+
