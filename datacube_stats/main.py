@@ -42,6 +42,7 @@ from .utils.query import multi_product_list_cells
 from .utils import report_unmatched_datasets
 from .utils import sorted_interleave
 from .timer import wrap_in_timer
+from datetime import datetime
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -820,6 +821,16 @@ def boundary_polygon_from_file(filename):
     return boundary_polygon
 
 
+# Include date ranges if sensor specific time is mentioned
+def filter_time_from_sensor(ep_range, time_period):
+    if time_period[0] > datetime.strptime(ep_range[1], "%Y-%m-%d"):
+        return ()
+    if time_period[1] > datetime.strptime(ep_range[1], "%Y-%m-%d"):
+        ep_range = (time_period[0], datetime.strptime(ep_range[1], "%Y-%m-%d"))
+        return ep_range
+    return time_period
+
+
 class GriddedTaskGenerator(object):
     def __init__(self, storage, geopolygon=None, tile_indexes=None):
         self.grid_spec = _make_grid_spec(storage)
@@ -867,6 +878,10 @@ class GriddedTaskGenerator(object):
         tasks = {}
 
         for source_spec in sources_spec:
+            if source_spec.get('time'):
+                time_period = filter_time_from_sensor(source_spec['time'], time_period)
+                if len(time_period) == 0:
+                    continue
             group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
             products = [source_spec['product']] + [mask['product']
@@ -940,6 +955,10 @@ class NonGriddedTaskGenerator(object):
             task = StatsTask(time_period)
 
             for source_spec in sources_spec:
+                if source_spec.get('time'):
+                    time_period = filter_time_from_sensor(source_spec['time'], time_period)
+                    if len(time_period) == 0:
+                        continue
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
                 # Build Tile
