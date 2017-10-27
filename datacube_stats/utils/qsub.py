@@ -462,7 +462,7 @@ class TaskRunner(object):
         def mk_pbs_celery():
             qsize = pbs.preferred_queue_size()
             port = 6379  # TODO: randomise
-            maxmemory = "1024mb"  # TODO: compute maxmemory from qsize
+            maxmemory = "4096mb"  # TODO: compute maxmemory from qsize
             executor, shutdown = launch_redis_worker_pool(port=port, maxmemory=maxmemory)
             return (executor, qsize, shutdown)
 
