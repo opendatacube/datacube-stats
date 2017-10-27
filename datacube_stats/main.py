@@ -10,39 +10,37 @@ import copy
 import logging
 from functools import partial
 from textwrap import dedent
-from .utils.qsub import with_qsub_runner
 
 import click
 import numpy as np
 import pandas as pd
+import pydash
 import xarray
 import yaml
-import pydash
 
-import datacube_stats
 import datacube
+import datacube_stats
 from datacube import Datacube
 from datacube.api import make_mask, GridWorkflow, Tile
 from datacube.api.query import query_group_by, query_geopolygon
 from datacube.model import GridSpec
-from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function
-from datacube_stats.utils.dates import date_sequence
+from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube_stats.models import StatsTask, OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
     NoSuchOutputDriver
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
-from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
-
-from .utils.query import multi_product_list_cells
+from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
+from datacube_stats.utils.dates import date_sequence, filter_time_by_source
+from .timer import wrap_in_timer
 from .utils import report_unmatched_datasets
 from .utils import sorted_interleave
-from .timer import wrap_in_timer
-from datetime import datetime
+from .utils.qsub import with_qsub_runner
+from .utils.query import multi_product_list_cells
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -822,26 +820,6 @@ def boundary_polygon_from_file(filename):
         crs = CRS(input_region.crs_wkt)
         boundary_polygon = Geometry(mapping(final), crs)
     return boundary_polygon
-
-
-def filter_time_by_source(source_interval, epoch_interval):
-    """
-    Override date ranges if sensor specific time is within the time_period range
-    """
-    if not source_interval:
-        return epoch_interval
-
-    epoch_start, epoch_end = epoch_interval
-    source_start, source_end = [datetime.strptime(v, "%Y-%m-%d") for v in source_interval]
-
-    if source_start > epoch_end or epoch_start > source_end:
-        _LOG.debug("No valid time overlap for %s and %s", source_interval, epoch_interval)
-        return None
-
-    start_time = max(source_start, epoch_start)
-    end_time = min(source_end, epoch_end)
-
-    return start_time, end_time
 
 
 class GriddedTaskGenerator(object):

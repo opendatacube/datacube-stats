@@ -1,12 +1,17 @@
 """
-Date sequence generation functions to be used by statistics apps
+Date utility functions to be used by statistics apps
 
 
 """
 from __future__ import absolute_import
 
-from dateutil.rrule import YEARLY, MONTHLY, DAILY, rrule
+import logging
+from datetime import datetime
+
 from dateutil.relativedelta import relativedelta
+from dateutil.rrule import YEARLY, MONTHLY, DAILY, rrule
+
+_LOG = logging.getLogger(__name__)
 
 FREQS = {'y': YEARLY, 'm': MONTHLY, 'd': DAILY}
 DURATIONS = {'y': 'years', 'm': 'months', 'd': 'days'}
@@ -53,3 +58,26 @@ def parse_duration(duration):
 
 def split_duration(duration):
     return int(duration[:-1]), duration[-1:]
+
+
+def filter_time_by_source(source_interval, epoch_interval):
+    """
+    Override date ranges if sensor specific time is within the time_period range
+
+    Parses the source_interval into dates in the form YYYY-MM-DD, then
+    returns the intersection of the two ranges, or None if they don't overlap.
+    """
+    if not source_interval:
+        return epoch_interval
+
+    epoch_start, epoch_end = epoch_interval
+    source_start, source_end = [datetime.strptime(v, "%Y-%m-%d") for v in source_interval]
+
+    if source_start > epoch_end or epoch_start > source_end:
+        _LOG.debug("No valid time overlap for %s and %s", source_interval, epoch_interval)
+        return None
+
+    start_time = max(source_start, epoch_start)
+    end_time = min(source_end, epoch_end)
+
+    return start_time, end_time

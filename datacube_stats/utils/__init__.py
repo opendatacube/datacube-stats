@@ -1,7 +1,6 @@
 """
 Useful utilities used in Stats
 """
-from __future__ import print_function
 import itertools
 import pickle
 import functools
@@ -12,6 +11,7 @@ import xarray
 from datacube.api.query import Query
 
 from datacube.storage.masking import mask_invalid_data, create_mask_value
+from .dates import *
 
 
 def tile_iter(tile, chunk_size):
