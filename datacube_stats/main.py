@@ -222,7 +222,7 @@ class StatsApp(object):
         """
         input_region = config.get('input_region')
         if tile_indexes and not input_region:
-            input_region = {'tile': tile_indexes}
+            input_region = {'tiles': tile_indexes}
 
         if year is not None:
             if 'date_ranges' not in config:
