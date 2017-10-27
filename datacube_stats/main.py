@@ -829,26 +829,22 @@ def filter_time_from_sensor(source_spec, time_period):
     Override date ranges if sensor specific time is within the time_period range
     """
     ep_range = time_period
-    if source_spec.get('time'):
-        if time_period[0] > datetime.strptime(source_spec['time'][1], "%Y-%m-%d"):
+    time = source_spec.get('time')
+    if time is not None:
+        time = [datetime.strptime(v, "%Y-%m-%d") for v in time]
+        if time_period[0] > time[1]:
             _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
             return None
         # Filter subset cannot have end date more than time_period end date
-        if datetime.strptime(source_spec['time'][0], "%Y-%m-%d") > time_period[0] and \
-                datetime.strptime(source_spec['time'][1], "%Y-%m-%d") > time_period[1]:
-            ep_range = (datetime.strptime(source_spec['time'][0], "%Y-%m-%d"),
-                        time_period[1])
+        if time[0] > time_period[0] and time[1] > time_period[1]:
+            ep_range = (time[0], time_period[1])
         # override time_period with sensor time in case it is a subset of time_period
-        elif datetime.strptime(source_spec['time'][1], "%Y-%m-%d") < time_period[1] and \
-                datetime.strptime(source_spec['time'][0], "%Y-%m-%d") > time_period[0]:
-            ep_range = (datetime.strptime(source_spec['time'][0], "%Y-%m-%d"),
-                        datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
-        elif datetime.strptime(source_spec['time'][0], "%Y-%m-%d") > time_period[0] and \
-                datetime.strptime(source_spec['time'][1], "%Y-%m-%d") < time_period[1]:
-            ep_range = (time_period[0], datetime.strptime(source_spec['time'][0], "%Y-%m-%d"))
-        elif datetime.strptime(source_spec['time'][1], "%Y-%m-%d") < time_period[1] and \
-                datetime.strptime(source_spec['time'][0], "%Y-%m-%d") < time_period[0]:
-            ep_range = (time_period[0], datetime.strptime(source_spec['time'][1], "%Y-%m-%d"))
+        elif time[1] < time_period[1] and time[0] > time_period[0]:
+            ep_range = (time[0], time[1])
+        elif time[0] > time_period[0] and time[1] < time_period[1]:
+            ep_range = (time_period[0], time[0])
+        elif time[1] < time_period[1] and time[0] < time_period[0]:
+            ep_range = (time_period[0], time[1])
         _LOG.info("New time range for %s is %s", source_spec['product'], ep_range)
     return ep_range
 
