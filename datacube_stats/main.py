@@ -824,29 +824,24 @@ def boundary_polygon_from_file(filename):
     return boundary_polygon
 
 
-def filter_time_from_sensor(source_spec, time_period):
+def filter_time_by_source(source_interval, epoch_interval):
     """
     Override date ranges if sensor specific time is within the time_period range
     """
-    ep_range = time_period
-    time = source_spec.get('time')
-    if time is not None:
-        time = [datetime.strptime(v, "%Y-%m-%d") for v in time]
-        if time_period[0] > time[1]:
-            _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
-            return None
-        # Filter subset cannot have end date more than time_period end date
-        if time[0] > time_period[0] and time[1] > time_period[1]:
-            ep_range = (time[0], time_period[1])
-        # override time_period with sensor time in case it is a subset of time_period
-        elif time[1] < time_period[1] and time[0] > time_period[0]:
-            ep_range = (time[0], time[1])
-        elif time[0] > time_period[0] and time[1] < time_period[1]:
-            ep_range = (time_period[0], time[0])
-        elif time[1] < time_period[1] and time[0] < time_period[0]:
-            ep_range = (time_period[0], time[1])
-        _LOG.info("New time range for %s is %s", source_spec['product'], ep_range)
-    return ep_range
+    if not source_interval:
+        return epoch_interval
+
+    epoch_start, epoch_end = epoch_interval
+    source_start, source_end = [datetime.strptime(v, "%Y-%m-%d") for v in source_interval]
+
+    if source_start > epoch_end or epoch_start > source_end:
+        _LOG.debug("No valid time overlap for %s and %s", source_interval, epoch_interval)
+        return None
+
+    start_time = max(source_start, epoch_start)
+    end_time = min(source_end, epoch_end)
+
+    return start_time, end_time
 
 
 class GriddedTaskGenerator(object):
@@ -896,8 +891,9 @@ class GriddedTaskGenerator(object):
         tasks = {}
 
         for source_spec in sources_spec:
-            ep_range = filter_time_from_sensor(source_spec, time_period)
+            ep_range = filter_time_by_source(source_spec.get('time'), time_period)
             if ep_range is None:
+                _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
                 continue
             group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
@@ -971,8 +967,9 @@ class NonGriddedTaskGenerator(object):
         for time_period in date_ranges:
             task = StatsTask(time_period)
             for source_spec in sources_spec:
-                ep_range = filter_time_from_sensor(source_spec, time_period)
+                ep_range = filter_time_by_source(source_spec.get('time'), time_period)
                 if ep_range is None:
+                    _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
                     continue
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
