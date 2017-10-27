@@ -258,8 +258,8 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         def merge_sources(prod):
             # Merge data sources and mask sources
             # Align the data `Tile` with potentially many mask `Tile`s along their time axis
-            all_sources = xarray.align(prod.data.sources,
-                                       *[mask_tile.sources for mask_tile in prod.masks if mask_tile])
+            all_sources = xarray.align(prod['data'].sources,
+                                       *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
             # TODO: The following can fail if prod['data'] and prod['masks'] have different times
             # Which can happen in the case of a missing PQ Scene, where there is a scene overlap
             # ie. Two overlapped NBAR scenes, One PQ scene (the later)
