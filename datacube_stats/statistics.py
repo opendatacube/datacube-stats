@@ -390,7 +390,7 @@ class StdNdwi(Statistic):
     import warnings
 
     def compute(self, data):
-        # This is a special case to implementi std, after calculating ndwi as med and
+        # This is a special case to implement std, after calculating ndwi as med and
         # then standard deviation through time
         med = (data.green - data.nir) / (data.green + data.nir)
         # stop all bad data and reset to the following
