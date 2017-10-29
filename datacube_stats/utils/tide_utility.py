@@ -113,12 +113,14 @@ def input_range_data(per_range, tide_list, feature_id, per):
     :return:
     """
     inc = tide_list[0][1]
+    min_ht = tide_list[0][1]
+    max_ht = tide_list[-1][1]
     _LOG.info("id, per, min, max, observation, LOT, HOT, median")
     for i in range(per_range):
         inc_cnt = inc
         perc = 20 if i == per_range-1 else 10
-        inc = float("%.3f" % (inc_cnt + (tide_list[-1][1] - tide_list[0][1])*perc*0.01))
-        inc = tide_list[-1][1] if i == per_range-1 else inc
+        inc = float("%.3f" % (inc_cnt + (max_ht - min_ht)*perc*0.01))
+        inc = max_ht if i == per_range-1 else inc
         range_value = [[x[0].strftime('%Y-%m-%d'), x[1]] for x in tide_list
                        if x[1] >= inc_cnt and x[1] <= inc]
         median = float("%.3f" % (statistics.median([x[1] for x in range_value])))
