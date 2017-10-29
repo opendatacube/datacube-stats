@@ -63,16 +63,17 @@ sources:
 
 
 ## Define whether and how to chunk over time
-start_date: 2015-01-01
-end_date: 2015-07-01
-stats_duration: 3m
-step_size: 3m
+date_ranges:
+  start_date: 2015-01-01
+  end_date: 2015-07-01
+  stats_duration: 3m
+  step_size: 3m
 
 ## Define output directory and file structure
 location: '/g/data/u46/users/dra547/data'
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -97,7 +98,11 @@ computation:
 
 output_products:
   - name: ndvi_stats
-    statistic: ndvi_stats
-    zlib: True
-    fletcher32: True
-    file_path_template: 'NDVI_STATS/NDVI_{var_name}_3577_{tile_index[0]}_{tile_index[1]}_{start_time:%Y%m%d}.tif'
+    statistic: simple_normalised_difference
+    statistic_args:
+      band1: red
+      band2: nir
+    output_params:
+      zlib: True
+      fletcher32: True
+    file_path_template: 'NDVI_STATS/NDVI_{name}_3577_{x}_{y}_{epoch_start:%Y%m%d}.tif'

@@ -35,7 +35,7 @@ install:
 
   - conda create -n datacube datacube pytest mock boltons pytest-cov coveralls hypothesis=3.23.0  # Avoid 3.33.0 build _0, it's broken
   - source activate datacube
-  - pip install pydash boltons pylint yamllint pytest-cov pep8 fiona
+  - pip install pydash boltons pylint yamllint pytest-cov pep8 voluptuous hdmedians fiona
   - pip install . --no-deps --upgrade
 
   - pip freeze

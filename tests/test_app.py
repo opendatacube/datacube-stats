@@ -1,49 +1,19 @@
 """
-Test that the stats app can generate tasks and run them.
-"""
-from collections import defaultdict
+Tests for :class:`StatsApp`.
 
-import pytest
+Test that the StatsApp can:
+- use a valid configuration file
+- generate tasks from it
+- run the tasks
+"""
 import mock
+import pytest
 
 from datacube.model import MetadataType
 from datacube_stats.main import OutputProduct
+from datacube_stats.main import StatsApp
 from datacube_stats.models import StatsTask
 from datacube_stats.statistics import StatsConfigurationError, ReducingXarrayStatistic
-
-from datacube_stats.main import StatsApp
-import yaml
-
-
-@pytest.fixture
-def sample_stats_config():
-    config = yaml.safe_load("""
-        date_ranges:
-            start_date: 2015-01-01
-            end_date: 2015-04-01
-        
-        location:
-        sources:
-        -   product: fake_source_product
-            measurements: [red]
-        storage:
-            driver: NetCDFCF
-            tile_size:
-                x: 100
-                y: 100
-            resolution:
-                x: 100
-                y: 100
-            crs: EPSG:3577
-        output_products:
-        -   name: fake_output
-            product_type: sample_statistics
-            statistic: simple
-            statistic_args:
-                reduction_function: mean
-    """)
-
-    return config
 
 
 def test_create_and_validate_stats_app(sample_stats_config):
@@ -98,10 +68,10 @@ def test_can_create_output_products(sample_stats_config, mock_index):
 
 @pytest.fixture
 def mock_grid_workflow():
-    with mock.patch('datacube_stats.utils.query.GridWorkflow', spec=True) as mock_gwf_class:
+    with mock.patch('datacube_stats.main.GridWorkflow', spec=True) as mock_gwf_class:
         gwf_instance = mock_gwf_class.return_value
         gwf_instance.list_cells.return_value = {(0, 0): mock.MagicMock()}
-        return gwf_instance
+        yield gwf_instance
 
 
 @pytest.fixture
@@ -109,35 +79,9 @@ def mock_datacube():
     with mock.patch('datacube_stats.main.Datacube', spec=True) as mock_datacube_class:
         dc_instance = mock_datacube_class.return_value
         # dc_instance.list_cells.return_value = {(0, 0): mock.MagicMock()}
-        return dc_instance
+        yield dc_instance
 
 
-@pytest.fixture
-def mock_index():
-    fake_index = mock.MagicMock()
-    fake_index.metadata_types.get_by_name.return_value = mock.MagicMock(spec=MetadataType)
-    fake_index.datasets.get_field_names.return_value = {'time', 'source_filter'}
-    fake_index.products.get_by_name.return_value.measurements = {'red': {
-        'name': 'mock_measurement',
-        'dtype': 'int8',
-        'nodata': -999,
-        'units': '1'}}
-
-    fake_index.metadata_types.get_by_name.return_value = MetadataType(
-        {
-            'name': 'eo',
-            'dataset': dict(
-                id=['id'],
-                label=['ga_label'],
-                creation_time=['creation_dt'],
-                measurements=['image', 'bands'],
-                sources=['lineage', 'source_datasets']
-            )
-        },
-        dataset_search_fields={}
-    )
-
-    return fake_index
 
 
 _SAMPLE_OUTPUTS_SPEC = [dict(name='landsat_yearly_mean',
@@ -160,7 +104,7 @@ def create_app_with_products(sample_stats_config, mock_index):
     return stats_app, output_prods
 
 
-@pytest.mark.skip('Pending resolving issues with DriverManager pickling in ODC')
+@pytest.mark.xfail
 def test_can_generate_tasks(sample_stats_config, mock_index, mock_grid_workflow):
     # GIVEN: A simple stats app that has created some output products
     stats_app, output_prods = create_app_with_products(sample_stats_config, mock_index)
@@ -177,7 +121,7 @@ def test_can_generate_tasks(sample_stats_config, mock_index, mock_grid_workflow)
     mock_grid_workflow.list_cells.assert_called_with(**_EXPECTED_DB_FILTER)
 
 
-@pytest.mark.skip('Pending resolving issues with DriverManager pickling in ODC')
+@pytest.mark.xfail
 def test_gqa_filtering_passed_in_queries(sample_stats_config, mock_index, mock_grid_workflow):
     # GIVEN: A simple stats app configured to filter on GQA, and that has created some output products,
     gqa_filter = {

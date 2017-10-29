@@ -11,40 +11,43 @@ import logging
 from functools import partial
 from textwrap import dedent
 
-
 import click
 import numpy as np
 import pandas as pd
+import pydash
 import xarray
 import yaml
-import pydash
 import rasterio.features
 import fiona
 
-import datacube_stats
+
 import datacube
+import datacube_stats
 from datacube import Datacube
 from datacube.api import make_mask, GridWorkflow, Tile
 from datacube.api.query import query_group_by, query_geopolygon
 from datacube.model import GridSpec
-from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function
-from datacube_stats.utils.dates import date_sequence, filter_time_by_source
+from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube_stats.models import StatsTask, OutputProduct
-from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists
+from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
+    NoSuchOutputDriver
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
-from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 from datacube_stats.utils.tide_utility import geom_from_file, list_poly_dates, get_filter_product
 
 from .utils.qsub import with_qsub_runner
 from .utils.query import multi_product_list_cells
+
+from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
+from datacube_stats.utils.dates import date_sequence, filter_time_by_source
+from .timer import wrap_in_timer
 from .utils import report_unmatched_datasets
 from .utils import sorted_interleave
-from .timer import wrap_in_timer
+
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -229,7 +232,7 @@ class StatsApp(object):
         """
         input_region = config.get('input_region')
         if tile_indexes and not input_region:
-            input_region = {'tile': tile_indexes}
+            input_region = {'tiles': tile_indexes}
 
         if year is not None:
             if 'date_ranges' not in config:
@@ -750,8 +753,8 @@ def _get_stats_metadata(cfg):
 
 def _prepare_output_driver(storage):
     try:
-        return OUTPUT_DRIVERS[storage['driver'].replace(' ', '')]
-    except KeyError:
+        return get_driver_by_name(storage['driver'])
+    except NoSuchOutputDriver:
         if 'driver' in storage:
             msg = 'Invalid output driver "{}" specified.'
         else:
@@ -777,8 +780,6 @@ def _configure_date_ranges(index, config):
     if 'start_date' not in date_ranges or 'end_date' not in date_ranges:
         raise StatsConfigurationError("Must specified both `start_date` and `end_date`"
                                       " in `date_ranges:` section of configuration")
-
-    output = list()
 
     if 'stats_duration' not in date_ranges and 'step_size' not in date_ranges:
         start = pd.to_datetime(date_ranges['start_date'])
@@ -942,13 +943,24 @@ def _make_grid_spec(storage):
 
 
 class NonGriddedTaskGenerator(object):
+    """
+    Make stats tasks for a single defined spatial region, not part of a grid.
+
+    Usage:
+
+    ngtg = NonGriddedTaskGenerator(input_region, storage)
+
+    tasks = ngtg(index, sources_spec, date_ranges)
+
+    :param input_region:
+    :param storage:
+    """
     def __init__(self, input_region, storage):
         self.input_region = input_region
         self.storage = storage
 
     def __call__(self, index, sources_spec, date_ranges):
         """
-        Make stats tasks for a single defined spatial region, not part of a grid.
 
         :param index: database index
         :param input_region: dictionary of query parameters defining the target input region. Usually
@@ -959,7 +971,6 @@ class NonGriddedTaskGenerator(object):
 
         for time_period in date_ranges:
             task = StatsTask(time_period)
-
             for source_spec in sources_spec:
                 ep_range = filter_time_by_source(source_spec.get('time'), time_period)
                 if ep_range is None:

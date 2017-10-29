@@ -21,7 +21,7 @@ date_ranges:
 location: '/g/data/u46/users/dra547/deeptime/'
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -46,7 +46,10 @@ computation:
 
 output_products:
  - name: deep_time
-   statistic: mean
-   zlib: True
-   fletcher32: True
-   file_path_template: 'deep_time_{tile_index[0]}_{tile_index[1]}.nc'
+   statistic: simple
+   statistic_args:
+     reduction_function: mean
+   output_params:
+     zlib: True
+     fletcher32: True
+   file_path_template: 'deep_time_{x}_{y}.nc'

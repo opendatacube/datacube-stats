@@ -293,7 +293,6 @@ class Statistic(object):
         :param xarray.Dataset data:
         :return: xarray.Dataset
         """
-        return data
 
     def measurements(self, input_measurements):
         """
@@ -336,26 +335,12 @@ class Statistic(object):
         return None
 
 
-class ClearCount(Statistic):
-    """Count the number of clear data points through time"""
-
+class NoneStat(Statistic):
     def compute(self, data):
-        # TODO Fix Hardcoded 'time' and pulling out first data var
-        _, sample_data_var = next(data.data_vars.items())
-
-        # FIXME, Probably buggy! Names don't match.
-        count_values = sample_data_var.count(dim='time').rename('clear_observations')
-        return count_values.to_dataset(name='count_observations')
+        return data
 
     def measurements(self, input_measurements):
-        return [
-            {
-                'name': 'count_observations',
-                'dtype': 'int16',
-                'nodata': -1,
-                'units': '1'
-            }
-        ]
+        return input_measurements
 
 
 class MedNdwi(Statistic):
@@ -410,17 +395,6 @@ class StdNdwi(Statistic):
                 'units': '1'
             }
         ]
-
-
-class NoneStat(Statistic):
-    def compute(self, data):
-        class Empty:
-            data_vars = {}
-
-        return Empty()
-
-    def measurements(self, input_measurements):
-        return input_measurements
 
 
 class SimpleStatistic(Statistic):
@@ -867,63 +841,6 @@ class Medoid(Statistic):
         return msg.format(self.minimum_valid_observations)
 
 
-class FlagCounter(Statistic):
-    """
-    Count number of flagged pixels
-
-    Requires:
-    - The name of a `measurement` to base the count upon
-    - A list of `flags` that must be set in the measurement
-    """
-
-    def __init__(self, measurement, flags):
-        self.measurement = measurement
-        self.flags = flags
-
-    def compute(self, data):
-        datavar = data[self.measurement]
-
-        is_integer_type = np.issubdtype(datavar.dtype, np.integer)
-
-        if not is_integer_type:
-            raise StatsProcessingError("Attempting to count bit flags on non-integer data. Provided data is: {}"
-                                       .format(datavar))
-
-        mask = make_mask(datavar, **self.flags)
-        count = mask.sum(dim='time')
-        return count.to_dataset().rename({self.measurement: 'count'})
-
-    def measurements(self, input_measurements):
-        measurement_names = set(m['name'] for m in input_measurements)
-        assert self.measurement in measurement_names
-
-        return [{'name': 'count',
-                 'dtype': 'int16',
-                 'nodata': -1,
-                 'units': '1'}]
-
-
-class MaskedCount(Statistic):
-    """
-    Use the provided flags to count the number of True values through time.
-
-    """
-
-    def __init__(self, flags):
-        self.flags = flags
-
-    def compute(self, data):
-        count = make_mask(data, **self.flags).sum(dim='time')
-        return xarray.Dataset({'count': count},
-                              attrs=dict(crs=data.crs))
-
-    def measurements(self, input_measurements):
-        return [{'name': 'count',
-                 'dtype': 'int16',
-                 'units': '1',
-                 'nodata': 65536}]  # No Data is required somewhere, but doesn't really make sense
-
-
 class ExternalPlugin(Statistic):
     """
     Run externally defined plugin.
@@ -1054,27 +971,18 @@ class MaskMultiCounter(Statistic):
 
 STATS = {
     'simple': ReducingXarrayStatistic,
-    # 'min': SimpleXarrayReduction('min'),
-    # 'max': SimpleXarrayReduction('max'),
-    # 'mean': SimpleXarrayReduction('mean'),
     'percentile': percentile_stat,
     'percentile_no_prov': PercentileNoProv,
     'medoid': Medoid,
     'medoid_no_prov': MedoidNoProv,
     'medoid_simple': MedoidSimple,
     'simple_normalised_difference': NormalisedDifferenceStats,
-    # 'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red',
-    #                                         stats=['min', 'mean', 'max']),
-    # 'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1',
-    #                                         stats=['min', 'mean', 'max']),
+    # 'ndvi_stats': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['min', 'mean', 'max']),
+    # 'ndwi_stats': NormalisedDifferenceStats(name='ndwi', band1='green', band2='swir1', stats=['min', 'mean', 'max']),
     # 'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
-    # 'ndwi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'none': NoneStat,
     'wofs_summary': WofsStats,
-    'clear_count': ClearCount,
-    'masked_count': MaskedCount,
     'masked_multi_count': MaskMultiCounter,
-    'flag_counter': FlagCounter,
     'external': ExternalPlugin,
     'medndwi': MedNdwi,
     'std': StdNdwi,

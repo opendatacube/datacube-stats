@@ -30,7 +30,7 @@ date_ranges:
 location: '/g/data/u46/users/ia1511/Work/data/FC/FC-medoid/medoid'
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:

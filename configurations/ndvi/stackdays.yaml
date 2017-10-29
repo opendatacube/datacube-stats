@@ -87,7 +87,7 @@ input_region:
 
 # Output Storage Format
 storage:
-  driver: Geotiff
+  driver: GeoTiff
 
   crs: EPSG:3577
   resolution:
@@ -113,8 +113,13 @@ computation:
 
 output_products:
   - name: ndvi
-    statistic: ndvi_daily
-    zlib: True
-    fletcher32: True
-    file_path_template: 'NDVI_DAILY/{var_name}_{config.input_region[x][0]}_{config.input_region[y][1]}_{time_period[0]:%Y%m%d}.tif'
+    statistic: simple_normalised_difference
+    statistic_args:
+      band1: nir
+      band2: red
+      stats: [squeeze]
+    output_params:
+      zlib: True
+      fletcher32: True
+    file_path_template: 'NDVI_DAILY/{name}_{epoch_start:%Y%m%d}.tif'
 

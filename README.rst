@@ -1,6 +1,8 @@
 Data Cube Statistics Tools
 ##########################
 
+|Build Status| |Coverage Status|
+
 Data Cube Statistics is a an application used to calculate large scale temporal statistics
 on data stored using an `Open Data Cube`_ (`ODC`_) installation. It provides a
 command line application which uses a `YAML <https://en.wikipedia.org/wiki/YAML>`_ configuration
@@ -109,7 +111,7 @@ eliminating data which doesn't meet the minimum required spatial accuracy:
         group_by: solar_day
         source_filter:
           product: ls5_level1_scene
-          gqa: [-1, 1]
+          gqa_mean_xy: [-1, 1]
         masks:
           - product: ls5_pq_albers
             measurement: pixelquality
@@ -132,7 +134,7 @@ eliminating data which doesn't meet the minimum required spatial accuracy:
         group_by: solar_day
         source_filter:
           product: ls7_level1_scene
-          gqa: [-1, 1]
+          gqa_mean_xy: [-1, 1]
         masks:
           - product: ls7_pq_albers
             measurement: pixelquality
@@ -305,22 +307,12 @@ Tile index
 ~~~~~~~~~~
 
 The tiling regime is determined by the ``tile_size`` parameter of the `Output storage format`_ section.
+A list of tiles can be passed on to ``tiles`` parameter.
 
 .. code-block:: yaml
 
     input_region:
       tile: [16, -39]
-
-Feature ID
-~~~~~~~~~~
-
-For a multiple polygon shape file, specific feature id can be passed on with a shape file.
-
-.. code-block:: yaml
-
-    input_region:
-      from_file: /home/user/ITEMv2_tidalmodel.shp
-      feature_id: [3]
 
 
 Period of interest
@@ -486,7 +478,9 @@ Complete example
     output_products:
      - name: landsat_seasonal_mean
        product_type: seasonal_stats
-       statistic: mean
+       statistic: simple
+       statistic_args:
+         reduction_function: mean
        output_params:
          zlib: True
          fletcher32: True
@@ -502,7 +496,7 @@ Complete example
 
      - name: landsat_seasonal_percentile_10
        product_type: seasonal_stats
-       statistic: percentile_10
+       statistic: percentile
        statistic_args:
          q: 10
        output_params:
@@ -635,3 +629,8 @@ Release Notes
 .. _dataset metadata documents: http://datacube-core.readthedocs.io/en/stable/ops/config.html#dataset-metadata-document
 .. _strftime syntax: http://strftime.org/
 .. _hdmedians python package: https://github.com/daleroberts/hdmedians
+.. |Build Status| image:: https://travis-ci.org/GeoscienceAustralia/agdc_statistics.svg?branch=master
+   :target: https://travis-ci.org/GeoscienceAustralia/agdc_statistics
+.. |Coverage Status| image:: https://coveralls.io/repos/github/GeoscienceAustralia/agdc_statistics/badge.svg?branch=master
+   :target: https://coveralls.io/github/GeoscienceAustralia/agdc_statistics?branch=master
+

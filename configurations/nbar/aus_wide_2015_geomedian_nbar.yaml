@@ -5,7 +5,7 @@ sources:
     group_by: solar_day
     source_filter:
       product: ls7_level1_scene
-      gqa: [-1, 1]
+      gqa_mean_xy: [-1, 1]
     masks:
       - product: ls7_pq_albers
         measurement: pixelquality
@@ -28,7 +28,7 @@ sources:
     group_by: solar_day
 #    source_filter:  # Assume GQA is good enough for ls8, since it doesn't seem to be available
 #      product: ls8_level1_scene
-#      gqa: [-1, 1]
+#      gqa_mean_xy: [-1, 1]
     masks:
       - product: ls8_pq_albers
         measurement: pixelquality
@@ -59,7 +59,7 @@ date_ranges:
 location: '/g/data/u46/users/dra547/geomedian'
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:

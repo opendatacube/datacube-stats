@@ -8,7 +8,7 @@ sources:
     resampling: bilinear
 #    source_filter:
 #      product: ls8_level1_scene
-#      gqa: [-1, 1]
+#      gqa_mean_xy: [-1, 1]
     masks:
       - product: ls8_pq_albers
         measurement: pixelquality
@@ -40,7 +40,7 @@ date_ranges:
 location: '/g/data/u46/users/dra547/MDBA_mk2'
 
 storage:
-  driver: ENVIBIL
+  driver: ENVI BIL
 
   crs: EPSG:4326
   tile_size:

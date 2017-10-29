@@ -38,16 +38,30 @@ OUTPUT_DRIVERS = {}
 
 
 class RegisterDriver(abc.ABCMeta):
+    """
+    A metaclass which registers all sub-classes of :class:`OutputDriver` into the OUTPUT_DRIVERS dictionary.
+    """
     def __new__(mcs, name, bases, class_dict):
         cls = type.__new__(mcs, name, bases, class_dict)
-        name = cls.__name__.replace('OutputDriver', '')
-        if name:
-            OUTPUT_DRIVERS[name] = cls
+        if hasattr(cls, '_driver_name'):
+            OUTPUT_DRIVERS[cls._driver_name] = cls
         return cls
 
 
+def get_driver_by_name(name):
+    """Search for an output driver, ignoring case and spaces."""
+    for driver_name, driver_class in OUTPUT_DRIVERS.items():
+        if driver_name.lower().replace(' ', '') == name.lower().replace(' ', ''):
+            return driver_class
+    raise NoSuchOutputDriver()
+
+
+class NoSuchOutputDriver(Exception):
+    """The requested output driver is not available."""
+
+
 class StatsOutputError(Exception):
-    pass
+    """Something went wrong while writing to output files."""
 
 
 class OutputFileAlreadyExists(Exception):
@@ -281,6 +295,7 @@ class NetCDFCFOutputDriver(OutputDriver):
 
     The variables in the file will be 3 dimensional, with a single time dimension + y,x.
     """
+    _driver_name = 'NetCDF CF'
 
     valid_extensions = ['.nc']
 
@@ -360,12 +375,13 @@ class NetCDFCFOutputDriver(OutputDriver):
                 output_file.attrs[k] = v
 
 
-class GeotiffOutputDriver(OutputDriver):
+class GeoTiffOutputDriver(OutputDriver):
     """
     Save data to file/s using rasterio. Eg. GeoTiff
 
     Con write all statistics to the same output file, or each statistic to a different file.
     """
+    _driver_name = 'GeoTiff'
     valid_extensions = ['.tif', '.tiff']
     default_profile = {
         'compress': 'lzw',
@@ -378,7 +394,7 @@ class GeotiffOutputDriver(OutputDriver):
     }
 
     def __init__(self, *args, **kwargs):
-        super(GeotiffOutputDriver, self).__init__(*args, **kwargs)
+        super(GeoTiffOutputDriver, self).__init__(*args, **kwargs)
 
         self._measurement_bands = {}
 
@@ -488,7 +504,7 @@ class GeotiffOutputDriver(OutputDriver):
         return dest_fh
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
-        super(GeotiffOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
+        super(GeoTiffOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
 
         prod = self._output_file_handles[prod_name]
         if isinstance(prod, dict):
@@ -512,10 +528,11 @@ class GeotiffOutputDriver(OutputDriver):
             dest.update_tags(**attributes)
 
 
-class ENVIBILOutputDriver(GeotiffOutputDriver):
+class ENVIBILOutputDriver(GeoTiffOutputDriver):
     """
     Writes out a tif file (with an incorrect extension), then converts it to another GDAL format.
     """
+    _driver_name = 'ENVI BIL'
     valid_extensions = ['.bil']
 
     def close_files(self, completed_successfully):
