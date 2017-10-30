@@ -73,6 +73,25 @@ def list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges):
 
 
 @pytest.mark.xfail(not MODULE_EXISTS, reason="otps module is not available")
+def load_tide_model(all_dates, ln, la):
+    """
+    Load otps module and pass a list of tide information
+    :param all_dates: Input a list of dates
+    :param ln: model longitude
+    :param la: model latitude
+    :return: a list of tides
+    """
+    from otps.predict_wrapper import predict_tide
+    from otps import TimePoint
+
+    tp = list()
+    for dt in all_dates:
+        tp.append(TimePoint(ln, la, dt))
+    # Calling this routine to get the tide object for each timepoint
+    tides = predict_tide(tp)
+    return tides
+
+
 def range_tidal_data(all_dates, feature_id, tide_range, per, ln, la):
     """
     This routine is used for ITEM product and it returns a list of dates corresponding to the range interval.
@@ -84,17 +103,11 @@ def range_tidal_data(all_dates, feature_id, tide_range, per, ln, la):
     :param la: model centroid lattitude value from polygon feature
     :return:  a list of filtered time
     """
-    from otps.predict_wrapper import predict_tide
-    from otps import TimePoint
 
-    tp = list()
-    tide_dict = dict()
-    for dt in all_dates:
-        tp.append(TimePoint(ln, la, dt))
-    # Calling this routine to get the tide object for each timepoint
-    tides = predict_tide(tp)
+    tides = load_tide_model(all_dates, ln, la)
     if len(tides) == 0:
         raise ValueError("No tide height observed from OTPS model within lat/lon range")
+    tide_dict = dict()
     for tt in tides:
         tide_dict[datetime.strptime(tt.timepoint.timestamp.isoformat()[0:19], "%Y-%m-%dT%H:%M:%S")] = tt.tide_m
     # sorting as per tide heights lowest to highest
@@ -134,7 +147,6 @@ def input_range_data(per_range, tide_list, feature_id, per):
     return []
 
 
-@pytest.mark.fail(not MODULE_EXISTS, reason="otps module is not packaged")
 def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     """
     This function is used for composite products and also for sub class extraction
@@ -146,10 +158,6 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     :param la:
     :return:
     """
-    from otps.predict_wrapper import predict_tide
-    from otps import TimePoint
-
-    tides = list()
     tide_dict = dict()
     new_date_list = list()
     # add 15 min before and after to decide the type of tide for each dates
@@ -157,9 +165,7 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
         new_date_list.append(dt-timedelta(minutes=15))
         new_date_list.append(dt)
         new_date_list.append(dt+timedelta(minutes=15))
-    for dt in new_date_list:
-        tides.append(TimePoint(ln, la, dt))
-    tides = predict_tide(tides)
+    tides = load_tide_model(new_date_list, ln, la)
     if len(tides) == 0:
         raise ValueError("No tide height observed from OTPS model within lat/lon range")
     # collect in ebb/flow list

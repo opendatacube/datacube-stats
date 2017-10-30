@@ -90,7 +90,7 @@ date_ranges:
 location: '/g/data/v10/intertidal/junk'
 
 input_region:
-   from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp 
+   from_file: '/g/data/v10/ITEM/ITEMv2_tidalmodel.shp'
    feature_id: [94]
 #
 storage:

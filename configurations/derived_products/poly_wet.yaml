@@ -88,8 +88,8 @@ date_ranges:
 location: '/g/data/r78/tmp'
 
 input_region:
-  #from_file: /g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp
-  from_file: /g/data/r78/bxb547/GW_works/bur_dry_albers.shp
+  #from_file: '/g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp'
+  from_file: '/g/data/r78/bxb547/GW_works/bur_dry_albers.shp'
   feature_id: [3] 
 #
 storage:
