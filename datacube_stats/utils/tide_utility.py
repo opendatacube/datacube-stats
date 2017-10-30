@@ -6,8 +6,7 @@ import pytest
 
 from datetime import timedelta, datetime
 from datacube.api.query import query_group_by
-from otps.predict_wrapper import predict_tide
-from otps import TimePoint
+
 from operator import itemgetter
 from datacube_stats.utils.dates import filter_time_by_source
 
@@ -85,6 +84,9 @@ def range_tidal_data(all_dates, feature_id, tide_range, per, ln, la):
     :param la: model centroid lattitude value from polygon feature
     :return:  a list of filtered time
     """
+    from otps.predict_wrapper import predict_tide
+    from otps import TimePoint
+
     tp = list()
     tide_dict = dict()
     for dt in all_dates:
@@ -144,6 +146,8 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     :param la:
     :return:
     """
+    from otps.predict_wrapper import predict_tide
+    from otps import TimePoint
 
     tides = list()
     tide_dict = dict()
