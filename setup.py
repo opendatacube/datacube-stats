@@ -21,7 +21,7 @@ setup(
     install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio', 'pyyaml',
                       'cloudpickle', 'boltons', 'pydash', 'python-dateutil', 'fiona'],
     setup_requires=['pytest-runner'],
-    tests_require=['pytest', 'mock', 'hypothesis', 'voluptuous'],
+    tests_require=['pytest', 'mock', 'hypothesis', 'voluptuous', 'otps'],
     entry_points={
         'console_scripts': [
             'datacube-stats = datacube_stats.main:main',
