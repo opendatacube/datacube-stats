@@ -93,7 +93,7 @@ input_region:
   feature_id: [3] 
 #
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
   #driver: Geotiff
 
   crs: EPSG:3577
