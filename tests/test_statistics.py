@@ -66,19 +66,16 @@ def test_xarray_reduce():
     assert dataarray.dims == ('x', 'y')
 
 
-@pytest.mark.xfail
 def test_masked_count():
+    arr = np.random.randint(3, size=(5, 100, 100))
+    da = xr.DataArray(arr, dims=('time', 'x', 'y'))
 
-    arr = np.random.random((100, 100, 5))
-    dataarray = xr.DataArray(arr, dims=('x', 'y', 'time'))
+    from datacube_stats.statistics import MaskMultiCounter
 
-    # Added flag_values
+    mc = MaskMultiCounter([{'name': 'test', 'mask': lambda x: x}])
 
-    from datacube_stats.statistics import MaskedCount, ClearCount
-
-    mc = MaskedCount(flats={'foo_bar': True, 'wop_zoo': False})
-
-    result = mc.compute(dataarray)
+    ds = xr.Dataset({'payload': da})
+    result = mc.compute(ds)
 
     assert result
 
