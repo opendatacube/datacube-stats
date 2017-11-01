@@ -427,8 +427,6 @@ def execute_task(task, output_driver, chunking, geom=None):
     datacube.set_options(reproject_threads=1)
     process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
 
-    process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
-
     try:
         with output_driver(task=task) as output_files:
             # currently for polygons process will load entirely
