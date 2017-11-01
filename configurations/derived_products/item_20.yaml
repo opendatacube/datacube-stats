@@ -113,7 +113,7 @@ storage:
 
 output_products:
  - name: med_ndwi
-   statistic: medndwi
+   statistic: median_ndwi
    output_params:
       zlib: True
       fletcher32: True
@@ -121,7 +121,7 @@ output_products:
    product_type: ITEM
 
 # - name: standard_deviation 
-#   statistic: std
+#   statistic: stddev_ndwi
 #   output_params:
 #      zlib: True
 #      fletcher32: True

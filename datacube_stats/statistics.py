@@ -345,7 +345,6 @@ class NoneStat(Statistic):
 
 class MedNdwi(Statistic):
     """ Calculate ndwi and then median image through time"""
-    import warnings
 
     def compute(self, data):
         # This is a special case to implement, after calculating ndwi as med.
@@ -356,7 +355,7 @@ class MedNdwi(Statistic):
             warnings.simplefilter("ignore", category=RuntimeWarning)
             med.values[med.values < -1] = np.nan
             med.values[med.values > 1] = np.nan
-            med = med.median(dim='time', keep_attrs=True, skipna=True)
+        med = med.median(dim='time', keep_attrs=True, skipna=True)
         return med.to_dataset(name='ndwi')
 
     def measurements(self, input_measurements):
@@ -372,7 +371,6 @@ class MedNdwi(Statistic):
 
 class StdNdwi(Statistic):
     """ Calculate standard deviation on NDWI values """
-    import warnings
 
     def compute(self, data):
         # This is a special case to implement std, after calculating ndwi as med and
@@ -383,7 +381,7 @@ class StdNdwi(Statistic):
             warnings.simplefilter("ignore", category=RuntimeWarning)
             med.values[med.values < -1] = np.nan
             med.values[med.values > 1] = np.nan
-            med = med.std(dim='time', keep_attrs=True, skipna=True)
+        med = med.std(dim='time', keep_attrs=True, skipna=True)
         return med.to_dataset(name='stddev')
 
     def measurements(self, input_measurements):
@@ -984,17 +982,15 @@ STATS = {
     'wofs_summary': WofsStats,
     'masked_multi_count': MaskMultiCounter,
     'external': ExternalPlugin,
-    'medndwi': MedNdwi,
-    'std': StdNdwi,
+    'median_ndwi': MedNdwi,
+    'stddev_ndwi': StdNdwi,
 }
 
 
 def _datetime64_to_inttime(var):
     """
     Return an "inttime" representing a datetime64.
-
     For example, 2016-09-29 as an "inttime" would be 20160929
-
     :param var: ndarray of datetime64
     :return: ndarray of ints, representing the given time to the nearest day
     """

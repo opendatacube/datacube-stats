@@ -66,24 +66,6 @@ def test_xarray_reduce():
     assert dataarray.dims == ('x', 'y')
 
 
-@pytest.mark.xfail
-def test_masked_count():
-
-    arr = np.random.random((100, 100, 5))
-    dataarray = xr.DataArray(arr, dims=('x', 'y', 'time'))
-
-    # Added flag_values
-
-    from datacube_stats.statistics import MaskedCount, ClearCount
-    # pylint giving error on this line
-    # mc = MaskedCount(flats={'foo_bar': True, 'wop_zoo': False})
-    mc = MaskedCount()
-
-    result = mc.compute(dataarray)
-
-    assert result
-
-
 @pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'NewGeomedianStatistic'),
                     reason='requires `pcm` module for new geomedian statistics')
 def test_new_geometric_median():
@@ -151,3 +133,4 @@ def test_new_precise_geometric_median():
 
     # The two bands had the same inputs, so should have the same result
     assert (result.band1 == result.band2).all()
+

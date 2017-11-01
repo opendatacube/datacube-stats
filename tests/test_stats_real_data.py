@@ -128,8 +128,8 @@ input_region:
 
 output_products:
  - name: med_ndwi
-   statistic: medndwi
-   # statistic: std
+   statistic: med_ndwi
+   # statistic: std_ndwi
    output_params:
       zlib: True
       fletcher32: True
@@ -197,7 +197,7 @@ input_region:
 
 output_products:
  - name: med_stddev
-   statistic: std
+   statistic: std_ndwi
    output_params:
       zlib: True
       fletcher32: True

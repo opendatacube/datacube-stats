@@ -25,7 +25,6 @@ import datacube
 import datacube_stats
 from datacube import Datacube
 from datacube.api import make_mask, GridWorkflow, Tile
-from datacube.api.query import query_group_by, query_geopolygon
 from datacube.model import GridSpec
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
@@ -37,13 +36,14 @@ from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExist
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
-from datacube_stats.utils.tide_utility import geom_from_file, list_poly_dates, get_filter_product
 
 from .utils.qsub import with_qsub_runner
 from .utils.query import multi_product_list_cells
 
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence, filter_time_by_source
+from datacube_stats.utils.tide_utility import geom_from_file, list_poly_dates, get_filter_product
+from datacube.api.query import query_group_by, query_geopolygon
 from .timer import wrap_in_timer
 from .utils import report_unmatched_datasets
 from .utils import sorted_interleave
@@ -167,7 +167,7 @@ def _log_setup():
     _LOG.debug('Running against datacube-core %s from %s', datacube.__version__, datacube.__path__)
 
 
-class StatsApp(object):
+class StatsApp(object):  # pylint: disable=too-many-instance-attributes
     """
     A StatsApp can produce a set of time based statistical products.
     """
@@ -998,7 +998,6 @@ class NonGriddedTaskGenerator(object):
 class ArbitraryTileMaker(object):
     """
     Create a :class:`Tile` which can be used by :class:`GridWorkflow` to later load the required data.
-
     """
     def __init__(self, index, input_region, storage, filter_product=None):
         self.dc = Datacube(index=index)
@@ -1056,27 +1055,31 @@ class PolygonException(Exception):
 
 class GeneratePolygonTasks(object):
     """
-    Make stats tasks for a polygon region, for a particular feature id.
-    :param index: database index
-    :param input_region: A feature id, defining unique polygon from input region. The geometry captured and passed
-                         on to datacube, filtered out by OTPS model or hydrological months.
-    :return:
+    Make stats tasks for a polygon region, for a particular feature id
+    :param input_region: shape file and feature id
+    :param filter_product: a dictionary of method like by_hydrological_months and arguments type, optional months or
+                           for HLTC product method by_tidal_height and arguments tide_percent, type, optional sub_class
+                           or for ITEM product method by_tidal_height, tide_range and tide_percent
+    :param storage: to get crs and resolution
+
     """
+
     def __init__(self, input_region, filter_product, storage):
         self.input_region = input_region
         self.filter_product = filter_product
         self.storage = storage
         self.feature = {}
 
-    def __call__(self, index, sources_spec, date_ranges):
+    def __call__(self, index, sources_spec, date_ranges):  # pylint: disable=too-many-locals
         """
         Generate the required tasks through time and across a feature ID of a polygon.
 
         feature id is passed through input_region and is processed after filtering the relevant dates
         that will both result in only datasets covering the poly.
-
         :param index: Datacube Index
-        :return:
+        :param sources_spec: A dictionary of sources
+        :param date_ranges: start and end date of an epoch
+
         """
         assert 'feature_id' in self.input_region
         with fiona.open(self.input_region['from_file']) as input_region:
@@ -1126,7 +1129,6 @@ class GeneratePolygonTasks(object):
             if task.sources:
                 _LOG.info('Created task for time period: %s', time_period)
                 yield task
-
 
 if __name__ == '__main__':
     main()

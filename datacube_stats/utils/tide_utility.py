@@ -81,8 +81,11 @@ def load_tide_model(all_dates, ln, la):
     :param la: model latitude
     :return: a list of tides
     """
-    from otps.predict_wrapper import predict_tide
-    from otps import TimePoint
+    try:
+        from otps.predict_wrapper import predict_tide
+        from otps import TimePoint
+    except ImportError:
+        _LOG.info("otps module not found. Please load otps module separately ...")
 
     tp = list()
     for dt in all_dates:
@@ -196,20 +199,44 @@ def list_time_otps_data(tide_data, tide_dt, per, date_ranges):
     """
     max_tide_ht = tide_data[-1][1]
     low_tide_ht = tide_data[0][1]
-    lowest_tide_dt = date_ranges[0][0]
-    highest_tide_dt = date_ranges[0][1]
+
     # Creates a list of lists of date and ebb flow sub class like [['2013-09-18', 'f'], ['2013-09-25', 'e']]
-    tide_dt = [[tide_dt[i+1][0].strftime("%Y-%m-%d"), 'ph']
-               if tide_dt[i][1] < tide_dt[i+1][1] and tide_dt[i+2][1] < tide_dt[i+1][1] else
-               [tide_dt[i+1][0].strftime("%Y-%m-%d"), 'pl'] if tide_dt[i][1] > tide_dt[i+1][1] and
-               tide_dt[i+2][1] > tide_dt[i+1][1] else [tide_dt[i+1][0].strftime("%Y-%m-%d"), 'f']
-               if tide_dt[i][1] < tide_dt[i+2][1] else [tide_dt[i+1][0].strftime("%Y-%m-%d"), 'e']
-               for i in range(0, len(tide_dt), 3)]
+    ebb_flow_data = list()
+    for i in range(0, len(tide_dt), 3):
+        first = tide_dt[i][1]
+        second = tide_dt[i+1][1]
+        third = tide_dt[i+2][1]
+        tide_date = tide_dt[i + 1][0].strftime("%Y-%m-%d")
+        if first < second and third < second:
+            ebb_flow_data.append([tide_date, 'ph'])
+        elif first > second and third > second:
+            ebb_flow_data.append([tide_date, 'pl'])
+        elif first < third:
+            ebb_flow_data.append([tide_date, 'f'])
+        else:
+            ebb_flow_data.append([tide_date, 'e'])
+
     perc_adj = 25 if per == 50 else per
     # find the low and high tide range from low_tide_ht and max_tide_ht
     lmr = low_tide_ht + (max_tide_ht - low_tide_ht)*perc_adj*0.01   # low tide max range
     hlr = max_tide_ht - (max_tide_ht - low_tide_ht)*perc_adj*0.01   # high tide range
+    return low_high_ebb_flow(lmr, hlr, perc_adj, tide_data, date_ranges, ebb_flow_data)
+
+
+def low_high_ebb_flow(lmr, hlr, perc_adj, tide_data, date_ranges, ebb_flow_data):
+    """ Get all ebb flow and low high dates
+    :param lmr: low max range
+    :param hlr: high tide range
+    :param perc_adj: adjusted percentage
+    :param tide_data: tide data
+    :param date_ranges: date ranges for epoch
+    :param ebb_flow_data: input ebb flow data
+    :return: individual list of low, high and ebb flow data
+    """
     list_low = list()
+    lowest_tide_dt = date_ranges[0][0]
+    highest_tide_dt = date_ranges[0][1]
+
     # doing for middle percentage to extract list of dates or for any percentage as per input.
     if perc_adj == 50:
         list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]]
@@ -221,7 +248,7 @@ def list_time_otps_data(tide_data, tide_dt, per, date_ranges):
         list_high = sorted([[x[0].strftime('%Y-%m-%d'), x[1]] for x in tide_data if (x[1] >= hlr) &
                             (x[0] >= lowest_tide_dt) & (x[0] <= highest_tide_dt)])
     # Extract list of dates and type of tide phase within the date ranges for composite products
-    ebb_flow = [tt for tt in tide_dt
+    ebb_flow = [tt for tt in ebb_flow_data
                 if ((datetime.strptime(tt[0], "%Y-%m-%d") >= lowest_tide_dt) &
                     (datetime.strptime(tt[0], "%Y-%m-%d") <= highest_tide_dt))]
     return list_low, list_high, ebb_flow
@@ -302,9 +329,8 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
 
     if filter_product.get('method') == 'by_hydrological_months':
         # get the year id and geometry for dry or wet type
-        filter_product['year'] = {k: v for k, v in feature.items() if "DY" in k.upper()} \
-            if filter_product.get('type') == 'dry' else \
-            {k: v for k, v in feature.items() if "WY" in k.upper()}
+        sub_type = 'DY' if filter_product.get('type') == 'dry' else 'WY'
+        filter_product['year'] = {k: v for k, v in feature.items() if sub_type in k.upper()}
         poly_y = "_".join(x for x in [v for k, v in filter_product['year'].items()])
         poly_index = (str(feature['ID']), poly_y)
         filter_time = get_hydrological_months(filter_product)
