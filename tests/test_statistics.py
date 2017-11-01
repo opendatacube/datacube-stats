@@ -97,6 +97,19 @@ def test_new_med_ndwi():
     data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
     dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2})
     result = MedNdwi.compute('test', dataset)
+    assert result
+
+
+def test_masked_count():
+    arr = np.random.randint(3, size=(5, 100, 100))
+    da = xr.DataArray(arr, dims=('time', 'x', 'y'))
+
+    from datacube_stats.statistics import MaskMultiCounter
+
+    mc = MaskMultiCounter([{'name': 'test', 'mask': lambda x: x}])
+
+    ds = xr.Dataset({'payload': da})
+    result = mc.compute(ds)
 
     assert result
 
@@ -133,4 +146,3 @@ def test_new_precise_geometric_median():
 
     # The two bands had the same inputs, so should have the same result
     assert (result.band1 == result.band2).all()
-
