@@ -40,7 +40,7 @@ from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _fin
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence, filter_time_by_source
 from datacube_stats.utils.tide_utility import geom_from_file, list_poly_dates, get_filter_product
-from datacube.api.query import query_group_by
+from datacube.api.query import query_group_by, query_geopolygon
 from .timer import wrap_in_timer
 from .utils import report_unmatched_datasets
 from .utils import sorted_interleave
@@ -995,6 +995,7 @@ class NonGriddedTaskGenerator(object):
                          for mask in source_spec.get('masks', [])]
 
                 if data is None:
+                    _LOG.info("No matched for product %s on %s", source_spec['product'], str(filter_time))
                     continue
 
                 task.sources.append({
@@ -1018,31 +1019,37 @@ class ArbitraryTileMaker(object):
         self.storage = storage
         self.filter_product = filter_product
 
-    def filter_datasets(self, product, time, filter_time, geopoly, group_by):
+    def filter_datasets(self, product, time, filter_product, filter_time=None, geopoly=None, group_by=None):
         # filter datasets as per filter_time
-        datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
-        fil_datasets = list()
+        if filter_time is None and filter_product:
+            datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
+            return datasets
+        elif filter_time:
+            fil_datasets = list()
+            datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
+            # get the date list out of dt string and compare within the epoch
+            for ds in datasets:
+                if ds.time.begin.date().strftime("%Y-%m-%d") in filter_time:
+                    fil_datasets.append(ds)
+            datasets = fil_datasets
+        else:
+            datasets = self.dc.find_datasets(product=product, time=time, **self.input_region)
 
-        # get the date list out of dt string and compare within the epoch
-        for ds in datasets:
-            if ds.time.begin.date().strftime("%Y-%m-%d") in filter_time:
-                fil_datasets.append(ds)
-        return fil_datasets
+        return datasets
 
     def __call__(self, product, time, group_by, filter_time=None, geopoly=None,
                  sources_spec=None, date_ranges=None):
         # Do for a specific poly whose boundary is known
-        if date_ranges:
+        output_crs = CRS(self.storage['crs'])
+        if date_ranges and geopoly:
             return list_poly_dates(self.dc, geopoly, sources_spec, date_ranges)
-        datasets = self.filter_datasets(product, time, filter_time, geopoly, group_by)
-        if len(datasets) == 0:
-            _LOG.info("No matched for product %s on %s", product, str(filter_time))
-            return None
+        else:
+            geopoly = query_geopolygon(**self.input_region)
+            geopoly = geopoly.to_crs(output_crs)
+        datasets = self.filter_datasets(product, time, self.filter_product, filter_time, geopoly, group_by)
 
         group_by = query_group_by(group_by=group_by)
         sources = self.dc.group_datasets(datasets, group_by)
-
-        output_crs = CRS(self.storage['crs'])
         output_resolution = [self.storage['resolution'][dim] for dim in output_crs.dimensions]
         geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
 
