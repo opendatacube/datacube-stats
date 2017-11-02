@@ -991,6 +991,7 @@ def _datetime64_to_inttime(var):
     """
     Return an "inttime" representing a datetime64.
     For example, 2016-09-29 as an "inttime" would be 20160929
+
     :param var: ndarray of datetime64
     :return: ndarray of ints, representing the given time to the nearest day
     """
