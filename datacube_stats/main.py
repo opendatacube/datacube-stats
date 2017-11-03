@@ -814,9 +814,9 @@ def _select_task_generator(input_region, storage, filter_product):
         return GriddedTaskGenerator(storage)
     elif 'feature_id' in input_region:
         _LOG.info('Generating date filtered polygon images.')
-        feature, bounds = geom_from_file(input_region['from_file'], input_region['feature_id'])
+        feature, geometry = geom_from_file(input_region['from_file'], input_region['feature_id'])
         return NonGriddedTaskGenerator(input_region=input_region, filter_product=filter_product,
-                                       geopolygon=bounds, feature=feature, storage=storage)
+                                       geopolygon=geometry, feature=feature, storage=storage)
 
     elif 'tile' in input_region:  # For one tile
         return GriddedTaskGenerator(storage, tile_indexes=[input_region['tile']])
@@ -828,14 +828,14 @@ def _select_task_generator(input_region, storage, filter_product):
         # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
         _LOG.info('Found geojson `input_region`, outputing tiles.')
 
-        bounds = Geometry(input_region['geometry'], CRS('EPSG:4326'))  # GeoJSON is always 4326
-        return GriddedTaskGenerator(storage, geopolygon=bounds)
+        geometry = Geometry(input_region['geometry'], CRS('EPSG:4326'))  # GeoJSON is always 4326
+        return GriddedTaskGenerator(storage, geopolygon=geometry)
 
     elif 'from_file' in input_region:
         _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])
 
-        bounds = boundary_polygon_from_file(input_region['from_file'])
-        return GriddedTaskGenerator(storage, geopolygon=bounds)
+        geometry = boundary_polygon_from_file(input_region['from_file'])
+        return GriddedTaskGenerator(storage, geopolygon=geometry)
 
     else:
         _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
@@ -1017,12 +1017,9 @@ class ArbitraryTileMaker(object):
         self.storage = storage
         self.filter_product = filter_product
 
-    def filter_datasets(self, product, time, filter_product, filter_time=None, geopoly=None, group_by=None):
+    def filter_datasets(self, product, time, filter_time=None, geopoly=None, group_by=None):
         # filter datasets as per filter_time
-        if filter_time is None and filter_product:
-            datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
-            return datasets
-        elif filter_time:
+        if filter_time:
             fil_datasets = list()
             datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
             # get the date list out of dt string and compare within the epoch
@@ -1030,6 +1027,9 @@ class ArbitraryTileMaker(object):
                 if ds.time.begin.date().strftime("%Y-%m-%d") in filter_time:
                     fil_datasets.append(ds)
             datasets = fil_datasets
+        elif self.filter_product:
+            datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
+            return datasets
         else:
             datasets = self.dc.find_datasets(product=product, time=time, **self.input_region)
 
@@ -1044,7 +1044,7 @@ class ArbitraryTileMaker(object):
         elif geopoly is None:
             geopoly = query_geopolygon(**self.input_region)
             geopoly = geopoly.to_crs(output_crs)
-        datasets = self.filter_datasets(product, time, self.filter_product, filter_time, geopoly, group_by)
+        datasets = self.filter_datasets(product, time, filter_time, geopoly, group_by)
 
         group_by = query_group_by(group_by=group_by)
         sources = self.dc.group_datasets(datasets, group_by)

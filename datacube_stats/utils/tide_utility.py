@@ -50,6 +50,7 @@ def geom_from_file(filename, feature_id):
 def list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges):
     """
      Return all sensor dates related to the feature id, if only pq dataset is available
+
      :param dc: datacube index
      :param boundary_polygon: for a given geometry
      :param sources_spec:
@@ -347,6 +348,7 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
     """
     Finding the sub product on the basis of methodology and returns a list of filter time and
     dynamically built poly index tuple to be used later in naming output file
+
     :param filter_product: Input filter_product object. Like tide_range/tide_percent/type/sub_class
     :param feature: Get all geometry info like lon/lat/ID
     :param all_dates: all source dates
@@ -383,9 +385,7 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
             # Returning date part only
             filter_time = [ft[0] for ft in filter_time]
     else:
-        try:
-            raise ValueError
-        except ValueError:
-            _LOG.info("No filter values found ")
+        _LOG.info("No filter values found ")
+        raise ValueError
 
     return poly_index, filter_time
