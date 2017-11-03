@@ -993,11 +993,9 @@ class NonGriddedTaskGenerator(object):
                 masks = [make_tile(product=mask['product'], time=ep_range,
                                    group_by=group_by_name, filter_time=filter_time, geopoly=self.geopolygon)
                          for mask in source_spec.get('masks', [])]
-
-                if data is None:
+                if len(data.sources.time) == 0:
                     _LOG.info("No matched for product %s on %s", source_spec['product'], str(filter_time))
                     continue
-
                 task.sources.append({
                     'data': data,
                     'masks': masks,
@@ -1043,7 +1041,7 @@ class ArbitraryTileMaker(object):
         output_crs = CRS(self.storage['crs'])
         if date_ranges and geopoly:
             return list_poly_dates(self.dc, geopoly, sources_spec, date_ranges)
-        else:
+        elif geopoly is None:
             geopoly = query_geopolygon(**self.input_region)
             geopoly = geopoly.to_crs(output_crs)
         datasets = self.filter_datasets(product, time, self.filter_product, filter_time, geopoly, group_by)
