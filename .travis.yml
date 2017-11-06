@@ -45,6 +45,7 @@ script:
 
 after_success:
   - test $TRAVIS_PYTHON_VERSION = "3.6" && coveralls
+  - bash <(curl -s https://codecov.io/bash)
 
 before_deploy:
   - python setup.py sdist --dist-dir dist/$TRAVIS_PYTHON_VERSION
