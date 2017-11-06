@@ -12,19 +12,19 @@ from functools import partial
 from textwrap import dedent
 
 import click
+import fiona
 import numpy as np
 import pandas as pd
 import pydash
+import rasterio.features
 import xarray
 import yaml
-import rasterio.features
-import fiona
-
 
 import datacube
 import datacube_stats
 from datacube import Datacube
 from datacube.api import make_mask, GridWorkflow, Tile
+from datacube.api.query import query_group_by, query_geopolygon
 from datacube.model import GridSpec
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
@@ -35,18 +35,15 @@ from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExist
     NoSuchOutputDriver
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
-from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
-
+from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data, list_poly_dates
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
-from datacube_stats.utils.dates import date_sequence, filter_time_by_source, list_poly_dates
-from datacube_stats.utils.tide_utility import geom_from_file, get_filter_product
-from datacube.api.query import query_group_by, query_geopolygon
+from datacube_stats.utils.dates import date_sequence, filter_time_by_source
+from datacube_stats.utils.tide_utility import geom_from_file, list_poly_dates, get_filter_product
 from .timer import wrap_in_timer
 from .utils import report_unmatched_datasets
 from .utils import sorted_interleave
 from .utils.qsub import with_qsub_runner
 from .utils.query import multi_product_list_cells
-
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -78,12 +75,12 @@ def list_statistics(ctx, param, value):
     if not value or ctx.resilient_parsing:
         return
 
-#       click.echo("{:>20} | {}".format(name, inspect.getdoc(stat)))
+    #       click.echo("{:>20} | {}".format(name, inspect.getdoc(stat)))
     for name, stat in STATS.items():
         click.echo(name)
         # click.echo(inspect.getdoc(stat))
         # click.echo('\n\n')
-#     click.echo(pd.Series({name: inspect.getdoc(stat) for name, stat in STATS.items()}))
+    #     click.echo(pd.Series({name: inspect.getdoc(stat) for name, stat in STATS.items()}))
 
     ctx.exit()
 
@@ -505,7 +502,6 @@ class EmptyChunkException(Exception):
 
 
 def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
-
     def by_time(ds):
         return ds.time.values[0]
 
@@ -589,7 +585,7 @@ def load_masked_tile_lazy(tile, masks,
         ii = ii[::-1]
 
     def load_slice(i):
-        loc = [slice(i, i+1), slice(None), slice(None)]
+        loc = [slice(i, i + 1), slice(None), slice(None)]
         d = GridWorkflow.load(tile[loc], **kwargs)
 
         if mask_nodata:
@@ -815,6 +811,7 @@ def _select_task_generator(input_region, storage, filter_product):
     elif 'feature_id' in input_region:
         _LOG.info('Generating date filtered polygon images.')
         feature, geometry = geom_from_file(input_region['from_file'], input_region['feature_id'])
+        input_region['geopolygon'] = geometry
         return NonGriddedTaskGenerator(input_region=input_region, filter_product=filter_product,
                                        geopolygon=geometry, feature=feature, storage=storage)
 
@@ -959,6 +956,7 @@ class NonGriddedTaskGenerator(object):
     :param input_region:
     :param storage:
     """
+
     def __init__(self, input_region, filter_product, geopolygon, feature, storage):
         self.input_region = input_region
         self.filter_product = filter_product
@@ -974,13 +972,13 @@ class NonGriddedTaskGenerator(object):
                              x/y spatial boundaries.
         :return:
         """
-        make_tile = ArbitraryTileMaker(index, self.input_region, self.storage, self.filter_product)
+        make_tile = ArbitraryTileMaker(index, self.input_region, self.storage)
         all_dates = make_tile(product=None, time=None, group_by=None,
                               geopoly=self.geopolygon, sources_spec=sources_spec, date_ranges=date_ranges)
-        poly_index, filter_time = get_filter_product(self.filter_product, self.feature, all_dates, date_ranges)
+        extra_fn_args, filter_time = get_filter_product(self.filter_product, self.feature, all_dates, date_ranges)
 
         for time_period in date_ranges:
-            task = StatsTask(time_period=time_period, tile_index=poly_index)
+            task = StatsTask(time_period=time_period, tile_index=extra_fn_args)
             for source_spec in sources_spec:
                 ep_range = filter_time_by_source(source_spec.get('time'), time_period)
                 if ep_range is None:
@@ -1003,6 +1001,9 @@ class NonGriddedTaskGenerator(object):
                 })
 
             if task.sources:
+                ### Filter Here ###
+                # Function which takes a Tile, containing sources, and returns a new 'filtered' Tile
+
                 _LOG.info('Created task for time period: %s', time_period)
                 yield task
 
@@ -1010,27 +1011,28 @@ class NonGriddedTaskGenerator(object):
 class ArbitraryTileMaker(object):
     """
     Create a :class:`Tile` which can be used by :class:`GridWorkflow` to later load the required data.
+
+    :param input_region: dictionary of spatial limits for searching for datasets. eg:
+            geopolygon
+            lat, lon boundaries
+
     """
-    def __init__(self, index, input_region, storage, filter_product=None):
+
+    def __init__(self, index, input_region, storage):
         self.dc = Datacube(index=index)
         self.input_region = input_region
         self.storage = storage
-        self.filter_product = filter_product
 
-    def filter_datasets(self, product, time, filter_time=None, geopoly=None, group_by=None):
+    def find_and_filter_datasets(self, product, time, filter_time=None, group_by=None):
+        datasets = self.dc.find_datasets(product=product, time=time, group_by=group_by, **self.input_region)
         # filter datasets as per filter_time
         if filter_time:
             fil_datasets = list()
-            datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
             # get the date list out of dt string and compare within the epoch
             for ds in datasets:
                 if ds.time.begin.date().strftime("%Y-%m-%d") in filter_time:
                     fil_datasets.append(ds)
             datasets = fil_datasets
-        elif self.filter_product:
-            datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
-        else:
-            datasets = self.dc.find_datasets(product=product, time=time, **self.input_region)
 
         return datasets
 
@@ -1040,10 +1042,8 @@ class ArbitraryTileMaker(object):
         output_crs = CRS(self.storage['crs'])
         if date_ranges and geopoly:
             return list_poly_dates(self.dc, geopoly, sources_spec, date_ranges)
-        elif geopoly is None:
-            geopoly = query_geopolygon(**self.input_region)
-            geopoly = geopoly.to_crs(output_crs)
-        datasets = self.filter_datasets(product, time, filter_time, geopoly, group_by)
+
+        datasets = self.find_and_filter_datasets(product, time, filter_time, group_by)
 
         group_by = query_group_by(group_by=group_by)
         sources = self.dc.group_datasets(datasets, group_by)

@@ -19,7 +19,8 @@ class StatsTask(object):
     :param output_products: dict(product_name: OutputProduct)
     """
 
-    def __init__(self, time_period, tile_index=None, sources=None, output_products=None, extras=None):
+    def __init__(self, time_period, tile_index=None, sources=None, output_products=None, geom=None,
+                 extra_fn_params=None):
         #: Start date - End date as a datetime tuple
         self.time_period = time_period
 
@@ -32,9 +33,12 @@ class StatsTask(object):
         #: dict(product_name: OutputProduct)
         self.output_products = output_products if output_products is not None else []
 
+        #: Optional geometry. Can be used to mask the loaded data
+        self.geom = geom
+
         #: A dictionary of extra arguments to be used through the processing chain
         #: Will be available as named argument when producing the output filename
-        self.extras = extras or {}
+        self.extra_fn_params = extra_fn_params or {}
 
     @property
     def geobox(self):
