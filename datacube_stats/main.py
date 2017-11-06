@@ -1029,7 +1029,6 @@ class ArbitraryTileMaker(object):
             datasets = fil_datasets
         elif self.filter_product:
             datasets = self.dc.find_datasets(product=product, time=time, geopolygon=geopoly, group_by=group_by)
-            return datasets
         else:
             datasets = self.dc.find_datasets(product=product, time=time, **self.input_region)
 

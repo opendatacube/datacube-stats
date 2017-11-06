@@ -1,15 +1,10 @@
 import statistics
 import sys
 import logging
-import pandas as pd
-import pytest
 
 from datetime import timedelta, datetime
-from datacube.api.query import query_group_by
-
 from operator import itemgetter
-from datacube_stats.utils.dates import filter_time_by_source
-
+from datacube_stats.utils.dates import get_hydrological_months
 
 DERIVED_PRODS = ['dry', 'wet', 'item', 'low', 'high']
 FILTER_METHOD = {
@@ -17,8 +12,7 @@ FILTER_METHOD = {
     'by_hydrological_months': ['dry', 'wet'],
 }
 PROD_SUB_LIST = ['e', 'f', 'ph', 'pl']
-HYDRO_START_CAL = '01/07/'
-HYDRO_END_CAL = '30/11/'
+
 
 _LOG = logging.getLogger('tide_utility')
 
@@ -45,35 +39,6 @@ def geom_from_file(filename, feature_id):
         raise ValueError
     except ValueError as exp:
         _LOG.info("No geometry found ")
-
-
-def list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges):
-    """
-     Return all sensor dates related to the feature id, if only pq dataset is available
-
-     :param dc: datacube index
-     :param boundary_polygon: for a given geometry
-     :param sources_spec:
-     :param date_ranges:
-     :return: All dates for valid pq datasets within a date range
-    """
-
-    all_times = list()
-    for source_spec in sources_spec:
-        for mask in source_spec.get('masks', []):
-            group_by_name = source_spec.get('group_by', 'solar_day')
-            ep_range = filter_time_by_source(source_spec.get('time'), date_ranges[0])
-            if ep_range is None:
-                _LOG.info("Datasets not included for %s and time range for %s", mask['product'], date_ranges[0])
-                continue
-            ds = dc.find_datasets(product=mask['product'], time=ep_range,
-                                  geopolygon=boundary_polygon, group_by=group_by_name)
-            group_by = query_group_by(group_by=group_by_name)
-            sources = dc.group_datasets(ds, group_by)
-            # Here is a data error specific to this date so before adding exclude it
-            if len(ds) > 0:
-                all_times = all_times + [dd for dd in sources.time.data.astype('M8[s]').astype('O').tolist()]
-    return sorted(all_times)
 
 
 def load_tide_model(all_dates, ln, la):
@@ -257,29 +222,6 @@ def low_high_ebb_flow(lmr, hlr, perc_adj, tide_data, date_ranges, ebb_flow_data)
                 if ((datetime.strptime(tt[0], "%Y-%m-%d") >= lowest_tide_dt) and
                     (datetime.strptime(tt[0], "%Y-%m-%d") <= highest_tide_dt))]
     return list_low, list_high, ebb_flow
-
-
-def get_hydrological_months(filter_product):
-    """ This function is used to return a list of hydrological date range for dry wet geomedian
-        as per month list passed from config or by default from July to Nov
-        :param filter_product: input year from polygon and months from config
-        :return: a list of dates corresponding to predefined month range or from config
-    """
-    all_dates = list()
-    for k, v in filter_product['year'].items():
-        year = int(v)
-        months = filter_product['args'].get('months')
-        # No months
-        if months is not None:
-            st_dt = str(year+1)+str(months[0])+'01'
-            en_dt = str(year+1)+str(months[1])+'30'
-        else:
-            st_dt = HYDRO_START_CAL + str(year+1)
-            en_dt = HYDRO_END_CAL + str(year+1)
-        date_list = pd.date_range(st_dt, en_dt)
-        date_list = date_list.to_datetime().astype(str).tolist()
-        all_dates = all_dates + date_list
-    return all_dates
 
 
 def filter_sub_class(sub_class, list_low, list_high, ebb_flow):
