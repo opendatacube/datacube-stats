@@ -38,8 +38,8 @@ from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
-from datacube_stats.utils.dates import date_sequence, filter_time_by_source
-from datacube_stats.utils.tide_utility import geom_from_file, list_poly_dates, get_filter_product
+from datacube_stats.utils.dates import date_sequence, filter_time_by_source, list_poly_dates
+from datacube_stats.utils.tide_utility import geom_from_file, get_filter_product
 from datacube.api.query import query_group_by, query_geopolygon
 from .timer import wrap_in_timer
 from .utils import report_unmatched_datasets
