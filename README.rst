@@ -562,23 +562,7 @@ named ``count_wet`` of type ``int16``. When passed appropriate data it counts th
 Running with PBS job scheduler
 ==============================
 
-
-Installation onto Raijin
-========================
-
-This section is only relevant for `DEA`_ deployment managers
-
-Run the following after logging into ``raijin``.
-
-.. code-block:: bash
-
-    $ cd ansible
-    $ ansible-playbook -v -v -i "localhost," -c local install-stats-module.yml
-
--v                Show verbose output
--i <hosts list>   Which hosts to run on, trailing ',' indicates list of one
--c                Connection type. local: run commands locally, not over SSH
-
+* TODO
 
 
 Release Notes
