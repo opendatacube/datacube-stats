@@ -533,7 +533,7 @@ compute()
     Takes a ``xarray.Dataset`` containing some data that has been loaded, and returns another ``xarray.Dataset`` after doing some computation.
     The variables on the returned dataset must match the types specified by ``measurements()``.
 
-For example, the following implementation requires it's input data to contain a variable named ``water``, and outputs datasets with a single variable
+For example, the following implementation requires its input data to contain a variable named ``water``, and outputs datasets with a single variable
 named ``count_wet`` of type ``int16``. When passed appropriate data it counts the number of times that 132 or 128 occur.
 
 .. code-block:: python
