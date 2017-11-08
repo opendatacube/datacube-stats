@@ -540,6 +540,7 @@ a list of values for ``water`` that indicate "wetness" as an argument named
 ``wet_values`` to the statistic.
 
 .. code-block:: python
+
     import xarray
     from datacube_stats.statistics import Statistic
 
@@ -574,6 +575,7 @@ Suppose the package that contains this implementation is called
 (eliding ``location``, ``computation``, and ``storage`` specifications)
 
 .. code-block:: yaml
+
    sources:
      - product: wofs_albers
        name: wofs_dry
@@ -609,12 +611,14 @@ Running with PBS job scheduler
 To submit a job to PBS, run ``datacube-stats`` like
 
 .. code-block:: bash
+
     $ datacube-stats --qsub="project=u46,nodes=100,walltime=5h,mem=high,queue=normal" example.yaml
 
 The ``mem`` specification can be ``small``, ``medium``, or ``high``, for 2GB, 4GB, or 8GB
 memory per core respectively. For more details, run
 
 .. code-block:: bash
+
     $ datacube-stats --qsub=help
 
 Release Notes
