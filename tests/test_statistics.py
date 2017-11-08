@@ -5,16 +5,18 @@ Tests for the custom statistics functions
 from __future__ import absolute_import
 
 import string
+from datetime import datetime
 
 import hypothesis.strategies as st
 import numpy as np
 import pytest
 import xarray as xr
-from datetime import datetime
 from hypothesis import given
 
 import datacube_stats.statistics
 from datacube.utils.geometry import CRS
+from datacube_stats.incremental_stats import mk_incremental_mean, mk_incremental_min, mk_incremental_sum, \
+    mk_incremental_max, mk_incremental_counter
 from datacube_stats.statistics import nan_percentile, argpercentile, axisindex, NormalisedDifferenceStats, WofsStats, \
     StatsConfigurationError, Medoid
 
@@ -114,6 +116,7 @@ def ordered_dates(num):
     return st.lists(st.datetimes(datetime(1970, 1, 1), datetime(2050, 1, 1)),
                     min_size=num, max_size=num)
 
+
 @st.composite
 def dataset_shape(draw):
     crs = draw(DatacubeCRSStrategy)
@@ -178,8 +181,8 @@ def two_band_eo_dataset(draw):
                          dims=('time',) + crs.dimensions,
                          coords={'time': times},
                          attrs={'crs': crs})
-    name1, name2 = draw(st.tuples(variable_name, variable_name))
-    dataset = xr.Dataset(data_vars={variable_name: data1, name2: data2},
+    name1, name2 = draw(st.lists(variable_name, min_size=2, max_size=2, unique=True))
+    dataset = xr.Dataset(data_vars={name1: data1, name2: data2},
                          attrs={'crs': crs})
     return dataset
 
@@ -217,3 +220,25 @@ def test_medoid_statistic(dataset):
     assert result
     assert 'time' not in result.dims
     assert dataset.crs == result.crs
+
+
+def compute_incrementally(dataset, proc):
+    for i in range(len(dataset.time)):
+        time_slice = dataset.isel(time=[i])
+        proc(time_slice)
+    return proc()
+
+
+@pytest.mark.parametrize('xarray_func,incremental_fn',
+                         [('min', mk_incremental_min),
+                          ('mean', mk_incremental_mean),
+                          ('max', mk_incremental_max),
+                          ('count', mk_incremental_counter),
+                          ('sum', mk_incremental_sum)])
+@given(dataset=two_band_eo_dataset().filter(lambda ds: len(ds.time) > 1))
+def test_incremental_computations(dataset, xarray_func, incremental_fn):
+    proc = incremental_fn()
+    inc_result = compute_incrementally(dataset, proc)
+    std_result = getattr(dataset, xarray_func)(dim='time')
+
+    assert inc_result == std_result
