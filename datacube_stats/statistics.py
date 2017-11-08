@@ -398,7 +398,8 @@ class WofsStats(Statistic):
         wet = ((data.water == 128) | (data.water == 132)).sum(dim='time')
         dry = ((data.water == 0) | (data.water == 4)).sum(dim='time')
         clear = wet + dry
-        frequency = wet / clear
+        with np.errstate(divide='ignore', invalid='ignore'):
+            frequency = wet / clear
         if self.freq_only:
             return xarray.Dataset({'frequency': frequency}, attrs=dict(crs=data.crs))
         else:
