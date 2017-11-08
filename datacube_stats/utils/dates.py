@@ -83,7 +83,7 @@ def filter_time_by_source(source_interval, epoch_interval):
     return start_time, end_time
 
 
-def _datetime64_to_inttime(var):
+def datetime64_to_inttime(var):
     """
     Return an "inttime" representing a datetime64.
     For example, 2016-09-29 as an "inttime" would be 20160929

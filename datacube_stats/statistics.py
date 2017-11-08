@@ -33,7 +33,7 @@ import xarray
 from pkg_resources import iter_entry_points
 
 from datacube.storage.masking import create_mask_value
-from datacube_stats.utils.dates import _datetime64_to_inttime
+from datacube_stats.utils.dates import datetime64_to_inttime
 from .utils import da_nodata, mk_masker, first_var
 from .incremental_stats import (mk_incremental_sum, mk_incremental_or,
                                 compose_proc, broadcast_proc)
@@ -499,7 +499,7 @@ class PerBandIndexStat(SimpleStatistic):
                 OrderedDict((name, name + '_observed')
                             for name in index.data_vars))
 
-        text_values = time_values.apply(_datetime64_to_inttime).rename(
+        text_values = time_values.apply(datetime64_to_inttime).rename(
             OrderedDict((name, name + '_date')
                         for name in time_values.data_vars))
 
@@ -583,7 +583,7 @@ class ObservedDaysSince(PerPixelMetadata):
 class ObservedDateInt(PerPixelMetadata):
     def compute(self, data, selected_indexes):
         observed = data.time.values[selected_indexes]
-        observed_date = xarray.Variable(('y', 'x'), _datetime64_to_inttime(observed))
+        observed_date = xarray.Variable(('y', 'x'), datetime64_to_inttime(observed))
         return self._var_name, observed_date
 
     def measurement(self):

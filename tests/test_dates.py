@@ -1,6 +1,9 @@
 from datetime import datetime
 
-from datacube_stats.utils import filter_time_by_source
+from hypothesis import given, strategies as st
+
+import numpy as np
+from datacube_stats.utils import filter_time_by_source, datetime64_to_inttime
 import pytest
 
 
@@ -17,4 +20,11 @@ def test_overlapping_dates(epoch_interval, source_interval, expected_interval):
     result = filter_time_by_source(source_interval, epoch_interval)
 
     assert result == expected_interval
+
+
+@given(st.lists(st.datetimes(datetime(1970, 1, 1), datetime(2100, 1, 1))).map(lambda dates: np.array(dates)))
+def test_inttime(dates):
+    inttimes = datetime64_to_inttime(dates)
+
+    assert all(f'{date:%Y%m%d}' == str(inttime) for date, inttime in zip(dates, inttimes))
 
