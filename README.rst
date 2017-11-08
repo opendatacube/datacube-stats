@@ -606,8 +606,16 @@ Suppose the package that contains this implementation is called
 Running with PBS job scheduler
 ==============================
 
-* TODO
+To submit a job to PBS, run ``datacube-stats`` like
 
+.. code-block:: bash
+    $ datacube-stats --qsub="project=u46,nodes=100,walltime=5h,mem=high,queue=normal" example.yaml
+
+The ``mem`` specification can be ``small``, ``medium``, or ``high``, for 2GB, 4GB, or 8GB
+memory per core respectively. For more details, run
+
+.. code-block:: bash
+    $ datacube-stats --qsub=help
 
 Release Notes
 =============
