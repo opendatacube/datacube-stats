@@ -10,12 +10,13 @@ import hypothesis.strategies as st
 import numpy as np
 import pytest
 import xarray as xr
+from datetime import datetime
 from hypothesis import given
 
 import datacube_stats.statistics
 from datacube.utils.geometry import CRS
 from datacube_stats.statistics import nan_percentile, argpercentile, axisindex, NormalisedDifferenceStats, WofsStats, \
-    StatsConfigurationError
+    StatsConfigurationError, Medoid
 
 
 def test_nan_percentile():
@@ -109,12 +110,17 @@ def test_new_geometric_median():
 DatacubeCRSStrategy = st.sampled_from([CRS('EPSG:4326'), CRS('EPSG:3577'), CRS('EPSG:28354')])
 
 
+def ordered_dates(num):
+    return st.lists(st.datetimes(datetime(1970, 1, 1), datetime(2050, 1, 1)),
+                    min_size=num, max_size=num)
+
 @st.composite
 def dataset_shape(draw):
     crs = draw(DatacubeCRSStrategy)
     height = draw(st.integers(10, 400))
     width = draw(st.integers(10, 400))
-    times = draw(st.integers(1, 10))
+    ntimes = draw(st.integers(1, 10))
+    times = draw(ordered_dates(ntimes))
     return crs, height, width, times
 
 
@@ -125,11 +131,11 @@ variable_name = st.text(min_size=1, alphabet=string.ascii_letters + '_').filter(
 @st.composite
 def eo_wofs_dataset(draw):
     crs, height, width, times = draw(dataset_shape())
-    arr = np.random.randint(low=0, high=255, size=(times, height, width), dtype='uint8')
+    arr = np.random.randint(low=0, high=255, size=(len(times), height, width), dtype='uint8')
 
     data_array_1 = xr.DataArray(arr,
                                 dims=('time',) + crs.dimensions,
-                                coords={'time': list(range(times))},
+                                coords={'time': times},
                                 attrs={'crs': crs})
     dataset = xr.Dataset(data_vars={'water': data_array_1},
                          attrs={'crs': crs})
@@ -161,16 +167,16 @@ def test_wofs_stats(dataset):
 @st.composite
 def two_band_eo_dataset(draw):
     crs, height, width, times = draw(dataset_shape())
-    arr = np.random.random_sample(size=(times, height, width))
+    arr = np.random.random_sample(size=(len(times), height, width))
 
     data1 = xr.DataArray(arr,
                          dims=('time',) + crs.dimensions,
-                         coords={'time': list(range(times))},
+                         coords={'time': times},
                          attrs={'crs': crs})
-    arr = np.random.random_sample(size=(times, height, width))
+    arr = np.random.random_sample(size=(len(times), height, width))
     data2 = xr.DataArray(arr,
                          dims=('time',) + crs.dimensions,
-                         coords={'time': list(range(times))},
+                         coords={'time': times},
                          attrs={'crs': crs})
     name1, name2 = draw(st.tuples(variable_name, variable_name))
     dataset = xr.Dataset(data_vars={variable_name: data1, name2: data2},
@@ -201,3 +207,13 @@ def test_normalised_difference_stats(dataset, output_name):
     output_measurements = ndstat.measurements(input_measurements)
     measurement_names = set(m['name'] for m in output_measurements)
     assert expected_output_varnames == measurement_names
+
+
+@given(two_band_eo_dataset())
+def test_medoid_statistic(dataset):
+    medstat = Medoid()
+
+    result = medstat.compute(dataset)
+    assert result
+    assert 'time' not in result.dims
+    assert dataset.crs == result.crs
