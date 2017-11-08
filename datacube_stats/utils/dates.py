@@ -81,3 +81,21 @@ def filter_time_by_source(source_interval, epoch_interval):
     end_time = min(source_end, epoch_end)
 
     return start_time, end_time
+
+
+def _datetime64_to_inttime(var):
+    """
+    Return an "inttime" representing a datetime64.
+    For example, 2016-09-29 as an "inttime" would be 20160929
+
+    An 'inttime' is used in statistics which return an actual observation to represent the date that observation happened.
+    It is a relatively compact representation of a date, while still being human readable.
+
+    :param var: ndarray of datetime64
+    :return: ndarray of ints, representing the given time to the nearest day
+    """
+    values = getattr(var, 'values', var)
+    years = values.astype('datetime64[Y]').astype('int32') + 1970
+    months = values.astype('datetime64[M]').astype('int32') % 12 + 1
+    days = (values.astype('datetime64[D]') - values.astype('datetime64[M]') + 1).astype('int32')
+    return years * 10000 + months * 100 + days

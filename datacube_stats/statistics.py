@@ -32,7 +32,8 @@ import numpy as np
 import xarray
 from pkg_resources import iter_entry_points
 
-from datacube.storage.masking import make_mask, create_mask_value
+from datacube.storage.masking import create_mask_value
+from datacube_stats.utils.dates import _datetime64_to_inttime
 from .utils import da_nodata, mk_masker, first_var
 from .incremental_stats import (mk_incremental_sum, mk_incremental_or,
                                 compose_proc, broadcast_proc)
@@ -931,23 +932,6 @@ STATS = {
     'masked_multi_count': MaskMultiCounter,
     'external': ExternalPlugin,
 }
-
-
-def _datetime64_to_inttime(var):
-    """
-    Return an "inttime" representing a datetime64.
-
-    For example, 2016-09-29 as an "inttime" would be 20160929
-
-    :param var: ndarray of datetime64
-    :return: ndarray of ints, representing the given time to the nearest day
-    """
-    values = getattr(var, 'values', var)
-    years = values.astype('datetime64[Y]').astype('int32') + 1970
-    months = values.astype('datetime64[M]').astype('int32') % 12 + 1
-    days = (values.astype('datetime64[D]') - values.astype('datetime64[M]') + 1).astype('int32')
-    return years * 10000 + months * 100 + days
-
 
 # Dynamically look for and load statistics from other packages
 
