@@ -120,8 +120,8 @@ def ordered_dates(num):
 @st.composite
 def dataset_shape(draw):
     crs = draw(DatacubeCRSStrategy)
-    height = draw(st.integers(10, 400))
-    width = draw(st.integers(10, 400))
+    height = draw(st.integers(10, 200))
+    width = draw(st.integers(10, 200))
     ntimes = draw(st.integers(1, 10))
     times = draw(ordered_dates(ntimes))
     return crs, height, width, times
@@ -170,16 +170,23 @@ def test_wofs_stats(dataset):
 @st.composite
 def two_band_eo_dataset(draw):
     crs, height, width, times = draw(dataset_shape())
-    arr = np.random.random_sample(size=(len(times), height, width))
 
+    coordinates = {dim: np.arange(size) for dim, size in zip(crs.dimensions, (height, width))}
+
+    coordinates['time'] = times
+    dimensions = ('time',) + crs.dimensions
+    shape = (len(times), height, width)
+
+    arr = np.random.random_sample(size=shape)
     data1 = xr.DataArray(arr,
-                         dims=('time',) + crs.dimensions,
-                         coords={'time': times},
+                         dims=dimensions,
+                         coords=coordinates,
                          attrs={'crs': crs})
-    arr = np.random.random_sample(size=(len(times), height, width))
+
+    arr = np.random.random_sample(size=shape)
     data2 = xr.DataArray(arr,
-                         dims=('time',) + crs.dimensions,
-                         coords={'time': times},
+                         dims=dimensions,
+                         coords=coordinates,
                          attrs={'crs': crs})
     name1, name2 = draw(st.lists(variable_name, min_size=2, max_size=2, unique=True))
     dataset = xr.Dataset(data_vars={name1: data1, name2: data2},
