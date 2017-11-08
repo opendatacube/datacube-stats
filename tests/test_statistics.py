@@ -18,7 +18,7 @@ from datacube.utils.geometry import CRS
 from datacube_stats.incremental_stats import mk_incremental_mean, mk_incremental_min, mk_incremental_sum, \
     mk_incremental_max, mk_incremental_counter
 from datacube_stats.statistics import nan_percentile, argpercentile, axisindex, NormalisedDifferenceStats, WofsStats, \
-    StatsConfigurationError, Medoid
+    StatsConfigurationError, Medoid, GeoMedian
 
 
 def test_nan_percentile():
@@ -212,11 +212,12 @@ def test_normalised_difference_stats(dataset, output_name):
     assert expected_output_varnames == measurement_names
 
 
-@given(two_band_eo_dataset())
-def test_medoid_statistic(dataset):
-    medstat = Medoid()
+@pytest.mark.parametrize('stat_class', [Medoid, GeoMedian])
+@given(dataset=two_band_eo_dataset())
+def test_medoid_statistic(dataset, stat_class):
+    stat = stat_class()
 
-    result = medstat.compute(dataset)
+    result = stat.compute(dataset)
     assert result
     assert 'time' not in result.dims
     assert dataset.crs == result.crs
