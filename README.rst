@@ -1,7 +1,7 @@
 Data Cube Statistics Tools
 ##########################
 
-|Build Status| |Coverage Status|
+|Build Status| |Coverage Status| |CodeCov Status|
 
 Data Cube Statistics is a an application used to calculate large scale temporal statistics
 on data stored using an `Open Data Cube`_ (`ODC`_) installation. It provides a
@@ -605,4 +605,5 @@ Release Notes
    :target: https://travis-ci.org/GeoscienceAustralia/agdc_statistics
 .. |Coverage Status| image:: https://coveralls.io/repos/github/GeoscienceAustralia/agdc_statistics/badge.svg?branch=master
    :target: https://coveralls.io/github/GeoscienceAustralia/agdc_statistics?branch=master
-
+.. |CodeCov Status| image:: https://codecov.io/gh/GeoscienceAustralia/agdc_statistics/branch/master/graph/badge.svg
+  :target: https://codecov.io/gh/GeoscienceAustralia/agdc_statistics
