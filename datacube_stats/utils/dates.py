@@ -97,6 +97,10 @@ def get_hydrological_years(all_years, months=None):
     all_dates = list()
     for k, v in all_years.items():
         year = int(v)
+<<<<<<< HEAD
+=======
+        # months = filter_product['args'].get('months')
+>>>>>>> 2b767b0ca13e0c5807072ccf319e2bdcca19def0
         # No months
         if months is not None:
             st_dt = str(year+1)+str(months[0])+'01'
