@@ -972,7 +972,8 @@ class NonGriddedTaskGenerator(object):
         :param extra_fn_args: file name to be applied in task
         :return: new task sources
         """
-        for sr in task.sources:
+        remove_index_list = list()
+        for i, sr in enumerate(task.sources):
             for k, v in sr.items():
                 if k == 'data':
                     if self.filter_product.get('method') == "by_hydrological_months":
@@ -981,9 +982,15 @@ class NonGriddedTaskGenerator(object):
                     elif self.filter_product.get('method') == "by_tide_height":
                         all_dates = [s.strftime("%Y-%m-%dT%H:%M:%S") for s in
                                      v.sources.time.values.astype('M8[s]').astype('O').tolist()]
-                    v.sources = v.sources.isel(time=[i for i, item in enumerate(all_dates) if item in
-                                                     filtered_times])
-                    _LOG.info("source included %s", (v.sources.time))
+                    if bool(set(all_dates) & set(filtered_times)):
+                        v.sources = v.sources.isel(time=[i for i, item in enumerate(all_dates) if item in
+                                                         filtered_times])
+                        _LOG.info("source included %s", (v.sources.time))
+                    else:
+                        remove_index_list.append(i)
+        if len(remove_index_list) > 0:
+            for i in remove_index_list:
+                del task.sources[i]
         task.geom_feat = self.input_region['geom_feat']
         task.crs_txt = self.input_region['crs_txt']
         task.tile_index = extra_fn_args
