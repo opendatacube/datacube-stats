@@ -128,17 +128,10 @@ output_products:
 #   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
 #   product_type: ITEM
 
-# - name: tidal_count
-#   statistic: masked_multi_count 
-#   output_params:
-#      zlib: True
-#      fletcher32: True
-#   file_path_template: 'ITEM_PIXEL_COUNT_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
-#   product_type: ITEM
 #
 filter_product:
   method: by_tide_height
   args:
-     # tide_range used to differentiate item with low/high composite and for exploring future incremental change
+     # tide_range used to support incremental change
      tide_range: 10
      tide_percent: 10

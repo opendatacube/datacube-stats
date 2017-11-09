@@ -38,12 +38,13 @@ from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data, list_poly_dates
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence, filter_time_by_source
-from datacube_stats.utils.tide_utility import geom_from_file, list_poly_dates, get_filter_product
+from datacube_stats.utils.tide_utility import geom_from_file, get_filter_product
 from .timer import wrap_in_timer
 from .utils import report_unmatched_datasets
 from .utils import sorted_interleave
 from .utils.qsub import with_qsub_runner
 from .utils.query import multi_product_list_cells
+from datetime import datetime
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -307,11 +308,6 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
             tasks = self.generate_tasks(self.configure_outputs())
 
         app_info = _get_app_metadata(self.config_file)
-        region = self.config_file['input_region']
-        if region.get('feature_id'):
-            _, geom = geom_from_file(region['from_file'], region['feature_id'])
-        else:
-            geom = None
 
         output_driver = partial(self.output_driver,
                                 output_path=self.location,
@@ -321,8 +317,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                                 var_attributes=self.var_attributes)
         task_runner = partial(execute_task,
                               output_driver=output_driver,
-                              chunking=self.computation.get('chunking', {}),
-                              geom=geom)
+                              chunking=self.computation.get('chunking', {}))
         return runner(tasks,
                       task_runner,
                       self.process_completed)
@@ -414,7 +409,7 @@ def geometry_mask(geoms, geobox, all_touched=False, invert=False):
                                            invert=invert)
 
 
-def execute_task(task, output_driver, chunking, geom=None):
+def execute_task(task, output_driver, chunking):
     """
     Load data, run the statistical operations and write results out to the filesystem.
 
@@ -433,7 +428,7 @@ def execute_task(task, output_driver, chunking, geom=None):
             if len(chunking) == 0:
                 chunking = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]}
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-                process_chunk(output_files, sub_tile_slice, task, timer, geom)
+                process_chunk(output_files, sub_tile_slice, task, timer)
     except OutputFileAlreadyExists as e:
         _LOG.warning(e)
     except Exception as e:
@@ -466,12 +461,16 @@ def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
             save(name, cast_back(proc(), stat.data_measurements))
 
 
-def load_process_save_chunk(output_files, chunk, task, timer, geom):
+def load_process_save_chunk(output_files, chunk, task, timer):
     try:
         with timer.time('loading_data'):
             data = load_data(chunk, task.sources)
             # mask as per geometry now
-            data = data.where(geometry_mask([geom], data.geobox, invert=True)) if geom else data
+            geom = None
+            if task.geom_feat:
+                geom = Geometry(task.geom_feat, CRS(task.crs_txt))
+            data = data.where(geometry_mask([geom], data.geobox, invert=True)) \
+                if geom else data
         last_idx = len(task.output_products) - 1
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):
             _LOG.info("Computing %s in tile %s %s. Current timing: %s",
@@ -810,8 +809,9 @@ def _select_task_generator(input_region, storage, filter_product):
         return GriddedTaskGenerator(storage)
     elif 'feature_id' in input_region:
         _LOG.info('Generating date filtered polygon images.')
-        feature, geometry = geom_from_file(input_region['from_file'], input_region['feature_id'])
-        input_region['geopolygon'] = geometry
+        feature, geom_feat, crs_txt, geometry = geom_from_file(input_region['from_file'], input_region['feature_id'])
+        input_region['geom_feat'] = geom_feat
+        input_region['crs_txt'] = crs_txt
         return NonGriddedTaskGenerator(input_region=input_region, filter_product=filter_product,
                                        geopolygon=geometry, feature=feature, storage=storage)
 
@@ -964,6 +964,53 @@ class NonGriddedTaskGenerator(object):
         self.feature = feature
         self.storage = storage
 
+    def set_task(self, task, filtered_times, extra_fn_args):
+        """
+        Set up task after applying filtered date/times
+        :param task:
+        :param filtered_times: Filtered date/times depending on products
+        :param extra_fn_args: file name to be applied in task
+        :return: new task sources
+        """
+        for sr in task.sources:
+            for k, v in sr.items():
+                if k == 'data':
+                    if self.filter_product.get('method') == "by_hydrological_months":
+                        all_dates = [s.strftime("%Y-%m-%d") for s in
+                                     v.sources.time.values.astype('M8[s]').astype('O').tolist()]
+                    elif self.filter_product.get('method') == "by_tide_height":
+                        all_dates = [s.strftime("%Y-%m-%dT%H:%M:%S") for s in
+                                     v.sources.time.values.astype('M8[s]').astype('O').tolist()]
+                    v.sources = v.sources.isel(time=[i for i, item in enumerate(all_dates) if item in
+                                                     filtered_times])
+                    _LOG.info("source included %s", (v.sources.time))
+        task.geom_feat = self.input_region['geom_feat']
+        task.crs_txt = self.input_region['crs_txt']
+        task.tile_index = extra_fn_args
+        return task
+
+    def filter_task(self, task, date_ranges):
+
+        """
+        Filters dates and added to task geometry feature, crs txt and extra file name details
+        :param task: For filter product, it reset the sources, setup geometry features and filename
+        :param date_ranges: This is passed onto filter product function as epoch range
+        :return: new task in case of filtering
+        """
+        all_source_times = list()
+        if self.filter_product is not None:
+            for sr in task.sources:
+                for k, v in sr.items():
+                    if k == "data":
+                        all_source_times = all_source_times + \
+                                           [dd for dd in v.sources.time.data.astype('M8[s]').astype('O').tolist()]
+            all_source_times = sorted(all_source_times)
+            extra_fn_args, filtered_times =\
+                get_filter_product(self.filter_product, self.feature, all_source_times, date_ranges)
+            _LOG.info("Filtered times %s", filtered_times)
+            task = self.set_task(task, filtered_times, extra_fn_args)
+        return task
+
     def __call__(self, index, sources_spec, date_ranges):
         """
 
@@ -973,12 +1020,10 @@ class NonGriddedTaskGenerator(object):
         :return:
         """
         make_tile = ArbitraryTileMaker(index, self.input_region, self.storage)
-        all_dates = make_tile(product=None, time=None, group_by=None,
-                              geopoly=self.geopolygon, sources_spec=sources_spec, date_ranges=date_ranges)
-        extra_fn_args, filter_time = get_filter_product(self.filter_product, self.feature, all_dates, date_ranges)
 
         for time_period in date_ranges:
-            task = StatsTask(time_period=time_period, tile_index=extra_fn_args)
+            task = StatsTask(time_period=time_period)
+            _LOG.info("Doing for time range for %s on %s", time_period, str(datetime.now()))
             for source_spec in sources_spec:
                 ep_range = filter_time_by_source(source_spec.get('time'), time_period)
                 if ep_range is None:
@@ -987,23 +1032,22 @@ class NonGriddedTaskGenerator(object):
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
                 # Build Tile
                 data = make_tile(product=source_spec['product'], time=ep_range,
-                                 group_by=group_by_name, filter_time=filter_time, geopoly=self.geopolygon)
+                                 group_by=group_by_name, geopoly=self.geopolygon)
                 masks = [make_tile(product=mask['product'], time=ep_range,
-                                   group_by=group_by_name, filter_time=filter_time, geopoly=self.geopolygon)
+                                   group_by=group_by_name, geopoly=self.geopolygon)
                          for mask in source_spec.get('masks', [])]
                 if len(data.sources.time) == 0:
-                    _LOG.info("No matched for product %s on %s", source_spec['product'], str(filter_time))
+                    _LOG.info("No matched for product %s", source_spec['product'])
                     continue
                 task.sources.append({
                     'data': data,
                     'masks': masks,
                     'spec': source_spec,
                 })
-
+            _LOG.info("make tile finished on %s", str(datetime.now()))
             if task.sources:
-                ### Filter Here ###
                 # Function which takes a Tile, containing sources, and returns a new 'filtered' Tile
-
+                task = self.filter_task(task, date_ranges)
                 _LOG.info('Created task for time period: %s', time_period)
                 yield task
 
@@ -1023,28 +1067,16 @@ class ArbitraryTileMaker(object):
         self.input_region = input_region
         self.storage = storage
 
-    def find_and_filter_datasets(self, product, time, filter_time=None, group_by=None):
-        datasets = self.dc.find_datasets(product=product, time=time, group_by=group_by, **self.input_region)
-        # filter datasets as per filter_time
-        if filter_time:
-            fil_datasets = list()
-            # get the date list out of dt string and compare within the epoch
-            for ds in datasets:
-                if ds.time.begin.date().strftime("%Y-%m-%d") in filter_time:
-                    fil_datasets.append(ds)
-            datasets = fil_datasets
-
-        return datasets
-
     def __call__(self, product, time, group_by, filter_time=None, geopoly=None,
                  sources_spec=None, date_ranges=None):
         # Do for a specific poly whose boundary is known
         output_crs = CRS(self.storage['crs'])
-        if date_ranges and geopoly:
-            return list_poly_dates(self.dc, geopoly, sources_spec, date_ranges)
+        filtered_item = ['geopolygon', 'lon', 'lat', 'longitude', 'latitude', 'x', 'y']
+        filtered_dict = {k: v for k, v in filter(lambda t: t[0] in filtered_item, self.input_region.items())}
+        if filtered_dict.get('geopolygon'):
+            filtered_dict['geopolygon'] = Geometry(self.input_region['geom_feat'], CRS(self.input_region['crs_txt']))
 
-        datasets = self.find_and_filter_datasets(product, time, filter_time, group_by)
-
+        datasets = self.dc.find_datasets(product=product, time=time, group_by=group_by, **filtered_dict)
         group_by = query_group_by(group_by=group_by)
         sources = self.dc.group_datasets(datasets, group_by)
         output_resolution = [self.storage['resolution'][dim] for dim in output_crs.dimensions]

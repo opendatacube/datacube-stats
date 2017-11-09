@@ -116,16 +116,17 @@ def list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges):
     return sorted(all_times)
 
 
-def get_hydrological_months(filter_product):
+def get_hydrological_years(all_years, months=None):
     """ This function is used to return a list of hydrological date range for dry wet geomedian
         as per month list passed from config or by default from July to Nov
-        :param filter_product: input year from polygon and months from config
+        :param all_years: a list of input years from polygon
+        :param months: a list of hydrological months from config or default values
         :return: a list of dates corresponding to predefined month range or from config
     """
     all_dates = list()
-    for k, v in filter_product['year'].items():
+    for k, v in all_years.items():
         year = int(v)
-        months = filter_product['args'].get('months')
+        #months = filter_product['args'].get('months')
         # No months
         if months is not None:
             st_dt = str(year+1)+str(months[0])+'01'

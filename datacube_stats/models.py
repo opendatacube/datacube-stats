@@ -19,8 +19,8 @@ class StatsTask(object):
     :param output_products: dict(product_name: OutputProduct)
     """
 
-    def __init__(self, time_period, tile_index=None, sources=None, output_products=None, geom=None,
-                 extra_fn_params=None):
+    def __init__(self, time_period, tile_index=None, sources=None, output_products=None, geom_feat=None,
+                 crs_txt=None, extra_fn_params=None):
         #: Start date - End date as a datetime tuple
         self.time_period = time_period
 
@@ -34,7 +34,9 @@ class StatsTask(object):
         self.output_products = output_products if output_products is not None else []
 
         #: Optional geometry. Can be used to mask the loaded data
-        self.geom = geom
+        self.geom_feat = geom_feat
+        #: crs txt used to build Geometry in load process as yaml cannot dump geometry object
+        self.crs_txt = crs_txt
 
         #: A dictionary of extra arguments to be used through the processing chain
         #: Will be available as named argument when producing the output filename

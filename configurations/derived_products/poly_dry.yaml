@@ -81,8 +81,8 @@ sources:
 
 ## Define whether and how to chunk over time
 date_ranges:
-  start_date: 1986-01-01
-  end_date: 2017-01-01
+  start_date: 1991-01-01
+  end_date: 1994-01-01
 
 ## Define output directory and file structure
 #location: '/short/v10/datacube/wofs-summary'
@@ -91,7 +91,7 @@ location: '/g/data/r78/tmp'
 input_region:
   #from_file: '/g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp'
   from_file: '/g/data/r78/bxb547/GW_works/bur_dry_albers.shp'
-  feature_id: [3]
+  feature_id: [59]
 #
 storage:
   driver: NetCDF CF
