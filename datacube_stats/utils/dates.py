@@ -87,35 +87,6 @@ def filter_time_by_source(source_interval, epoch_interval):
     return start_time, end_time
 
 
-def list_poly_dates(dc, boundary_polygon, sources_spec, date_ranges):
-    """
-     Return all sensor dates related to the feature id, if only pq dataset is available
-
-     :param dc: datacube index
-     :param boundary_polygon: for a given geometry
-     :param sources_spec:
-     :param date_ranges:
-     :return: All dates for valid pq datasets within a date range
-    """
-
-    all_times = list()
-    for source_spec in sources_spec:
-        for mask in source_spec.get('masks', []):
-            group_by_name = source_spec.get('group_by', 'solar_day')
-            ep_range = filter_time_by_source(source_spec.get('time'), date_ranges[0])
-            if ep_range is None:
-                _LOG.info("Datasets not included for %s and time range for %s", mask['product'], date_ranges[0])
-                continue
-            ds = dc.find_datasets(product=mask['product'], time=ep_range,
-                                  geopolygon=boundary_polygon, group_by=group_by_name)
-            group_by = query_group_by(group_by=group_by_name)
-            sources = dc.group_datasets(ds, group_by)
-            # Here is a data error specific to this date so before adding exclude it
-            if len(ds) > 0:
-                all_times = all_times + [dd for dd in sources.time.data.astype('M8[s]').astype('O').tolist()]
-    return sorted(all_times)
-
-
 def get_hydrological_years(all_years, months=None):
     """ This function is used to return a list of hydrological date range for dry wet geomedian
         as per month list passed from config or by default from July to Nov
@@ -126,7 +97,6 @@ def get_hydrological_years(all_years, months=None):
     all_dates = list()
     for k, v in all_years.items():
         year = int(v)
-        #months = filter_product['args'].get('months')
         # No months
         if months is not None:
             st_dt = str(year+1)+str(months[0])+'01'
@@ -138,3 +108,21 @@ def get_hydrological_years(all_years, months=None):
         date_list = date_list.to_datetime().astype(str).tolist()
         all_dates = all_dates + date_list
     return all_dates
+
+
+def datetime64_to_inttime(var):
+    """
+    Return an "inttime" representing a datetime64.
+    For example, 2016-09-29 as an "inttime" would be 20160929
+
+    An 'inttime' is used in statistics which return an actual observation to represent the date that observation happened.
+    It is a relatively compact representation of a date, while still being human readable.
+
+    :param var: ndarray of datetime64
+    :return: ndarray of ints, representing the given time to the nearest day
+    """
+    values = getattr(var, 'values', var)
+    years = values.astype('datetime64[Y]').astype('int32') + 1970
+    months = values.astype('datetime64[M]').astype('int32') % 12 + 1
+    days = (values.astype('datetime64[D]') - values.astype('datetime64[M]') + 1).astype('int32')
+    return years * 10000 + months * 100 + days

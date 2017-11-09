@@ -1,7 +1,7 @@
 Data Cube Statistics Tools
 ##########################
 
-|Build Status| |Coverage Status|
+|Build Status| |Coverage Status| |CodeCov Status|
 
 Data Cube Statistics is a an application used to calculate large scale temporal statistics
 on data stored using an `Open Data Cube`_ (`ODC`_) installation. It provides a
@@ -561,53 +561,93 @@ compute()
     Takes a ``xarray.Dataset`` containing some data that has been loaded, and returns another ``xarray.Dataset`` after doing some computation.
     The variables on the returned dataset must match the types specified by ``measurements()``.
 
-For example, the following implementation requires it's input data to contain a variable named ``water``, and outputs datasets with a single variable
-named ``count_wet`` of type ``int16``. When passed appropriate data it counts the number of times that 132 or 128 occur.
+For example, the following implementation requires its input data to contain a
+variable named ``water``, and outputs data with a single variable named
+``count_wet`` of type ``int16``. In the configuration file, we will need to pass
+a list of values for ``water`` that indicate "wetness" as an argument named
+``wet_values`` to the statistic.
 
 .. code-block:: python
 
+    import xarray
+    from datacube_stats.statistics import Statistic
+
     class CountWet(Statistic):
+        def __init__(self, wet_values):
+            # list of values of 'water' that we count as "wet"
+            assert len(wet_values) > 0, 'no wet values provided'
+
+            self.wet_values = wet_values
+
         def compute(self, data):
-            # 128 == clear and wet, 132 == clear and wet and masked for sea
-            # The PQ sea mask that we use is dodgy and should be ignored. It excludes lots of useful data
-            wet = ((data.water == 128) + (data.water == 132)).sum(dim='time')
-            return xarray.Dataset({'count_wet': wet,
-                                   attrs={'crs':data.crs})
+            wet = xarray.zeros_like(data.water)
+
+            for val in self.wet_values:
+                wet += data.water == val
+
+            return xarray.Dataset({'count_wet': wet.sum(dim='time')},
+                                  attrs={'crs': data.crs})
 
         def measurements(self, input_measurements):
-            measurement_names = set(m['name'] for m in input_measurements)
-            assert 'water' in measurement_names
+            assert 'water' in [m['name'] for m in input_measurements]
 
             wet = {'name': 'count_wet',
                    'dtype': 'int16',
                    'nodata': -1,
                    'units': '1'}
+
             return [wet]
 
+Suppose the package that contains this implementation is called
+``pseudo.example``, and it is available in the Python path. Then the configuration file could look like
+(eliding ``location``, ``computation``, and ``storage`` specifications)
 
+.. code-block:: yaml
+
+   sources:
+     - product: wofs_albers
+       name: wofs_dry
+       measurements: [water]
+       group_by: solar_day
+
+   date_ranges:
+     start_date: 2014-01-01
+     end_date: 2014-02-01
+     stats_duration: 1m
+     step_size: 1m
+
+   output_products:
+    - name: wet_count_summary
+      product_type: wofs_statistical_summary
+      statistic: external
+      statistic_args:
+        impl: pseudo.example.CountWet
+
+        # ignoring PQ sea mask that excludes a lot of useful data
+        wet_values:
+           - 128 # clear and wet
+           - 132 # clear and wet and masked for sea
+      output_params:
+        zlib: True
+        fletcher32: True
+      file_path_template: 'WOFS_COUNT/{x}_{y}/WOFS_COUNT_3577_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
 
 
 Running with PBS job scheduler
 ==============================
 
-
-Installation onto Raijin
-========================
-
-This section is only relevant for `DEA`_ deployment managers
-
-Run the following after logging into ``raijin``.
+To submit a job to PBS, run ``datacube-stats`` like
 
 .. code-block:: bash
 
-    $ cd ansible
-    $ ansible-playbook -v -v -i "localhost," -c local install-stats-module.yml
+    $ datacube-stats --qsub="project=u46,nodes=100,walltime=5h,mem=high,queue=normal" example.yaml
 
--v                Show verbose output
--i <hosts list>   Which hosts to run on, trailing ',' indicates list of one
--c                Connection type. local: run commands locally, not over SSH
+The ``mem`` specification can be ``small``, ``medium``, or ``high``, for 2GB, 4GB, or 8GB
+memory per core respectively. For more details, run
 
+.. code-block:: bash
 
+    $ datacube-stats --qsub=help
 
 Release Notes
 =============
@@ -633,4 +673,5 @@ Release Notes
    :target: https://travis-ci.org/GeoscienceAustralia/agdc_statistics
 .. |Coverage Status| image:: https://coveralls.io/repos/github/GeoscienceAustralia/agdc_statistics/badge.svg?branch=master
    :target: https://coveralls.io/github/GeoscienceAustralia/agdc_statistics?branch=master
-
+.. |CodeCov Status| image:: https://codecov.io/gh/GeoscienceAustralia/agdc_statistics/branch/master/graph/badge.svg
+  :target: https://codecov.io/gh/GeoscienceAustralia/agdc_statistics

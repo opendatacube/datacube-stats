@@ -22,8 +22,8 @@ from __future__ import absolute_import
 
 import abc
 import collections
-from copy import copy
 from collections import OrderedDict
+from copy import copy
 from datetime import datetime
 from functools import reduce as reduce_, partial
 from operator import mul as mul_op
@@ -32,15 +32,17 @@ import numpy as np
 import xarray
 from pkg_resources import iter_entry_points
 
-from datacube.storage.masking import make_mask, create_mask_value
-from .utils import da_nodata, mk_masker, first_var
+from datacube.storage.masking import create_mask_value
+from datacube_stats.utils.dates import datetime64_to_inttime
 from .incremental_stats import (mk_incremental_sum, mk_incremental_or,
                                 compose_proc, broadcast_proc)
+from .utils import da_nodata, mk_masker, first_var
 
 try:
     from bottleneck import anynan, nansum
 except ImportError:
     nansum = np.nansum
+
 
     def anynan(x, axis=None):
         return np.isnan(x).any(axis=axis)
@@ -98,64 +100,6 @@ def medoid_indices(arr, invalid=None):
 
     dist_sum[invalid] = np.inf
     return np.argmin(dist_sum, axis=0)
-
-
-def nanmedoid(x, axis=1):
-    i = argnanmedoid(x, axis)
-
-    return x[:, i]
-
-
-def combined_var_reduction(dataset, method, dim='time', keep_attrs=True):
-    """
-    Apply a reduction to a dataset by combining data variables into a single ndarray, running `method`, then
-    un-combining to separate data variables.
-
-    eg::
-
-        med = combined_var_reduction(data, nanmedoid)
-
-    :param dataset: Input `xarray.Dataset`
-    :param method: function to apply to DataArray
-    :param bool keep_attrs: Should dataset attributes be retained, defaults to True.
-    :param dim: Dimension to apply reduction along
-    :return: xarray.Dataset with same data_variables but one less dimension
-    """
-    flattened = dataset.to_array(dim='variable')
-
-    hdmedian_out = flattened.reduce(_reduce_across_variables, dim=dim, keep_attrs=keep_attrs, method=method)
-
-    hdmedian_out = hdmedian_out.to_dataset(dim='variable')
-
-    if keep_attrs:
-        for k, v in dataset.attrs.items():
-            hdmedian_out.attrs[k] = v
-
-    return hdmedian_out
-
-
-def _reduce_across_variables(inarray, method, axis=1, out_dtype='float32', **kwargs):
-    """
-    Apply cross variable reduction across time for each x/y coordinate in a 4-D nd-array
-
-    Helper function used when computing medoids of datasets.
-
-    :param np.ndarray inarray: is expected to have dimensions of (bands, time, y, x)
-    """
-    if len(inarray.shape) != 4:
-        raise ValueError("Can only operate on 4-D arrays")
-    if axis != 1:
-        raise ValueError("Reduction axis must be 1. Expected axes are (bands, time, y, x)")
-
-    variable, time, y, x = inarray.shape
-    output = np.empty((variable, y, x), dtype=out_dtype)
-    for iy in range(y):
-        for ix in range(x):
-            try:
-                output[:, iy, ix] = method(inarray[:, :, iy, ix])
-            except ValueError:
-                output[:, iy, ix] = np.nan
-    return output
 
 
 def prod(a):
@@ -449,7 +393,8 @@ class WofsStats(Statistic):
         wet = ((data.water == 128) | (data.water == 132)).sum(dim='time')
         dry = ((data.water == 0) | (data.water == 4)).sum(dim='time')
         clear = wet + dry
-        frequency = wet / clear
+        with np.errstate(divide='ignore', invalid='ignore'):
+            frequency = wet / clear
         if self.freq_only:
             return xarray.Dataset({'frequency': frequency}, attrs=dict(crs=data.crs))
         else:
@@ -546,10 +491,10 @@ class PerBandIndexStat(SimpleStatistic):
 
         time_values = index.apply(
             index_time).rename(
-                OrderedDict((name, name + '_observed')
-                            for name in index.data_vars))
+            OrderedDict((name, name + '_observed')
+                        for name in index.data_vars))
 
-        text_values = time_values.apply(_datetime64_to_inttime).rename(
+        text_values = time_values.apply(datetime64_to_inttime).rename(
             OrderedDict((name, name + '_date')
                         for name in time_values.data_vars))
 
@@ -633,7 +578,7 @@ class ObservedDaysSince(PerPixelMetadata):
 class ObservedDateInt(PerPixelMetadata):
     def compute(self, data, selected_indexes):
         observed = data.time.values[selected_indexes]
-        observed_date = xarray.Variable(('y', 'x'), _datetime64_to_inttime(observed))
+        observed_date = xarray.Variable(('y', 'x'), datetime64_to_inttime(observed))
         return self._var_name, observed_date
 
     def measurement(self):
@@ -759,6 +704,7 @@ class Medoid(Statistic):
     :arg output_measurements: list of reported measurements
     :arg metadata_producers: list of additional metadata producers
     """
+
     def __init__(self,
                  minimum_valid_observations=0,
                  input_measurements=None,
@@ -844,6 +790,7 @@ class ExternalPlugin(Statistic):
     Run externally defined plugin.
 
     """
+
     def __init__(self, impl, *args, **kwargs):
         from pydoc import locate  # TODO: probably should use importlib, but this works so easily
 
@@ -987,21 +934,6 @@ STATS = {
 }
 
 
-def _datetime64_to_inttime(var):
-    """
-    Return an "inttime" representing a datetime64.
-    For example, 2016-09-29 as an "inttime" would be 20160929
-
-    :param var: ndarray of datetime64
-    :return: ndarray of ints, representing the given time to the nearest day
-    """
-    values = getattr(var, 'values', var)
-    years = values.astype('datetime64[Y]').astype('int32') + 1970
-    months = values.astype('datetime64[M]').astype('int32') % 12 + 1
-    days = (values.astype('datetime64[D]') - values.astype('datetime64[M]') + 1).astype('int32')
-    return years * 10000 + months * 100 + days
-
-
 # Dynamically look for and load statistics from other packages
 
 for entry_point in iter_entry_points(group='datacube.stats', name=None):
@@ -1010,6 +942,7 @@ for entry_point in iter_entry_points(group='datacube.stats', name=None):
 try:
     from hdmedians import nangeomedian
     import warnings
+
 
     def apply_geomedian(inarray, f, axis=3, eps=1e-3, **kwargs):
         assert len(inarray.shape) == 4
@@ -1026,6 +959,7 @@ try:
                     except ValueError:
                         output[ix, iy, :] = np.nan
         return output
+
 
     class GeoMedian(Statistic):
         def __init__(self, eps=1e-3):
@@ -1066,12 +1000,14 @@ try:
             else:
                 return ('longitude', 'latitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
 
+
     STATS['geomedian'] = GeoMedian
 except ImportError:
     pass
 
 try:
     from pcm import gmpcm
+
 
     class NewGeomedianStatistic(Statistic):
         def __init__(self, eps=1e-3):
@@ -1129,6 +1065,7 @@ try:
                 return ('y', 'x', 'variable', 'time'), ('variable', 'y', 'x')
             else:
                 return ('latitude', 'longitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
+
 
     STATS['new_geomedian'] = NewGeomedianStatistic
 

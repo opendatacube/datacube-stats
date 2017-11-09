@@ -35,7 +35,7 @@ from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExist
     NoSuchOutputDriver
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.timer import MultiTimer
-from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data, list_poly_dates
+from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence, filter_time_by_source
 from datacube_stats.utils.tide_utility import geom_from_file, get_filter_product
@@ -1073,13 +1073,16 @@ class ArbitraryTileMaker(object):
         output_crs = CRS(self.storage['crs'])
         filtered_item = ['geopolygon', 'lon', 'lat', 'longitude', 'latitude', 'x', 'y']
         filtered_dict = {k: v for k, v in filter(lambda t: t[0] in filtered_item, self.input_region.items())}
-        if filtered_dict.get('geopolygon'):
+        if 'feature_id' in self.input_region:
             filtered_dict['geopolygon'] = Geometry(self.input_region['geom_feat'], CRS(self.input_region['crs_txt']))
-
+            geopoly = filtered_dict['geopolygon']
+        else:
+            geopoly = query_geopolygon(**self.input_region)
         datasets = self.dc.find_datasets(product=product, time=time, group_by=group_by, **filtered_dict)
         group_by = query_group_by(group_by=group_by)
         sources = self.dc.group_datasets(datasets, group_by)
         output_resolution = [self.storage['resolution'][dim] for dim in output_crs.dimensions]
+        geopoly = geopoly.to_crs(output_crs)
         geobox = GeoBox.from_geopolygon(geopoly, resolution=output_resolution)
 
         return Tile(sources, geobox)
