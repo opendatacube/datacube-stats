@@ -962,22 +962,33 @@ try:
 
 
     class GeoMedian(Statistic):
-        def __init__(self, eps=1e-3):
+        def __init__(self, eps=1e-3, maxiters=None):
             super(GeoMedian, self).__init__()
             self.eps = eps
+            self.maxiters = maxiters
 
         def compute(self, data):
-            """
-            :param xarray.Dataset data:
-            :return: xarray.Dataset
-            """
             from_, to = self._vars_to_transpose(data)
             # Assert data shape/dims
             data = data.to_array(dim='variable').transpose(*from_).copy()
 
-            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
+            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian,
+                               eps=self.eps, maxiters=self.maxiters)
 
             return data.transpose(*to).to_dataset(dim='variable')
+        
+        def measurements(self, input_measurements):
+            """
+            Outputs will have the same name as inputs, but dtype will always be float32.
+            """
+            output_measurements = [
+                {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
+                for measurement in input_measurements]
+            for measurement in output_measurements:
+                measurement['dtype'] = 'float32'
+                measurement['nodata'] = np.nan
+
+            return output_measurements
 
         @staticmethod
         def _vars_to_transpose(data):
@@ -1072,45 +1083,3 @@ try:
 except ImportError:
     pass
 
-try:
-    from hdmedians import nangeomedian
-
-    class PreciseGeoMedian(Statistic):
-        def __init__(self, eps=1e-6, maxiters=5000):
-            super(PreciseGeoMedian, self).__init__()
-            self.eps = eps
-            self.maxiters = maxiters
-
-        def compute(self, data):
-            """
-            :param xarray.Dataset data:
-            :return: xarray.Dataset
-            """
-            # Assert data shape/dims
-            data = data.to_array(dim='variable').transpose('x', 'y', 'variable', 'time').copy()
-            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps,
-                               maxiters=self.maxiters)
-
-            return data.transpose('variable', 'y', 'x').to_dataset(dim='variable')
-
-        def measurements(self, input_measurements):
-            """
-            Turn a list of input measurements into a list of output measurements.
-
-            Base implementation simply copies input measurements to output_measurements.
-
-            :rtype: list(dict)
-            """
-            output_measurements = [
-                {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
-                for measurement in input_measurements]
-            for key in output_measurements:
-                key['dtype'] = 'float32'
-                key['nodata'] = np.nan
-
-            return output_measurements
-    STATS['precisegeomedian'] = PreciseGeoMedian
-
-
-except ImportError:
-    pass
