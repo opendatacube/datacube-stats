@@ -287,58 +287,6 @@ class NoneStat(Statistic):
         return input_measurements
 
 
-class MedNdwi(Statistic):
-    """ Calculate ndwi and then median image through time"""
-
-    def compute(self, data):
-        # This is a special case to implement, after calculating ndwi as med.
-        # Finally median through time for ITEM product
-        med = (data.green - data.nir) / (data.green + data.nir)
-        # stop all bad data and reset to the following
-        with warnings.catch_warnings():  # Don't print error while comparing nan
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            med.values[med.values < -1] = np.nan
-            med.values[med.values > 1] = np.nan
-        med = med.median(dim='time', keep_attrs=True, skipna=True)
-        return med.to_dataset(name='ndwi')
-
-    def measurements(self, input_measurements):
-        return [
-            {
-                'name': 'ndwi',
-                'dtype': 'float32',
-                'nodata': np.nan,
-                'units': '1'
-            }
-        ]
-
-
-class StdNdwi(Statistic):
-    """ Calculate standard deviation on NDWI values """
-
-    def compute(self, data):
-        # This is a special case to implement std, after calculating ndwi as med and
-        # then standard deviation through time
-        med = (data.green - data.nir) / (data.green + data.nir)
-        # stop all bad data and reset to the following
-        with warnings.catch_warnings():  # Don't print error while comparing nan
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            med.values[med.values < -1] = np.nan
-            med.values[med.values > 1] = np.nan
-        med = med.std(dim='time', keep_attrs=True, skipna=True)
-        return med.to_dataset(name='stddev')
-
-    def measurements(self, input_measurements):
-        return [
-            {
-                'name': 'stddev',
-                'dtype': 'float32',
-                'nodata': np.nan,
-                'units': '1'
-            }
-        ]
-
-
 class SimpleStatistic(Statistic):
     """
     Describes the outputs of a statistic and how to calculate it
@@ -426,17 +374,30 @@ class WofsStats(Statistic):
 
 class NormalisedDifferenceStats(Statistic):
     """
-    Simple NDVI/NDWI and other Normalised Difference stats
+    Simple NDVI/NDWI and other Normalised Difference statistics.
 
-    Computes (band1 - band2)/(band1 + band2), and then summarises using the list of `stats` into
+    Computes `(band1 - band2)/(band1 + band2)`, and then summarises using the list of `stats` into
     separate output variables.
+
+    Output variables are named {name}_{stat_name}. Eg: `ndwi_median`
+
+    By default will clamp output values in the range [-1, 1] by setting values outside
+    this range to NaN.
+
+    :param name: The common name of a normalised difference.
+                 eg. `ndvi` for `(nir-red)/(nir+red)`
+                     `ndwi` for `(green-nir)/(green+nir)`
+    :param List[str] stats: list of common statistic names. Defaults to ['min', 'max', 'mean']
+                            Choose from the common xarray/numpy reduction operations
+                            which include `std` and `median`.
     """
 
-    def __init__(self, band1, band2, name, stats=None):
+    def __init__(self, band1, band2, name, stats=None, clamp_outputs=True):
         self.stats = stats if stats else ['min', 'max', 'mean']
         self.band1 = band1
         self.band2 = band2
         self.name = name
+        self.clamp_outputs = clamp_outputs
 
     def compute(self, data):
         nd = (data[self.band1] - data[self.band2]) / (data[self.band1] + data[self.band2])
@@ -444,8 +405,19 @@ class NormalisedDifferenceStats(Statistic):
         for stat in self.stats:
             name = '_'.join([self.name, stat])
             outputs[name] = getattr(nd, stat)(dim='time')
+            if self.clamp_outputs:
+                self._clamp_outputs(outputs[name])
         return xarray.Dataset(outputs,
                               attrs=dict(crs=data.crs))
+
+    @staticmethod
+    def _clamp_outputs(dataarray):
+        with warnings.catch_warnings():  # Don't print error while comparing nan
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            dataarray.values[dataarray.values < -1] = np.nan
+            dataarray.values[dataarray.values > 1] = np.nan
+
+
 
     def measurements(self, input_measurements):
         measurement_names = [m['name'] for m in input_measurements]
@@ -929,8 +901,6 @@ STATS = {
     'wofs_summary': WofsStats,
     'masked_multi_count': MaskMultiCounter,
     'external': ExternalPlugin,
-    'median_ndwi': MedNdwi,
-    'stddev_ndwi': StdNdwi,
 }
 
 
