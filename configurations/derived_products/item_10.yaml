@@ -113,7 +113,12 @@ storage:
 
 output_products:
  - name: med_ndwi
-   statistic: median_ndwi
+   statistic: simple_normalised_difference
+   statistic_args:
+     band1: green
+     band2: nir
+     name: ndwi
+     stats: [median]
    output_params:
       zlib: True
       fletcher32: True

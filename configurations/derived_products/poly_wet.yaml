@@ -114,7 +114,7 @@ storage:
 
 output_products:
  - name: wet
-   statistic: precisegeomedian
+   statistic: geomedian
    output_params:
       zlib: True
       fletcher32: True

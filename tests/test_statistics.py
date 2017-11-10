@@ -14,6 +14,7 @@ import xarray as xr
 from hypothesis import given
 
 import datacube_stats.statistics
+
 from datacube.utils.geometry import CRS
 from datacube_stats.incremental_stats import mk_incremental_mean, mk_incremental_min, mk_incremental_sum, \
     mk_incremental_max, mk_incremental_counter
@@ -95,18 +96,17 @@ def test_new_geometric_median():
     assert (result.band1 == result.band2).all()
 
 
-@pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'MedNdwi'),
-                    reason='requires MedNdwi statistics')
 def test_new_med_ndwi():
-    from datacube_stats.statistics import MedNdwi
+    medndwi = NormalisedDifferenceStats('green', 'nir', 'ndwi', stats=['median'])
 
     arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
     data_array_1 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
     arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
     data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
     dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2})
-    result = MedNdwi.compute('test', dataset)
+    result = medndwi.compute(dataset)
     assert result
+    assert 'ndwi_median' in result.data_vars
 
 
 def test_masked_count():
@@ -123,38 +123,17 @@ def test_masked_count():
     assert result
 
 
-@pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'StdNdwi'),
-                    reason='requires StdNdwi statistics')
 def test_new_med_std():
-    from datacube_stats.statistics import StdNdwi
-
+    stdndwi = NormalisedDifferenceStats('green', 'nir', 'ndwi', stats=['std'])
     arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
     data_array_1 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
     arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
     data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
     dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2})
-    result = StdNdwi.compute('test', dataset)
+    result = stdndwi.compute(dataset)
 
     assert result
-
-
-@pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'PreciseGeoMedian'),
-                    reason='requires precise geomedian statistics')
-def test_new_precise_geometric_median():
-    from datacube_stats.statistics import PreciseGeoMedian
-
-    arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
-    dataarray = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
-    dataset = xr.Dataset(data_vars={'band1': dataarray, 'band2': dataarray})
-
-    new_geomedian_stat = PreciseGeoMedian()
-    result = new_geomedian_stat.compute(dataset)
-    assert result
-
-    assert result.band1.dims == result.band2.dims == ('y', 'x')
-
-    # The two bands had the same inputs, so should have the same result
-    assert (result.band1 == result.band2).all()
+    assert 'ndwi_std' in result.data_vars
 
 
 DatacubeCRSStrategy = st.sampled_from([CRS('EPSG:4326'), CRS('EPSG:3577'), CRS('EPSG:28354')])

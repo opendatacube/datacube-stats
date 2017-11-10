@@ -115,7 +115,7 @@ storage:
 
 output_products:
  - name: tidal_high
-   statistic: precisegeomedian
+   statistic: geomedian
    output_params:
       zlib: True
       fletcher32: True
