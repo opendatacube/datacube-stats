@@ -35,6 +35,7 @@ class StatsTask(object):
 
         #: Optional geometry. Can be used to mask the loaded data
         self.geom_feat = geom_feat
+
         #: crs txt used to build Geometry in load process as yaml cannot dump geometry object
         self.crs_txt = crs_txt
 

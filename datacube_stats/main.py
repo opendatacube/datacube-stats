@@ -8,6 +8,7 @@ from __future__ import absolute_import, print_function
 
 import copy
 import logging
+from datetime import datetime
 from functools import partial
 from textwrap import dedent
 
@@ -44,7 +45,6 @@ from .utils import report_unmatched_datasets
 from .utils import sorted_interleave
 from .utils.qsub import with_qsub_runner
 from .utils.query import multi_product_list_cells
-from datetime import datetime
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -192,7 +192,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         self.computation = None
 
         #: Define filter product to accept all derive product attributes
-        self.filter_product = []
+        self.filter_product = None
 
         #: An iterable of date ranges.
         self.date_ranges = None
@@ -465,12 +465,12 @@ def load_process_save_chunk(output_files, chunk, task, timer):
     try:
         with timer.time('loading_data'):
             data = load_data(chunk, task.sources)
+
             # mask as per geometry now
-            geom = None
             if task.geom_feat:
                 geom = Geometry(task.geom_feat, CRS(task.crs_txt))
-            data = data.where(geometry_mask([geom], data.geobox, invert=True)) \
-                if geom else data
+                data = data.where(geometry_mask([geom], data.geobox, invert=True))
+
         last_idx = len(task.output_products) - 1
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):
             _LOG.info("Computing %s in tile %s %s. Current timing: %s",
@@ -906,6 +906,7 @@ class GriddedTaskGenerator(object):
 
             products = [source_spec['product']] + [mask['product']
                                                    for mask in source_spec.get('masks', [])]
+
             product_query = {products[0]: {'source_filter': source_spec.get('source_filter', None)}}
 
             (data, *masks), unmatched_ = multi_product_list_cells(products, workflow,
@@ -985,7 +986,7 @@ class NonGriddedTaskGenerator(object):
                     if bool(set(all_dates) & set(filtered_times)):
                         v.sources = v.sources.isel(time=[i for i, item in enumerate(all_dates) if item in
                                                          filtered_times])
-                        _LOG.info("source included %s", (v.sources.time))
+                        _LOG.info("source included %s", v.sources.time)
                     else:
                         remove_index_list.append(i)
         if len(remove_index_list) > 0:
@@ -1012,7 +1013,7 @@ class NonGriddedTaskGenerator(object):
                         all_source_times = all_source_times + \
                                            [dd for dd in v.sources.time.data.astype('M8[s]').astype('O').tolist()]
             all_source_times = sorted(all_source_times)
-            extra_fn_args, filtered_times =\
+            extra_fn_args, filtered_times = \
                 get_filter_product(self.filter_product, self.feature, all_source_times, date_ranges)
             _LOG.info("Filtered times %s", filtered_times)
             task = self.set_task(task, filtered_times, extra_fn_args)
@@ -1030,28 +1031,31 @@ class NonGriddedTaskGenerator(object):
 
         for time_period in date_ranges:
             task = StatsTask(time_period=time_period)
-            _LOG.info("Doing for time range for %s on %s", time_period, str(datetime.now()))
+            _LOG.info("Doing for time range for %s", time_period)
             for source_spec in sources_spec:
                 ep_range = filter_time_by_source(source_spec.get('time'), time_period)
                 if ep_range is None:
                     _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
                     continue
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
+
                 # Build Tile
                 data = make_tile(product=source_spec['product'], time=ep_range,
                                  group_by=group_by_name, geopoly=self.geopolygon)
                 masks = [make_tile(product=mask['product'], time=ep_range,
                                    group_by=group_by_name, geopoly=self.geopolygon)
                          for mask in source_spec.get('masks', [])]
+
                 if len(data.sources.time) == 0:
                     _LOG.info("No matched for product %s", source_spec['product'])
                     continue
+
                 task.sources.append({
                     'data': data,
                     'masks': masks,
                     'spec': source_spec,
                 })
-            _LOG.info("make tile finished on %s", str(datetime.now()))
+            _LOG.info("make tile finished")
             if task.sources:
                 # Function which takes a Tile, containing sources, and returns a new 'filtered' Tile
                 task = self.filter_task(task, date_ranges)

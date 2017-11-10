@@ -1,9 +1,9 @@
-import statistics
-import sys
 import logging
-
+import statistics
 from datetime import timedelta, datetime
 from operator import itemgetter
+
+from datacube_stats.statistics import StatsConfigurationError
 from datacube_stats.utils.dates import get_hydrological_years
 
 DERIVED_PRODS = ['dry', 'wet', 'item', 'low', 'high']
@@ -13,14 +13,12 @@ FILTER_METHOD = {
 }
 PROD_SUB_LIST = ['e', 'f', 'ph', 'pl']
 
-
 _LOG = logging.getLogger('tide_utility')
-
-OTPS_MODULE_EXISTS = 'otps' in sys.modules
 
 
 def geom_from_file(filename, feature_id):
-    """ Return the geom for a feature id
+    """
+    Return the geom for a feature id
     :param filename: passed from input_region from_file parameter
     :param feature_id: Currently supports a single element feature id from a list
     :return:  boundary polygon or none
@@ -46,13 +44,15 @@ class FilterDerivedProducts(object):
     Setting Feature id and method
     Filtering all derived products depending on methods
     """
+
     def __init__(self, feature_id, method):
         self.feature_id = feature_id
         self.method = method
 
 
 class Item(object):
-    """ Expecting item attributes"""
+    """Expecting item attributes"""
+
     def __init__(self, tide_percent, lon, lat, tide_range):
         # tide percentage
         self.tide_percent = tide_percent
@@ -63,7 +63,8 @@ class Item(object):
 
 
 class Hltc(object):
-    """ HLTC product """
+    """HLTC product """
+
     def __init__(self, tide_percent, lon, lat, prod_type, sub_class):
         self.tide_percent = tide_percent
         self.lon = lon
@@ -75,7 +76,8 @@ class Hltc(object):
 
 
 class DryWet(object):
-    """ Ground water dry wet products"""
+    """Ground water dry wet products"""
+
     def __init__(self, prod_type, months):
         # type of product dry/wet
         self.type = prod_type
@@ -91,6 +93,7 @@ class DryWet(object):
 def load_tide_model(all_dates, ln, la):
     """
     Load otps module and pass a list of tide information
+
     :param all_dates: Input a list of dates
     :param ln: model longitude
     :param la: model latitude
@@ -100,7 +103,7 @@ def load_tide_model(all_dates, ln, la):
         from otps.predict_wrapper import predict_tide
         from otps import TimePoint
     except ImportError:
-        _LOG.info("otps module not found. Please load otps module separately ...")
+        raise StatsConfigurationError("otps module not found. Please load otps module separately ...")
 
     tp = list()
     for dt in all_dates:
@@ -113,6 +116,7 @@ def load_tide_model(all_dates, ln, la):
 def range_tidal_data(all_dates, feature_id, tide_range, per, ln, la):
     """
     This routine is used for ITEM product and it returns a list of dates corresponding to the range interval.
+
     :param all_dates:  gets all the source dates
     :param feature_id: It is used to have a log information
     :param tide_range: It supports 10 percentage. Can be changed through config file
@@ -132,13 +136,15 @@ def range_tidal_data(all_dates, feature_id, tide_range, per, ln, la):
     tide_list = sorted(tide_dict.items(), key=lambda x: x[1])
     # This is hard coded to have 9 intervals for tide_range 10 to support ITEM V1
     # if tide_range changes then it needs reworking here to merge top or bottom intervals
-    per_range = int(100/tide_range) - 1
+    per_range = int(100 / tide_range) - 1
     # Extract list of dates that falls within the input range otherwise return empty list
     return input_range_data(per_range, tide_list, feature_id, per)
 
 
 def input_range_data(per_range, tide_list, feature_id, per):
-    """ Returns inter tidal range median values
+    """
+    Returns inter tidal range median values
+
     :param per_range: range of the inter tidal
     :param tide_list: sorted tide list as per height
     :param feature_id: Used for important debug info
@@ -151,13 +157,13 @@ def input_range_data(per_range, tide_list, feature_id, per):
     _LOG.info("id, per, min, max, observation, LOT, HOT, median")
     for i in range(per_range):
         inc_cnt = inc
-        perc = 20 if i == per_range-1 else 10
-        inc = float("%.3f" % (inc_cnt + (max_ht - min_ht)*perc*0.01))
-        inc = max_ht if i == per_range-1 else inc
+        perc = 20 if i == per_range - 1 else 10
+        inc = float("%.3f" % (inc_cnt + (max_ht - min_ht) * perc * 0.01))
+        inc = max_ht if i == per_range - 1 else inc
         range_value = [[x[0].strftime('%Y-%m-%dT%H:%M:%S'), x[1]] for x in tide_list
                        if x[1] >= inc_cnt and x[1] <= inc]
         median = float("%.3f" % (statistics.median([x[1] for x in range_value])))
-        if per == (i+1)*10:
+        if per == (i + 1) * 10:
             _LOG.info("MEDIAN INFO " + str(feature_id) + "," + str(per) + "," + str(inc_cnt) + "," +
                       str(inc) + "," + str(len(range_value)) + "," +
                       str(range_value[0][1]) + "," + str(range_value[-1][1]) + "," + str(median))
@@ -171,6 +177,7 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     """
     This function is used for composite products and also for sub class extraction
     like ebb/flow/peak high/low on the basis of 15 minutes before and after
+
     :param dates: a list of source dates for valid pq datasets
     :param date_ranges: The date range passed
     :param per: tide percentage
@@ -182,9 +189,9 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     new_date_list = list()
     # add 15 min before and after to decide the type of tide for each dates
     for dt in dates:
-        new_date_list.append(dt-timedelta(minutes=15))
+        new_date_list.append(dt - timedelta(minutes=15))
         new_date_list.append(dt)
-        new_date_list.append(dt+timedelta(minutes=15))
+        new_date_list.append(dt + timedelta(minutes=15))
     tides = load_tide_model(new_date_list, ln, la)
     if len(tides) == 0:
         raise ValueError("No tide height observed from OTPS model within lat/lon range")
@@ -221,8 +228,8 @@ def list_time_otps_data(tide_data, tide_dt, per, date_ranges):
     ebb_flow_data = list()
     for i in range(0, len(tide_dt), 3):
         first = tide_dt[i][1]
-        second = tide_dt[i+1][1]
-        third = tide_dt[i+2][1]
+        second = tide_dt[i + 1][1]
+        third = tide_dt[i + 2][1]
         tide_date = tide_dt[i + 1][0].strftime("%Y-%m-%dT%H:%M:%S")
         if first < second and third < second:
             ebb_flow_data.append([tide_date, 'ph'])
@@ -235,8 +242,8 @@ def list_time_otps_data(tide_data, tide_dt, per, date_ranges):
 
     perc_adj = 25 if per == 50 else per
     # find the low and high tide range from low_tide_ht and max_tide_ht
-    lmr = low_tide_ht + (max_tide_ht - low_tide_ht)*perc_adj*0.01   # low tide max range
-    hlr = max_tide_ht - (max_tide_ht - low_tide_ht)*perc_adj*0.01   # high tide range
+    lmr = low_tide_ht + (max_tide_ht - low_tide_ht) * perc_adj * 0.01  # low tide max range
+    hlr = max_tide_ht - (max_tide_ht - low_tide_ht) * perc_adj * 0.01  # high tide range
     return low_high_ebb_flow(lmr, hlr, perc_adj, tide_data, date_ranges, ebb_flow_data)
 
 
@@ -363,7 +370,7 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
             # This is for low/high composite. Initialising Hltc class
             prod = Hltc(tide_percent=filter_product['args']['tide_percent'], lon=feature['lon'], lat=feature['lat'],
                         prod_type=filter_product['args']['type'], sub_class=filter_product['args']['sub_class']
-                        if filter_product['args'].get('sub_class') else None)
+                if filter_product['args'].get('sub_class') else None)
             list_low, list_high, ebb_flow = \
                 extract_otps_computed_data(all_dates, date_ranges, prod.tide_percent, prod.lon, prod.lat)
             filtered_times = list_low if prod.type == 'low' else list_high

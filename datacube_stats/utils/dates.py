@@ -6,10 +6,9 @@ Date utility functions to be used by statistics apps
 from __future__ import absolute_import
 
 import logging
-import pandas as pd
 from datetime import datetime
-from datacube.api.query import query_group_by
 
+import pandas as pd
 from dateutil.relativedelta import relativedelta
 from dateutil.rrule import YEARLY, MONTHLY, DAILY, rrule
 
@@ -100,11 +99,11 @@ def get_hydrological_years(all_years, months=None):
 
         # No months
         if months is not None:
-            st_dt = str(year+1)+str(months[0])+'01'
-            en_dt = str(year+1)+str(months[1])+'30'
+            st_dt = str(year + 1) + str(months[0]) + '01'
+            en_dt = str(year + 1) + str(months[1]) + '30'
         else:
-            st_dt = HYDRO_START_CAL + str(year+1)
-            en_dt = HYDRO_END_CAL + str(year+1)
+            st_dt = HYDRO_START_CAL + str(year + 1)
+            en_dt = HYDRO_END_CAL + str(year + 1)
         date_list = pd.date_range(st_dt, en_dt)
         date_list = date_list.to_datetime().astype(str).tolist()
         all_dates = all_dates + date_list
