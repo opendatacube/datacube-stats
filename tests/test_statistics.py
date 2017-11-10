@@ -100,12 +100,13 @@ def test_new_med_ndwi():
     medndwi = NormalisedDifferenceStats('green', 'nir', 'ndwi', stats=['median'])
 
     arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
-    data_array_1 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
+    data_array_1 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
     arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
-    data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
-    dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2})
+    data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
+    dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2}, attrs={'crs': 'Fake CRS'})
     result = medndwi.compute(dataset)
     assert result
+    assert 'crs' in result.attrs
     assert 'ndwi_median' in result.data_vars
 
 
@@ -126,10 +127,10 @@ def test_masked_count():
 def test_new_med_std():
     stdndwi = NormalisedDifferenceStats('green', 'nir', 'ndwi', stats=['std'])
     arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
-    data_array_1 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
+    data_array_1 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
     arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
-    data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
-    dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2})
+    data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
+    dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2}, attrs={'crs': 'Fake CRS'})
     result = stdndwi.compute(dataset)
 
     assert result

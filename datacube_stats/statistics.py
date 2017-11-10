@@ -404,11 +404,10 @@ class NormalisedDifferenceStats(Statistic):
         outputs = {}
         for stat in self.stats:
             name = '_'.join([self.name, stat])
-            outputs[name] = getattr(nd, stat)(dim='time')
+            outputs[name] = getattr(nd, stat)(dim='time', keep_attrs=True)
             if self.clamp_outputs:
                 self._clamp_outputs(outputs[name])
-        return xarray.Dataset(outputs,
-                              attrs=dict(crs=data.crs))
+        return xarray.Dataset(outputs, attrs=dict(crs=data.crs))
 
     @staticmethod
     def _clamp_outputs(dataarray):
