@@ -12,7 +12,7 @@ def common_subset(sets, key_by=None):
     """
     def mk_get(key_by):
         if key_by is None:
-            return lambda x: x if type(x) is set else set(x)
+            return lambda x: x if isinstance(x, set) else set(x)
         else:
             return lambda xs: set(key_by(x) for x in xs)
 
@@ -38,7 +38,8 @@ def common_obs_per_cell(*tile_obs):
                    'geobox': Geobox}]
     """
 
-    def ds_time(ds): return ds.center_time
+    def ds_time(ds):
+        return ds.center_time
 
     tt_common = common_subset([o['datasets'] for o in tile_obs], ds_time)
 
@@ -47,15 +48,17 @@ def common_obs_per_cell(*tile_obs):
         o_['datasets'] = [ds for ds in o['datasets'] if pred(ds)]
         return o_
 
-    def pick_common(o): return pick_with(o, lambda ds: ds_time(ds) in tt_common)
+    def pick_common(o):
+        return pick_with(o, lambda ds: ds_time(ds) in tt_common)
 
-    def pick_unmatched(o): return pick_with(o, lambda ds: ds_time(ds) not in tt_common)
+    def pick_unmatched(o):
+        return pick_with(o, lambda ds: ds_time(ds) not in tt_common)
 
     return ([pick_common(o) for o in tile_obs],
             [pick_unmatched(o) for o in tile_obs])
 
 
-def multi_product_list_cells(products, gw, cell_index=None, product_query={}, **query):
+def multi_product_list_cells(products, gw, cell_index=None, product_query=None, **query):
     """This is similar to GridWorkflow.list_cells but generalised to multiple
     products. Only datasets that are available in all of the products are
     reported.
@@ -80,6 +83,9 @@ def multi_product_list_cells(products, gw, cell_index=None, product_query={}, **
     `type(co_common[product_idx:Int][cell_idx:(Int,Int)]) == datacube.api.Tile`
 
     """
+    if product_query is None:
+        product_query = {}
+
     empty_cell = dict(datasets=[], geobox=None)
     co_common = [dict() for _ in products]
     co_unmatched = [dict() for _ in products]
@@ -96,7 +102,8 @@ def multi_product_list_cells(products, gw, cell_index=None, product_query={}, **
     all_cell_idx = set(reduce(list.__add__,
                               [list(o.keys()) for o in obs]))
 
-    def cell_is_empty(c): return len(c['datasets']) == 0
+    def cell_is_empty(c):
+        return len(c['datasets']) == 0
 
     for cidx in all_cell_idx:
         common, unmatched = common_obs_per_cell(*[o.get(cidx, empty_cell) for o in obs])

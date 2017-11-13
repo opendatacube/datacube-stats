@@ -99,4 +99,3 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
             assert 'end_date' in tags
             assert 'start_date' in tags
             assert 'source_product' in tags
-

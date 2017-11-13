@@ -268,7 +268,7 @@ input_region:
    feature_id: [3]
 
 output_products:
- - name: dry 
+ - name: dry
    statistic: precisegeomedian
    output_params:
       zlib: True
@@ -288,7 +288,7 @@ filter_product:
 CONFIG_TEMPLATE_WET = """
 ## Define inputs to perform statistics on
 global_attributes:
-  title: WET composite 
+  title: WET composite
 sources:
   - product: ls5_nbar_albers
     name: wet_period
@@ -326,7 +326,7 @@ location: '/g/data/r78/tmp'
 input_region:
   #from_file: /g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp
   from_file: /g/data/r78/bxb547/GW_works/bur_dry_albers.shp
-  feature_id: [3] 
+  feature_id: [3]
 #
 storage:
   driver: NetCDFCF
@@ -363,7 +363,7 @@ filter_product:
      type: wet
 # Here is to consider these months for the following year from polygon data
      months: ['10', '11']
- 
+
 """
 
 CONFIG_FILENAME = 'config.yaml'

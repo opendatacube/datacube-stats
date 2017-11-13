@@ -36,9 +36,11 @@ BIG_POLYGON = {
     ]
 }
 
+
 class FakeDataset:
     extent = Geometry(BIG_POLYGON, crs=CRS('EPSG:4326'))
     center_time = object()
+
 
 def test_gridded_task_generation_no_data(mock_index):
     gen = GriddedTaskGenerator(storage=EXAMPLE_STORAGE)
@@ -57,9 +59,9 @@ def test_gridded_task_generation_with_datasets(mock_index):
     tasks = list(tasks)
     assert tasks
 
+
 def xtest_non_gridded_task_generation():
     gen = NonGriddedTaskGenerator()
-
 
 
 def test_arbitrary_tile_maker(mock_index):
@@ -79,20 +81,21 @@ def test_arbitrary_tile_maker(mock_index):
 
 def xtest_arbitrary_tile_maker_with_sources():
     mock_index = MagicMock()
-    mock_index.datasets.get_field_names.return_value = ['time']  # Check is performed validating the name of query fields
-    mock_index.datasets.search_eager.return_value = [set('source1'), set('source2')] # TODO: Expects actual datasets with .crs and .extents
+
+    # Check is performed validating the name of query fields
+    mock_index.datasets.get_field_names.return_value = ['time']
+    # TODO: Expects actual datasets with .crs and .extents
+    mock_index.datasets.search_eager.return_value = [set('source1'), set('source2')]
     input_region = {
         'crs': 'EPSG:4326',
         'latitude': [-30, -31],
         'longitude': [137, 138.5]
     }
-    atm = ArbitraryTileMaker(mock_index, input_region, storage={'crs': 'EPSG:4326', 'resolution': {'latitude': 0.1, 'longitude': 0.1}})
+    atm = ArbitraryTileMaker(mock_index, input_region,
+                             storage={'crs': 'EPSG:4326', 'resolution': {'latitude': 0.1, 'longitude': 0.1}})
 
     tile = atm('product', ('2000-01-01', '2001-01-01'), group_by='time')
     assert tile.dims == ('time', 'latitude', 'longitude')
     assert tile.geobox.width == 15
     assert tile.geobox.height == 10
     assert len(tile.sources.time) == 2
-
-
-

@@ -370,7 +370,7 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
             # This is for low/high composite. Initialising Hltc class
             prod = Hltc(tide_percent=filter_product['args']['tide_percent'], lon=feature['lon'], lat=feature['lat'],
                         prod_type=filter_product['args']['type'], sub_class=filter_product['args']['sub_class']
-                if filter_product['args'].get('sub_class') else None)
+                        if filter_product['args'].get('sub_class') else None)
             list_low, list_high, ebb_flow = \
                 extract_otps_computed_data(all_dates, date_ranges, prod.tide_percent, prod.lon, prod.lat)
             filtered_times = list_low if prod.type == 'low' else list_high

@@ -50,8 +50,11 @@ def compose_proc(input_transform, proc, output_transform=None):
 
     """
 
+    def identity(x):
+        return x
+
     if output_transform is None:
-        output_transform = lambda x: x
+        output_transform = identity
 
     def _proc(*x):
         if len(x) == 0:
@@ -72,8 +75,11 @@ def broadcast_proc(*procs, combine=None):
 
     """
 
+    def tuplify(*x):
+        return tuple(x)
+
     if combine is None:
-        combine = lambda *x: tuple(x)
+        combine = tuplify
 
     def _proc(*x):
         if len(x) == 0:

@@ -41,9 +41,10 @@ class RegisterDriver(abc.ABCMeta):
     """
     A metaclass which registers all sub-classes of :class:`OutputDriver` into the OUTPUT_DRIVERS dictionary.
     """
-    def __new__(mcs, name, bases, class_dict):
-        cls = type.__new__(mcs, name, bases, class_dict)
+    def __new__(mcs, name, bases, namespace, **kwargs):
+        cls = type.__new__(mcs, name, bases, namespace, **kwargs)
         if hasattr(cls, '_driver_name'):
+            # pylint: disable=protected-access
             OUTPUT_DRIVERS[cls._driver_name] = cls
         return cls
 
@@ -66,6 +67,7 @@ class StatsOutputError(Exception):
 
 class OutputFileAlreadyExists(Exception):
     def __init__(self, output_file=None):
+        super(OutputFileAlreadyExists, self).__init__()
         self._output_file = output_file
 
     def __str__(self):
@@ -463,7 +465,8 @@ class GeoTiffOutputDriver(OutputDriver):
             with fileutils.atomic_save(yaml_filename) as yaml_dst:
                 yaml_dst.write(datasets.values[0])
         else:
-            _LOG.error('Unexpected more than 1 dataset being written at once, investigate!', datasets)
+            _LOG.error('Unexpected more than 1 dataset %r being written at once, '
+                       'investigate!', datasets)
 
     def _open_single_band_geotiff(self, prod_name, stat, measurement_name=None):
         output_filename = self._prepare_output_file(stat, var_name=measurement_name)

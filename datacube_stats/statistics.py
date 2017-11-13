@@ -43,7 +43,6 @@ try:
 except ImportError:
     nansum = np.nansum
 
-
     def anynan(x, axis=None):
         return np.isnan(x).any(axis=axis)
 
@@ -416,8 +415,6 @@ class NormalisedDifferenceStats(Statistic):
             dataarray.values[dataarray.values < -1] = np.nan
             dataarray.values[dataarray.values > 1] = np.nan
 
-
-
     def measurements(self, input_measurements):
         measurement_names = [m['name'] for m in input_measurements]
         if self.band1 not in measurement_names or self.band2 not in measurement_names:
@@ -462,8 +459,8 @@ class PerBandIndexStat(SimpleStatistic):
 
         time_values = index.apply(
             index_time).rename(
-            OrderedDict((name, name + '_observed')
-                        for name in index.data_vars))
+                OrderedDict((name, name + '_observed')
+                            for name in index.data_vars))
 
         text_values = time_values.apply(datetime64_to_inttime).rename(
             OrderedDict((name, name + '_date')
@@ -912,7 +909,6 @@ try:
     from hdmedians import nangeomedian
     import warnings
 
-
     def apply_geomedian(inarray, f, axis=3, eps=1e-3, **kwargs):
         assert len(inarray.shape) == 4
         assert axis == 3
@@ -929,7 +925,6 @@ try:
                         output[ix, iy, :] = np.nan
         return output
 
-
     class GeoMedian(Statistic):
         def __init__(self, eps=1e-3, maxiters=None):
             super(GeoMedian, self).__init__()
@@ -945,7 +940,7 @@ try:
                                eps=self.eps, maxiters=self.maxiters)
 
             return data.transpose(*to).to_dataset(dim='variable')
-        
+
         def measurements(self, input_measurements):
             """
             Outputs will have the same name as inputs, but dtype will always be float32.
@@ -980,14 +975,13 @@ try:
             else:
                 return ('longitude', 'latitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
 
-
     STATS['geomedian'] = GeoMedian
+
 except ImportError:
     pass
 
 try:
     from pcm import gmpcm
-
 
     class NewGeomedianStatistic(Statistic):
         def __init__(self, eps=1e-3):
@@ -1046,9 +1040,7 @@ try:
             else:
                 return ('latitude', 'longitude', 'variable', 'time'), ('variable', 'latitude', 'longitude')
 
-
     STATS['new_geomedian'] = NewGeomedianStatistic
 
 except ImportError:
     pass
-

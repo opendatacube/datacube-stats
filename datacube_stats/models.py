@@ -114,6 +114,7 @@ class OutputProduct(object):
     :param dict stats_metadata: This will be copied to `metadata.stats` subtree in the product definition
     """
 
+    # pylint: disable=too-many-arguments
     def __init__(self, metadata_type, product_type, input_measurements, storage, name, file_path_template,
                  stat_name, statistic, output_params=None, extras=None, stats_metadata=None):
 

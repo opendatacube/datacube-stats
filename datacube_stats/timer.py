@@ -7,6 +7,10 @@ from collections import defaultdict
 class Timer(object):
     def __init__(self, verbose=False):
         self.verbose = verbose
+        self.start = None
+        self.end = None
+        self.secs = None
+        self.msecs = None
 
     def __enter__(self):
         self.start = time.time()

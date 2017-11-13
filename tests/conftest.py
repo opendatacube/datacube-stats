@@ -11,7 +11,7 @@ def sample_stats_config():
         date_ranges:
             start_date: 2015-01-01
             end_date: 2015-04-01
-        
+
         location: /tmp/foo
         sources:
         -   product: fake_source_product

@@ -115,7 +115,8 @@ def datetime64_to_inttime(var):
     Return an "inttime" representing a datetime64.
     For example, 2016-09-29 as an "inttime" would be 20160929
 
-    An 'inttime' is used in statistics which return an actual observation to represent the date that observation happened.
+    An 'inttime' is used in statistics which return an actual
+    observation to represent the date that observation happened.
     It is a relatively compact representation of a date, while still being human readable.
 
     :param var: ndarray of datetime64

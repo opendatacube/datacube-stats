@@ -11,7 +11,7 @@ import xarray
 from datacube.api.query import Query
 
 from datacube.storage.masking import mask_invalid_data, create_mask_value
-from .dates import *
+from .dates import filter_time_by_source, datetime64_to_inttime
 
 
 def tile_iter(tile, chunk_size):
@@ -76,7 +76,7 @@ def da_is_float(da):
     """
     assert hasattr(da, 'dtype')
 
-    return da.dtype.kind is 'f'
+    return da.dtype.kind == 'f'
 
 
 def ds_all_float(ds):
@@ -227,6 +227,7 @@ def cast_back(data, measurements):
     return data.apply(cast, keep_attrs=True)
 
 
+# pylint: disable=invalid-name
 wofs_flag_defs = {'cloud': {'bits': 6, 'description': 'Cloudy', 'values': {0: False, 1: True}},
                   'cloud_shadow': {'bits': 5,
                                    'description': 'Cloud shadow',
@@ -286,6 +287,7 @@ def make_numpy_mask(defn):
     return numpy_mask
 
 
+# pylint: disable=invalid-name
 wofs_mask = make_numpy_mask(wofs_flag_defs)
 
 

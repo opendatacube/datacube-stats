@@ -82,8 +82,6 @@ def mock_datacube():
         yield dc_instance
 
 
-
-
 _SAMPLE_OUTPUTS_SPEC = [dict(name='landsat_yearly_mean',
                              statistic='mean',
                              file_path_template='SR_N_MEAN/SR_N_MEAN_3577_{tile_index[0]}_'
