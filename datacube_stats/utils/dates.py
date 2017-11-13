@@ -8,6 +8,7 @@ from __future__ import absolute_import
 import logging
 from datetime import datetime
 
+import pandas as pd
 from dateutil.relativedelta import relativedelta
 from dateutil.rrule import YEARLY, MONTHLY, DAILY, rrule
 
@@ -15,6 +16,8 @@ _LOG = logging.getLogger(__name__)
 
 FREQS = {'y': YEARLY, 'm': MONTHLY, 'd': DAILY}
 DURATIONS = {'y': 'years', 'm': 'months', 'd': 'days'}
+HYDRO_START_CAL = '01/07/'
+HYDRO_END_CAL = '30/11/'
 
 
 def date_sequence(start, end, stats_duration, step_size):
@@ -81,6 +84,30 @@ def filter_time_by_source(source_interval, epoch_interval):
     end_time = min(source_end, epoch_end)
 
     return start_time, end_time
+
+
+def get_hydrological_years(all_years, months=None):
+    """ This function is used to return a list of hydrological date range for dry wet geomedian
+        as per month list passed from config or by default from July to Nov
+        :param all_years: a list of input years from polygon
+        :param months: a list of hydrological months from config or default values
+        :return: a list of dates corresponding to predefined month range or from config
+    """
+    all_dates = list()
+    for k, v in all_years.items():
+        year = int(v)
+
+        # No months
+        if months is not None:
+            st_dt = str(year + 1) + str(months[0]) + '01'
+            en_dt = str(year + 1) + str(months[1]) + '30'
+        else:
+            st_dt = HYDRO_START_CAL + str(year + 1)
+            en_dt = HYDRO_END_CAL + str(year + 1)
+        date_list = pd.date_range(st_dt, en_dt)
+        date_list = date_list.to_datetime().astype(str).tolist()
+        all_dates = all_dates + date_list
+    return all_dates
 
 
 def datetime64_to_inttime(var):

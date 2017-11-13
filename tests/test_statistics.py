@@ -14,6 +14,7 @@ import xarray as xr
 from hypothesis import given
 
 import datacube_stats.statistics
+
 from datacube.utils.geometry import CRS
 from datacube_stats.incremental_stats import mk_incremental_mean, mk_incremental_min, mk_incremental_sum, \
     mk_incremental_max, mk_incremental_counter
@@ -75,20 +76,6 @@ def test_xarray_reduce():
     assert dataarray.dims == ('x', 'y')
 
 
-def test_masked_count():
-    arr = np.random.randint(3, size=(5, 100, 100))
-    da = xr.DataArray(arr, dims=('time', 'x', 'y'))
-
-    from datacube_stats.statistics import MaskMultiCounter
-
-    mc = MaskMultiCounter([{'name': 'test', 'mask': lambda x: x}])
-
-    ds = xr.Dataset({'payload': da})
-    result = mc.compute(ds)
-
-    assert result
-
-
 @pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'NewGeomedianStatistic'),
                     reason='requires `pcm` module for new geomedian statistics')
 def test_new_geometric_median():
@@ -107,6 +94,47 @@ def test_new_geometric_median():
 
     # The two bands had the same inputs, so should have the same result
     assert (result.band1 == result.band2).all()
+
+
+def test_new_med_ndwi():
+    medndwi = NormalisedDifferenceStats('green', 'nir', 'ndwi', stats=['median'])
+
+    arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
+    data_array_1 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
+    arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
+    data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
+    dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2}, attrs={'crs': 'Fake CRS'})
+    result = medndwi.compute(dataset)
+    assert result
+    assert 'crs' in result.attrs
+    assert 'ndwi_median' in result.data_vars
+
+
+def test_masked_count():
+    arr = np.random.randint(3, size=(5, 100, 100))
+    da = xr.DataArray(arr, dims=('time', 'x', 'y'))
+
+    from datacube_stats.statistics import MaskMultiCounter
+
+    mc = MaskMultiCounter([{'name': 'test', 'mask': lambda x: x}])
+
+    ds = xr.Dataset({'payload': da})
+    result = mc.compute(ds)
+
+    assert result
+
+
+def test_new_med_std():
+    stdndwi = NormalisedDifferenceStats('green', 'nir', 'ndwi', stats=['std'])
+    arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
+    data_array_1 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
+    arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
+    data_array_2 = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
+    dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2}, attrs={'crs': 'Fake CRS'})
+    result = stdndwi.compute(dataset)
+
+    assert result
+    assert 'ndwi_std' in result.data_vars
 
 
 DatacubeCRSStrategy = st.sampled_from([CRS('EPSG:4326'), CRS('EPSG:3577'), CRS('EPSG:28354')])

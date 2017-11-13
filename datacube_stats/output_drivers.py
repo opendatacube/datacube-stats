@@ -231,6 +231,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         params['name'] = output_product.name
         params['stat_name'] = output_product.stat_name
         params.update(output_product.extras)
+        params.update(self._task.extra_fn_params)
         params.update(kwargs)
 
         output_path = Path(self._output_path,

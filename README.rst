@@ -411,6 +411,34 @@ Any extra arguments to pass to the output driver for an individual output band:
          zlib: True
          fletcher32: True
 
+Filter product
+~~~~~~~~~~~~~~
+
+To filter out sources that correspond to any derived products. It currently supports two methods
+to filter out list of dates. Filtering in hydrological months ('by_hydrological_months'), can be
+used to filter months from July to November for the year after the dry or wet years collected from
+the polygon. Specific month range can also be specified. Second method of filtering is 'by_tide_height',
+which uses OTPS model to get tide_height:
+
+.. code-block:: yaml
+
+       filter_product:
+         method: by_tide_height
+         args:
+           tide_range: 10
+           tide_percent: 20
+
+.. code-block:: yaml
+
+       filter_product:
+         method: by_hydrological_months
+         args:
+           type: dry
+           months: ['07', '11']
+
+
+
+
 File naming
 ~~~~~~~~~~~
 

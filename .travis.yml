@@ -35,7 +35,7 @@ install:
 
   - conda create -n datacube datacube pytest mock boltons pytest-cov coveralls hypothesis
   - source activate datacube
-  - pip install pydash boltons pylint yamllint pytest-cov pep8 voluptuous hdmedians
+  - pip install pydash boltons pylint yamllint pytest-cov pep8 voluptuous hdmedians fiona
   - pip install . --no-deps --upgrade
 
   - pip freeze

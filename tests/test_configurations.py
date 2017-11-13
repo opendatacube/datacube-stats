@@ -87,8 +87,21 @@ storage_schema = Schema({
     'dimension_order': list,
 })
 
+filter_prod_args = Schema({
+    Optional('tide_range'): int,
+    Optional('tide_percent'): int,
+    Optional('type'): str,
+    Optional('months'): [str, str],
+    Optional('sub_class'): str
+})
+
 single_tile = Schema({'tile': [int, int]})
-from_file = Schema({'from_file': str})
+from_file = Schema({'from_file': str, Optional('feature_id'): [int]})
+filter_product = Schema({
+    Required('method'): str,
+    Required('args'): filter_prod_args
+})
+
 geometry = Schema({
     'geometry': {
         'type': 'Polygon',
@@ -119,7 +132,8 @@ stats_schema = Schema({
     Optional('computation'): {'chunking': dict},
     Optional('input_region'): Any(single_tile, from_file, geometry, boundary_coords),
     Optional('global_attributes'): dict,
-    Optional('var_attributes'): {str: {str: str}}
+    Optional('var_attributes'): {str: {str: str}},
+    Optional('filter_product'): filter_product
 }, required=True)
 
 

@@ -123,7 +123,7 @@ def axisindex(a, index, axis=0):
     return a.take(idx)
 
 
-def section_by_index(array, axis, index):
+def section_by_index(array, index, axis=0):
     """
     Take the slice of `array` indexed by entries of `index`
     along the specified `axis`.
@@ -374,26 +374,49 @@ class WofsStats(Statistic):
 
 class NormalisedDifferenceStats(Statistic):
     """
-    Simple NDVI/NDWI and other Normalised Difference stats
+    Simple NDVI/NDWI and other Normalised Difference statistics.
 
-    Computes (band1 - band2)/(band1 + band2), and then summarises using the list of `stats` into
+    Computes `(band1 - band2)/(band1 + band2)`, and then summarises using the list of `stats` into
     separate output variables.
+
+    Output variables are named {name}_{stat_name}. Eg: `ndwi_median`
+
+    By default will clamp output values in the range [-1, 1] by setting values outside
+    this range to NaN.
+
+    :param name: The common name of a normalised difference.
+                 eg. `ndvi` for `(nir-red)/(nir+red)`
+                     `ndwi` for `(green-nir)/(green+nir)`
+    :param List[str] stats: list of common statistic names. Defaults to ['min', 'max', 'mean']
+                            Choose from the common xarray/numpy reduction operations
+                            which include `std` and `median`.
     """
 
-    def __init__(self, band1, band2, name, stats=None):
+    def __init__(self, band1, band2, name, stats=None, clamp_outputs=True):
         self.stats = stats if stats else ['min', 'max', 'mean']
         self.band1 = band1
         self.band2 = band2
         self.name = name
+        self.clamp_outputs = clamp_outputs
 
     def compute(self, data):
         nd = (data[self.band1] - data[self.band2]) / (data[self.band1] + data[self.band2])
         outputs = {}
         for stat in self.stats:
             name = '_'.join([self.name, stat])
-            outputs[name] = getattr(nd, stat)(dim='time')
-        return xarray.Dataset(outputs,
-                              attrs=dict(crs=data.crs))
+            outputs[name] = getattr(nd, stat)(dim='time', keep_attrs=True)
+            if self.clamp_outputs:
+                self._clamp_outputs(outputs[name])
+        return xarray.Dataset(outputs, attrs=dict(crs=data.crs))
+
+    @staticmethod
+    def _clamp_outputs(dataarray):
+        with warnings.catch_warnings():  # Don't print error while comparing nan
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            dataarray.values[dataarray.values < -1] = np.nan
+            dataarray.values[dataarray.values > 1] = np.nan
+
+
 
     def measurements(self, input_measurements):
         measurement_names = [m['name'] for m in input_measurements]
@@ -705,7 +728,7 @@ class Medoid(Statistic):
 
             def worker(var_array, axis, nodata):
                 # operates on the underlying `ndarray`
-                result = section_by_index(var_array, axis, index)
+                result = section_by_index(var_array, index, axis)
                 result[not_enough] = nodata
                 return result
 
@@ -879,6 +902,7 @@ STATS = {
     'external': ExternalPlugin,
 }
 
+
 # Dynamically look for and load statistics from other packages
 
 for entry_point in iter_entry_points(group='datacube.stats', name=None):
@@ -907,22 +931,33 @@ try:
 
 
     class GeoMedian(Statistic):
-        def __init__(self, eps=1e-3):
+        def __init__(self, eps=1e-3, maxiters=None):
             super(GeoMedian, self).__init__()
             self.eps = eps
+            self.maxiters = maxiters
 
         def compute(self, data):
-            """
-            :param xarray.Dataset data:
-            :return: xarray.Dataset
-            """
             from_, to = self._vars_to_transpose(data)
             # Assert data shape/dims
             data = data.to_array(dim='variable').transpose(*from_).copy()
 
-            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian, eps=self.eps)
+            data = data.reduce(apply_geomedian, dim='time', keep_attrs=True, f=nangeomedian,
+                               eps=self.eps, maxiters=self.maxiters)
 
             return data.transpose(*to).to_dataset(dim='variable')
+        
+        def measurements(self, input_measurements):
+            """
+            Outputs will have the same name as inputs, but dtype will always be float32.
+            """
+            output_measurements = [
+                {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
+                for measurement in input_measurements]
+            for measurement in output_measurements:
+                measurement['dtype'] = 'float32'
+                measurement['nodata'] = np.nan
+
+            return output_measurements
 
         @staticmethod
         def _vars_to_transpose(data):
@@ -1013,5 +1048,7 @@ try:
 
 
     STATS['new_geomedian'] = NewGeomedianStatistic
+
 except ImportError:
     pass
+
