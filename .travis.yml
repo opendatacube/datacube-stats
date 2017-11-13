@@ -41,7 +41,7 @@ install:
   - pip freeze
 
 script:
-  - pytest --cov datacube_stats
+  - ./check-code.sh
 
 after_success:
   - test $TRAVIS_PYTHON_VERSION = "3.6" && coveralls

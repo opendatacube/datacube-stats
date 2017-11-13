@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mimic Travis CI checks
+# Travis CI checks
 
 set -eu
 set -x
