@@ -18,6 +18,7 @@ def is_wet(data):
 def is_clear(data):
     return is_wet(data) | is_dry(data)
 
+
 wofs_arrays = arrays(np.uint8, (1,), elements=integers(0, 255))
 
 
