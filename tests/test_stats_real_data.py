@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 from datacube.utils import geometry
@@ -8,8 +7,12 @@ from datacube_stats.main import main
 
 import pytest
 
+try:
+    import otps
+    OTPS_MODULE_EXISTS = True
+except ImportError:
+    OTPS_MODULE_EXISTS = False
 
-MODULE_EXISTS = 'otps' in sys.modules
 CONFIG_TEMPLATE = """
 ## Define inputs to perform statistics on
 sources:
@@ -264,12 +267,12 @@ storage:
   dimension_order: [time, y, x]
 
 input_region:
-   from_file: /g/data/r78/bxb547/GW_works/bur_dry_albers.shp
+   from_file: /g/data/u46/users/ia1511/Work/data/qgis/bur_dry_albers.shp
    feature_id: [3]
 
 output_products:
  - name: dry
-   statistic: precisegeomedian
+   statistic: geomedian
    output_params:
       zlib: True
       fletcher32: True
@@ -325,7 +328,7 @@ location: '/g/data/r78/tmp'
 
 input_region:
   #from_file: /g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp
-  from_file: /g/data/r78/bxb547/GW_works/bur_dry_albers.shp
+  from_file: /g/data/u46/users/ia1511/Work/data/qgis/bur_dry_albers.shp
   feature_id: [3]
 #
 storage:
@@ -350,7 +353,7 @@ storage:
 
 output_products:
  - name: wet
-   statistic: precisegeomedian
+   statistic: geomedian
    output_params:
       zlib: True
       fletcher32: True
@@ -378,6 +381,7 @@ def sample_geometry():
 RUNNING_ON_NCI_ENV = Path('/g/data/u46').exists()
 
 
+# takes ~5 mins to complete
 @pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
                    reason="This test currently expects to be run in the DEA environment on NCI.")
 def test_input_region_single_tile():
@@ -391,78 +395,89 @@ def test_input_region_single_tile():
         assert 'exception' not in result.output.lower()
         assert result.exit_code == 0
 
-        tmpdir = Path(tmpdir)
-        outputfile = tmpdir / 'SR_N_MEAN' / 'SR_N_MEAN_3577_12_-43_20150101.nc'
+        outputfile = Path(tmpdir) / 'SR_N_MEAN' / 'SR_N_MEAN_3577_12_-43_20150101.nc'
         assert outputfile.exists()
 
 
-@pytest.mark.xfail(not MODULE_EXISTS, reason="otps module is not available")
-def test_input_region_from_shapefile():
+@pytest.mark.skip(reason="currently NDWI stats are unavailable")
+@pytest.mark.xfail(not OTPS_MODULE_EXISTS, reason="otps module is not available")
+def test_input_region_from_shapefile_item_ndwi():
     runner = CliRunner()
     with runner.isolated_filesystem() as tmpdir:
         with open(CONFIG_FILENAME, 'w') as f:
             f.write(CONFIG_TEMPLATE_ITEM_NDWI)
 
-        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME])
+        outputfile = Path(tmpdir) / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_medndwi.nc'
+
+        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
+                                      '--output-location', outputfile.absolute()])
+
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
         assert result.exit_code == 0
 
-        tmpdir = Path(tmpdir)
-        outputfile = tmpdir / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_medndwi.nc'
         assert outputfile.exists()
 
 
-@pytest.mark.xfail(not MODULE_EXISTS, reason="otps module is not available")
-def test_input_region_from_shapefile():
+@pytest.mark.skip(reason="currently NDWI stats are unavailable")
+@pytest.mark.xfail(not OTPS_MODULE_EXISTS, reason="otps module is not available")
+def test_input_region_from_shapefile_item_std():
     runner = CliRunner()
     with runner.isolated_filesystem() as tmpdir:
         with open(CONFIG_FILENAME, 'w') as f:
             f.write(CONFIG_TEMPLATE_ITEM_STD)
 
-        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME])
+        outputfile = Path(tmpdir) / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_STD.nc'
+
+        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
+                                      '--output-location', outputfile.absolute()])
+
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
         assert result.exit_code == 0
 
-        tmpdir = Path(tmpdir)
-        outputfile = tmpdir / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_STD.nc'
         assert outputfile.exists()
 
 
+# takes ~10 mins to complete
 @pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
                    reason="This test currently expects to be run in the DEA environment on NCI.")
-def test_input_region_from_shapefile():
+def test_input_region_from_shapefile_dry():
     runner = CliRunner()
     with runner.isolated_filesystem() as tmpdir:
         with open(CONFIG_FILENAME, 'w') as f:
             f.write(CONFIG_TEMPLATE_DRY)
 
-        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME])
+        outputfile = Path(tmpdir) / 'GW_DRY_3_1990_2008.nc'
+
+        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
+                                      '--output-location', outputfile.absolute()])
+
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
         assert result.exit_code == 0
 
-        tmpdir = Path(tmpdir)
-        outputfile = tmpdir / 'GW_DRY_3_1990_2008.nc'
         assert outputfile.exists()
 
 
+# takes ~15 mins to complete
 @pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
                    reason="This test currently expects to be run in the DEA environment on NCI.")
-def test_input_region_from_shapefile():
+def test_input_region_from_shapefile_wet():
     runner = CliRunner()
     with runner.isolated_filesystem() as tmpdir:
         with open(CONFIG_FILENAME, 'w') as f:
             f.write(CONFIG_TEMPLATE_WET)
 
-        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME])
+        outputfile = Path(tmpdir) / 'GW_WET_3_1990_2008.nc'
+
+        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
+                                      '--output-location', outputfile.absolute()])
+
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
         assert result.exit_code == 0
 
-        tmpdir = Path(tmpdir)
-        outputfile = tmpdir / 'GW_WET_3_1990_2008.nc'
         assert outputfile.exists()
 
 

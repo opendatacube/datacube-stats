@@ -3,7 +3,7 @@ from string import Formatter
 
 import pytest
 from datacube_stats.output_drivers import OUTPUT_DRIVERS
-from voluptuous import Schema, Required, All, Length, Date, ALLOW_EXTRA, Optional, Any, In, Number, Invalid, Inclusive
+from voluptuous import Schema, Required, All, Length, Date, ALLOW_EXTRA, Optional, Any, In, Invalid, Inclusive
 import yaml
 
 from datacube_stats.statistics import STATS

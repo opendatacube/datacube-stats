@@ -7,17 +7,17 @@ enable=python3
 
 disable=no-self-use,
     star-args,
-    duplicate-code,
+#   duplicate-code,
     unused-argument,
     missing-docstring,
     no-member,
     unused-variable,
-    unused-import,
+#   unused-import,
     locally-disabled,
     no-name-in-module,
     fixme,
     no-value-for-parameter,
-    file-ignored,
+#   file-ignored,
     wrong-import-order,
     ungrouped-imports,
     len-as-condition,
@@ -127,7 +127,7 @@ max-line-length=120
 ignore-long-lines=^\s*(# )?<?https?://\S+>?$
 
 # Maximum number of lines in a module
-max-module-lines=1300
+max-module-lines=1000
 
 # String used as indentation unit. This is usually " " (4 spaces) or "\t" (1
 # tab).

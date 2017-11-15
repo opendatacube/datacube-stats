@@ -1,7 +1,7 @@
 from mock import MagicMock
 
 from datacube.utils.geometry import Geometry, CRS
-from datacube_stats.main import NonGriddedTaskGenerator, ArbitraryTileMaker, GriddedTaskGenerator
+from datacube_stats.tasks import NonGriddedTaskGenerator, ArbitraryTileMaker, GriddedTaskGenerator
 
 EXAMPLE_STORAGE = {'crs': 'EPSG:4326', 'resolution': {'latitude': 0.1, 'longitude': 0.1},
                    'tile_size': {'latitude': 1, 'longitude': 1}}

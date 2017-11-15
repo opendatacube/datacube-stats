@@ -18,7 +18,8 @@ import datacube_stats.statistics
 from datacube.utils.geometry import CRS
 from datacube_stats.incremental_stats import mk_incremental_mean, mk_incremental_min, mk_incremental_sum, \
     mk_incremental_max, mk_incremental_counter
-from datacube_stats.statistics import nan_percentile, argpercentile, axisindex, NormalisedDifferenceStats, WofsStats, \
+from datacube_stats.stat_funcs import nan_percentile, argpercentile, axisindex
+from datacube_stats.statistics import NormalisedDifferenceStats, WofsStats, \
     StatsConfigurationError, Medoid, GeoMedian
 
 
