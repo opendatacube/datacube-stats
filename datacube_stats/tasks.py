@@ -12,7 +12,7 @@ from datacube_stats.utils.dates import filter_time_by_source
 from datacube_stats.utils.tide_utility import geom_from_file, get_filter_product
 from .utils import report_unmatched_datasets
 from .utils.query import multi_product_list_cells
-from .timer import MultiTimer
+from .utils.timer import MultiTimer
 
 DEFAULT_GROUP_BY = 'time'
 DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}

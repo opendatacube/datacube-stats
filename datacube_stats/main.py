@@ -30,11 +30,10 @@ from datacube_stats.models import OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
     NoSuchOutputDriver
 from datacube_stats.statistics import StatsConfigurationError, STATS
-from datacube_stats.timer import MultiTimer
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence
-from .timer import wrap_in_timer
+from .utils.timer import MultiTimer, wrap_in_timer
 from .utils import sorted_interleave
 from .utils.qsub import with_qsub_runner
 from .tasks import select_task_generator
