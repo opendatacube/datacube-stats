@@ -4,7 +4,7 @@
 set -eu
 set -x
 
-pep8 datacube_stats scripts tests --max-line-length=120
+pycodestyle datacube_stats scripts tests --max-line-length=120
 
 pylint -j 2 --reports no datacube_stats
 

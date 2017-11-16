@@ -260,10 +260,8 @@ class NonGriddedTaskGenerator(object):
                 group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
                 # Build Tile
-                data = make_tile(product=source_spec['product'], time=ep_range,
-                                 group_by=group_by_name, geopoly=self.geopolygon)
-                masks = [make_tile(product=mask['product'], time=ep_range,
-                                   group_by=group_by_name, geopoly=self.geopolygon)
+                data = make_tile(product=source_spec['product'], time=ep_range, group_by=group_by_name)
+                masks = [make_tile(product=mask['product'], time=ep_range, group_by=group_by_name)
                          for mask in source_spec.get('masks', [])]
 
                 if len(data.sources.time) == 0:
@@ -298,8 +296,7 @@ class ArbitraryTileMaker(object):
         self.input_region = input_region
         self.storage = storage
 
-    def __call__(self, product, time, group_by, filter_time=None, geopoly=None,
-                 sources_spec=None, date_ranges=None):
+    def __call__(self, product, time, group_by):
         # Do for a specific poly whose boundary is known
         output_crs = CRS(self.storage['crs'])
         filtered_item = ['geopolygon', 'lon', 'lat', 'longitude', 'latitude', 'x', 'y']
