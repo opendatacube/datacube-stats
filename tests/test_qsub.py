@@ -1,4 +1,4 @@
-from datacube_stats.utils import qsub
+from digitalearthau import qsub
 
 
 def test_parse_args():

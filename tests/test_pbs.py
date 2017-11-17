@@ -1,4 +1,4 @@
-from datacube_stats.utils import pbs
+from digitalearthau import pbs
 
 
 def test_is_under_pbs():
