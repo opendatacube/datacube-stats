@@ -36,6 +36,8 @@ install:
   - conda create -n datacube datacube pytest mock boltons pytest-cov coveralls hypothesis shapely
   - source activate datacube
   - pip install pydash boltons pylint yamllint pytest-cov pycodestyle voluptuous hdmedians fiona
+  - travis_retry pip install git+git://github.com/GeoscienceAustralia/eo-datasets.git
+  - travis_retry pip install git+git://github.com/GeoscienceAustralia/digitalearthau.git
   - pip install . --no-deps --upgrade
 
   - pip freeze
