@@ -308,7 +308,9 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         task_runner = partial(execute_task,
                               output_driver=output_driver,
                               chunking=self.computation.get('chunking', {}))
-        return runner(tasks,
+
+        return runner(None,  # digitalearthau.runners.model.TaskDescription,
+                      tasks,
                       task_runner,
                       self.process_completed)
 
