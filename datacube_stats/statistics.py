@@ -798,7 +798,10 @@ try:
 
             # Grab a copy of the coordinates we need for creating the output DataArray
             output_coords = copy(squashed.coords)
-            del output_coords['time']
+            if 'time' in output_coords:
+                del output_coords['time']
+            if 'source' in output_coords:
+                del output_coords['source']
 
             # Call Dale's function here
             squashed = gmpcm(squashed.data)
