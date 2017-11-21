@@ -37,6 +37,7 @@ from digitalearthau.qsub import with_qsub_runner
 from .utils.timer import MultiTimer, wrap_in_timer
 from .utils import sorted_interleave
 from .tasks import select_task_generator
+from .schema import stats_schema
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -217,6 +218,8 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         :param tile_indexes: list of tiles for a gridded job. (useful for debugging)
         :return: read to run StatsApp
         """
+        stats_schema(config)
+
         input_region = config.get('input_region')
         if tile_indexes and not input_region:
             input_region = {'tiles': tile_indexes}
@@ -271,6 +274,8 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
 
     def _ensure_stats_available(self):
         """Part of configuration validation"""
+        # possibly redundant now
+
         for prod in self.output_product_specs:
             if 'statistic' not in prod:
                 raise StatsConfigurationError('Invalid statistic definition %s, must specify which statistic to use. '

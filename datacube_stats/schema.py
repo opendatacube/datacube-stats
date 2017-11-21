@@ -1,6 +1,7 @@
 from string import Formatter
 import datetime
 
+import pandas as pd
 from voluptuous import Schema, Required, All, Length, Date, ALLOW_EXTRA, Optional, Any, In, Invalid, Inclusive
 
 from .statistics import STATS
@@ -91,8 +92,8 @@ boundary_coords = Schema({
 })
 
 date_ranges_schema = Schema({
-    Required('start_date'): Any(datetime.date, Date),
-    Required('end_date'): Any(datetime.date, Date),
+    Required('start_date'): Any(datetime.date, Date, pd.to_datetime),
+    Required('end_date'): Any(datetime.date, Date, pd.to_datetime),
     'stats_duration': str,
     'step_size': str,
     'type': Any('simple', 'find_daily_data'),
