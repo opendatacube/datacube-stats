@@ -38,10 +38,13 @@ source_schema = Schema({
     'fuse_func': str
 }, extra=ALLOW_EXTRA)
 
+available_stats_msg = ('not a valid statistic name (available statistics are {})'
+                       .format(", ".join(list(STATS.keys()))))
+
 output_product_schema = Schema({
     Required('name'): str,
     'product_type': str,
-    Required('statistic'): In(STATS.keys(), msg='not a valid statistic name'),
+    Required('statistic'): In(STATS.keys(), msg=available_stats_msg),
     'statistic_args': dict,
     'output_params': dict,
     'file_path_template': All(str, valid_format_string(valid_filepath_fields)),

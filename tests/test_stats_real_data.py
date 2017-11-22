@@ -46,7 +46,7 @@ date_ranges:
   step_size: 3m
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -63,6 +63,8 @@ storage:
 
 input_region:
    tile: [12, -43]
+
+location: /g/data/u46/users/ia1511/Work/data/dummy
 
 ## Define statistics to perform and how to store the data
 output_products:
@@ -110,7 +112,7 @@ date_ranges:
   step_size: 3m
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -128,6 +130,8 @@ storage:
 input_region:
    from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp
    feature_id: [280]
+
+location: /g/data/u46/users/ia1511/Work/data/dummy
 
 output_products:
  - name: med_ndwi
@@ -179,7 +183,7 @@ date_ranges:
 
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -197,6 +201,8 @@ storage:
 input_region:
    from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp
    feature_id: [280]
+
+location: /g/data/u46/users/ia1511/Work/data/dummy
 
 output_products:
  - name: med_stddev
@@ -251,7 +257,7 @@ date_ranges:
 
 
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
 
   crs: EPSG:3577
   tile_size:
@@ -269,6 +275,8 @@ storage:
 input_region:
    from_file: /g/data/u46/users/ia1511/Work/data/qgis/bur_dry_albers.shp
    feature_id: [3]
+
+location: /g/data/u46/users/ia1511/Work/data/dummy
 
 output_products:
  - name: dry
@@ -332,7 +340,7 @@ input_region:
   feature_id: [3]
 #
 storage:
-  driver: NetCDFCF
+  driver: NetCDF CF
   #driver: Geotiff
 
   crs: EPSG:3577

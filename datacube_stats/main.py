@@ -17,7 +17,6 @@ import pandas as pd
 import pydash
 import rasterio.features
 import xarray
-import yaml
 
 import datacube
 import datacube_stats
@@ -128,6 +127,8 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
         tile_index = None
 
     _, config = next(read_documents(stats_config_file))
+    stats_schema(config)
+
     app = StatsApp.from_configuration_file(config, index,
                                            gather_tile_indexes(tile_index, tile_index_file),
                                            output_location, year)
@@ -218,8 +219,6 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         :param tile_indexes: list of tiles for a gridded job. (useful for debugging)
         :return: read to run StatsApp
         """
-        stats_schema(config)
-
         input_region = config.get('input_region')
         if tile_indexes and not input_region:
             input_region = {'tiles': tile_indexes}
@@ -253,7 +252,6 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
         self._ensure_unique_output_product_names()
-        self._ensure_stats_available()
         self._check_consistent_measurements()
 
         assert callable(self.task_generator)
@@ -271,22 +269,6 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         if not all(first_source.get('measurements') == source.get('measurements') for source in self.sources):
             raise StatsConfigurationError("Configuration Error: listed measurements of source products "
                                           "are not all the same.")
-
-    def _ensure_stats_available(self):
-        """Part of configuration validation"""
-        # possibly redundant now
-
-        for prod in self.output_product_specs:
-            if 'statistic' not in prod:
-                raise StatsConfigurationError('Invalid statistic definition %s, must specify which statistic to use. '
-                                              'eg. statistic: mean' % yaml.dump(prod, indent=4,
-                                                                                default_flow_style=False))
-        available_statistics = set(STATS.keys())
-        requested_statistics = set(prod['statistic'] for prod in self.output_product_specs)
-        if not requested_statistics.issubset(available_statistics):
-            raise StatsConfigurationError(
-                'Requested Statistic(s) %s are not valid statistics. Available statistics are: %s'
-                % (requested_statistics - available_statistics, available_statistics))
 
     def _ensure_unique_output_product_names(self):
         """Part of configuration validation"""
