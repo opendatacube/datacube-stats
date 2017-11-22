@@ -72,7 +72,7 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
     tile_sources[0] = (mock_dataset,)
 
     data_tile = MagicMock(spec=Tile)
-    data_tile.sources = xr.DataArray(data=tile_sources, dims=['time'], coords={'time': 0})
+    data_tile.sources = xr.DataArray(data=tile_sources, dims=['time'], coords={'time': np.array([0])})
 
     test_source = DataSource(data=data_tile, masks=[], spec={})
     task.sources = [test_source]
