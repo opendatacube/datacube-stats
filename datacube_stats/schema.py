@@ -55,8 +55,11 @@ spatial_attrs = {Inclusive('x', 'proj'): Any(float, int),
                  Inclusive('latitude', 'geo'): Any(float, int),
                  Inclusive('longitude', 'geo'): Any(float, int)}
 
+available_drivers_msg = ('not a valid output driver (available drivers are {})'
+                         .format(", ".join(list(OUTPUT_DRIVERS.keys()))))
+
 storage_schema = Schema({
-    'driver': In(OUTPUT_DRIVERS.keys(), msg='not a valid output driver'),
+    'driver': In(OUTPUT_DRIVERS.keys(), msg=available_drivers_msg),
     'tile_size': spatial_attrs,
     'resolution': spatial_attrs,
     'chunking': {**spatial_attrs, 'time': int},
