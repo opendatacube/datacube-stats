@@ -10,6 +10,8 @@ import copy
 import logging
 from functools import partial
 from textwrap import dedent
+from pathlib import Path
+from datetime import datetime
 
 import click
 import numpy as np
@@ -17,7 +19,7 @@ import pandas as pd
 import pydash
 import rasterio.features
 import xarray
-from mock import MagicMock
+from dateutil import tz
 
 import datacube
 import datacube_stats
@@ -34,6 +36,7 @@ from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _fin
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence
 from digitalearthau.qsub import with_qsub_runner
+from digitalearthau.runners.model import TaskDescription, DefaultJobParameters
 from .utils.timer import MultiTimer, wrap_in_timer
 from .utils import sorted_interleave
 from .tasks import select_task_generator
@@ -297,12 +300,20 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                               output_driver=output_driver,
                               chunking=self.computation.get('chunking', {}))
 
-        task_desc = MagicMock()
+        # does not need to be thorough for now
+        task_desc = TaskDescription(type_='datacube_stats',
+                                    task_dt=datetime.utcnow().replace(tzinfo=tz.tzutc()),
+                                    events_path=Path(self.location),
+                                    logs_path=Path(self.location),
+                                    parameters=DefaultJobParameters(query={},
+                                                                    source_products=[],
+                                                                    output_products=[]))
 
         result = runner(task_desc, tasks, task_runner, self.process_completed)
 
-        _LOG.debug('TaskDescription mock recorded calls %s with args %s.',
-                   task_desc.mock_calls, task_desc.call_args_list)
+        _LOG.debug('Stopping runner.')
+        runner.stop()
+        _LOG.debug('Runner stopped.')
 
         return result
 
