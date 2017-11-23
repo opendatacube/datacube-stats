@@ -17,6 +17,7 @@ import pandas as pd
 import pydash
 import rasterio.features
 import xarray
+from mock import MagicMock
 
 import datacube
 import datacube_stats
@@ -162,7 +163,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
     """
 
     def __init__(self):
-        #: Name of the configuration file used
+        #: Dictionary containing the configuration
         self.config_file = None
 
         #: Description of output file format
@@ -296,10 +297,14 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                               output_driver=output_driver,
                               chunking=self.computation.get('chunking', {}))
 
-        return runner(None,  # digitalearthau.runners.model.TaskDescription,
-                      tasks,
-                      task_runner,
-                      self.process_completed)
+        task_desc = MagicMock()
+
+        result = runner(task_desc, tasks, task_runner, self.process_completed)
+
+        _LOG.debug('TaskDescription mock recorded calls %s with args %s.',
+                   task_desc.mock_calls, task_desc.call_args_list)
+
+        return result
 
     def save_tasks_to_file(self, filename):
         _LOG.debug('Saving tasks to %s.', filename)
