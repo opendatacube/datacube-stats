@@ -11,7 +11,7 @@ import hypothesis.strategies as st
 import numpy as np
 import pytest
 import xarray as xr
-from hypothesis import given
+from hypothesis import given, settings
 
 import datacube_stats.statistics
 
@@ -253,6 +253,7 @@ def test_normalised_difference_stats(dataset, output_name):
 
 
 @pytest.mark.parametrize('stat_class', [Medoid, GeoMedian])
+@settings(max_examples=15)
 @given(dataset=two_band_eo_dataset())
 def test_medoid_statistic(dataset, stat_class):
     stat = stat_class()
