@@ -96,6 +96,7 @@ def test_new_geometric_median():
     # The two bands had the same inputs, so should have the same result
     assert (result.band1 == result.band2).all()
 
+
 def test_new_med_ndwi():
     medndwi = NormalisedDifferenceStats('green', 'nir', 'ndwi', stats=['median'])
 
@@ -286,10 +287,10 @@ def test_incremental_computations(dataset, xarray_func, incremental_fn):
 
 
 @pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'SpectralMAD'),
-			reason='requires `pcm` module for spectral mad')
+                    reason='requires `pcm` module for spectral mad')
 def test_smad():
     from datacube_stats.statistics import SpectralMAD
-    
+
     arr = np.random.random((5, 100, 100))
 
     dataarray = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})

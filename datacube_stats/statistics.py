@@ -858,7 +858,7 @@ try:
             :param xarray.Dataset data:
             :return: xarray.Dataset
             """
-   
+
             # We need to reshape our data into Y, X, Band, Time
             squashed_together_dimensions, output_dimensions = self._vars_to_transpose(data)
 
@@ -873,7 +873,7 @@ try:
             # Call Dale's geometric median & spectral mad functions here
             gm = pcm.gmpcm(squashed.data)
             squashed = pcm.smad(squashed.data, gm)
-            
+
             # Jam the raw numpy array back into a pleasantly labelled DataArray
             as_datarray = xarray.DataArray(squashed, dims=output_dimensions, coords=output_coords)
 
@@ -887,7 +887,7 @@ try:
             The Data Cube provided xarrays will contain different dimensions, latitude/longitude or x/y, which means
             the array reshaping takes different arguments.
 
-            The dimension ordering returned by this function is specific to the spectral median absolute deviation 
+            The dimension ordering returned by this function is specific to the spectral median absolute deviation
             function included from the `pcm` module.
 
             :return: pcm input array dimension order, datacube dimension ordering
@@ -909,4 +909,3 @@ try:
     STATS['spectral_mad'] = SpectralMAD
 except ImportError:
     pass
-
