@@ -867,8 +867,12 @@ try:
 
             # Grab a copy of the coordinates we need for creating the output DataArray
             output_coords = copy(squashed.coords)
-            del output_coords['time']
-            del output_coords['variable']
+            if 'variable' in output_coords:
+                del output_coords['variable']
+            if 'time' in output_coords:
+                del output_coords['time']
+            if 'source' in output_coords:
+                del output_coords['source']
 
             # Call Dale's geometric median & spectral mad functions here
             gm = pcm.gmpcm(squashed.data)
@@ -878,6 +882,11 @@ try:
             as_datarray = xarray.DataArray(squashed, dims=output_dimensions, coords=output_coords)
 
             return as_datarray.transpose(*output_dimensions).to_dataset(dim='smad')
+
+        def measurements(self, input_measurements):
+            # TODO check this with Dale
+            return [dict(name='smad', dtype='float32', nodata=np.nan, units='1')]
+
 
         @staticmethod
         def _vars_to_transpose(data):
