@@ -884,7 +884,6 @@ try:
             return as_datarray.transpose(*output_dimensions).to_dataset(dim='smad')
 
         def measurements(self, input_measurements):
-            # TODO check this with Dale
             return [dict(name='smad', dtype='float32', nodata=np.nan, units='1')]
 
 
