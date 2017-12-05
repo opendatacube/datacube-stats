@@ -38,7 +38,7 @@
         dest: "{{modules_path}}/modulefiles/{{module_name}}/{{module_version}}"
 #        owner: sd-agent
 #        group: sd-agent
-        mode: 0660
+        mode: 0664
 #        backup: yes
 #      notify: restart sd-agent
 
