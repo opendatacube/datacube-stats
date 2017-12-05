@@ -33,7 +33,7 @@ install:
   # print conda info
   - conda info -a
 
-  - conda create -n datacube datacube pytest mock boltons pytest-cov coveralls hypothesis shapely 'poppler<0.60'
+  - conda create -n datacube datacube pytest mock boltons pytest-cov coveralls hypothesis shapely 'poppler<0.60' 'GDAL<2.1.4'
   - source activate datacube
   - pip install pydash boltons pylint yamllint pytest-cov pycodestyle voluptuous hdmedians fiona
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/eo-datasets.git

@@ -886,7 +886,6 @@ try:
         def measurements(self, input_measurements):
             return [dict(name='smad', dtype='float32', nodata=np.nan, units='1')]
 
-
         @staticmethod
         def _vars_to_transpose(data):
             """
