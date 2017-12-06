@@ -881,7 +881,7 @@ try:
             # Jam the raw numpy array back into a pleasantly labelled DataArray
             as_datarray = xarray.DataArray(squashed, dims=output_dimensions, coords=output_coords)
 
-            return as_datarray.transpose(*output_dimensions).to_dataset(dim='smad')
+            return as_datarray.transpose(*output_dimensions).to_dataset(name='smad')
 
         def measurements(self, input_measurements):
             return [dict(name='smad', dtype='float32', nodata=np.nan, units='1')]

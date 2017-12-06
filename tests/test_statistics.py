@@ -89,7 +89,7 @@ def test_new_geometric_median():
     new_geomedian_stat = NewGeomedianStatistic()
     result = new_geomedian_stat.compute(dataset)
 
-    assert result
+    assert isinstance(result, xr.Dataset)
 
     assert result.band1.dims == result.band2.dims == ('y', 'x')
 
@@ -108,7 +108,7 @@ def test_new_med_ndwi():
                                 coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
     dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2}, attrs={'crs': 'Fake CRS'})
     result = medndwi.compute(dataset)
-    assert result
+    assert isinstance(result, xr.Dataset)
     assert 'crs' in result.attrs
     assert 'ndwi_median' in result.data_vars
 
@@ -124,7 +124,7 @@ def test_masked_count():
     ds = xr.Dataset({'payload': da})
     result = mc.compute(ds)
 
-    assert result
+    assert isinstance(result, xr.Dataset)
 
 
 def test_new_med_std():
@@ -138,7 +138,7 @@ def test_new_med_std():
     dataset = xr.Dataset(data_vars={'green': data_array_1, 'nir': data_array_2}, attrs={'crs': 'Fake CRS'})
     result = stdndwi.compute(dataset)
 
-    assert result
+    assert isinstance(result, xr.Dataset)
     assert 'ndwi_std' in result.data_vars
 
 
@@ -192,7 +192,7 @@ def test_wofs_stats(dataset):
     # Check the computation returns something reasonable
     result = wofsstat.compute(dataset)
 
-    assert result
+    assert isinstance(result, xr.Dataset)
     assert 'time' not in result.dims
     assert all(result_dim in dataset.dims for result_dim in result.dims)
     assert dataset.crs == result.crs
@@ -233,7 +233,7 @@ def test_normalised_difference_stats(dataset, output_name):
     ndstat = NormalisedDifferenceStats(var1, var2, output_name)
     result = ndstat.compute(dataset)
 
-    assert result
+    assert isinstance(result, xr.Dataset)
     assert 'time' not in result.dims
     assert dataset.crs == result.crs
 
@@ -259,7 +259,7 @@ def test_medoid_statistic(dataset, stat_class):
     stat = stat_class()
 
     result = stat.compute(dataset)
-    assert result
+    assert isinstance(result, xr.Dataset)
     assert 'time' not in result.dims
     assert dataset.crs == result.crs
 
@@ -283,7 +283,10 @@ def test_incremental_computations(dataset, xarray_func, incremental_fn):
     inc_result = compute_incrementally(dataset, proc)
     std_result = getattr(dataset, xarray_func)(dim='time')
 
-    assert inc_result == std_result
+    # NOTE: the datasets are not equal because one has a time coordinate attached
+    if 'time' in inc_result:
+        del inc_result['time']
+    xr.testing.assert_allclose(inc_result, std_result)
 
 
 @pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'SpectralMAD'),
@@ -299,4 +302,4 @@ def test_smad():
     smad = SpectralMAD()
     result = smad.compute(dataset)
 
-    assert result
+    assert isinstance(result, xr.Dataset)

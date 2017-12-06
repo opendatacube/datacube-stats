@@ -398,7 +398,9 @@ def test_input_region_single_tile():
         with open(CONFIG_FILENAME, 'w') as f:
             f.write(CONFIG_TEMPLATE)
 
-        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME])
+        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
+                                      '--output-location', Path(tmpdir).absolute()])
+
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
         assert result.exit_code == 0
@@ -418,7 +420,7 @@ def test_input_region_from_shapefile_item_ndwi():
         outputfile = Path(tmpdir) / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_medndwi.nc'
 
         result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
-                                      '--output-location', outputfile.absolute()])
+                                      '--output-location', Path(tmpdir).absolute()])
 
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
@@ -438,7 +440,7 @@ def test_input_region_from_shapefile_item_std():
         outputfile = Path(tmpdir) / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_STD.nc'
 
         result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
-                                      '--output-location', outputfile.absolute()])
+                                      '--output-location', Path(tmpdir).absolute()])
 
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
@@ -459,7 +461,7 @@ def test_input_region_from_shapefile_dry():
         outputfile = Path(tmpdir) / 'GW_DRY_3_1990_2008.nc'
 
         result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
-                                      '--output-location', outputfile.absolute()])
+                                      '--output-location', Path(tmpdir).absolute()])
 
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
@@ -480,7 +482,7 @@ def test_input_region_from_shapefile_wet():
         outputfile = Path(tmpdir) / 'GW_WET_3_1990_2008.nc'
 
         result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
-                                      '--output-location', outputfile.absolute()])
+                                      '--output-location', Path(tmpdir).absolute()])
 
         assert 'error' not in result.output.lower()
         assert 'exception' not in result.output.lower()
