@@ -8,6 +8,8 @@ import functools
 import cloudpickle
 import numpy as np
 import xarray
+import click
+
 from datacube.api.query import Query
 
 from datacube.storage.masking import mask_invalid_data, create_mask_value
@@ -422,3 +424,23 @@ def _find_periods_with_data(index, product_names, period_duration='1 day',
 
     for time_range in sorted(valid_dates):
         yield time_range.begin, time_range.end
+
+
+class Slice(click.ParamType):
+    name = 'slice'
+
+    def convert(self, value, param, ctx):
+        if value is None:
+            return None
+
+        try:
+            words = [None if word == '' else int(word)
+                     for word in value.split(':')]
+
+            if len(words) > 3:
+                raise ValueError
+
+            return slice(*words)
+
+        except ValueError:
+            self.fail('Invalid Python slice')

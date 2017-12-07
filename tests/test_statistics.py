@@ -153,8 +153,8 @@ def ordered_dates(num):
 @st.composite
 def dataset_shape(draw):
     crs = draw(DatacubeCRSStrategy)
-    height = draw(st.integers(10, 200))
-    width = draw(st.integers(10, 200))
+    height = draw(st.integers(10, 20))
+    width = draw(st.integers(10, 20))
     ntimes = draw(st.integers(1, 10))
     times = draw(ordered_dates(ntimes))
     return crs, height, width, times

@@ -9,6 +9,7 @@ from __future__ import absolute_import, print_function
 import copy
 import logging
 from functools import partial
+from itertools import islice
 from textwrap import dedent
 from pathlib import Path
 from datetime import datetime
@@ -38,7 +39,7 @@ from datacube_stats.utils.dates import date_sequence
 from digitalearthau.qsub import with_qsub_runner
 from digitalearthau.runners.model import TaskDescription, DefaultJobParameters
 from .utils.timer import MultiTimer, wrap_in_timer
-from .utils import sorted_interleave
+from .utils import sorted_interleave, Slice
 from .tasks import select_task_generator
 from .schema import stats_schema
 
@@ -96,6 +97,7 @@ def gather_tile_indexes(tile_index, tile_index_file):
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
 @click.command(name='datacube-stats')
 @click.argument('stats_config_file',
                 type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
@@ -109,6 +111,10 @@ def gather_tile_indexes(tile_index, tile_index_file):
               help="A file consisting of tile indexes specified as [X] [Y] per line")
 @click.option('--output-location', help='Override output location in configuration file')
 @click.option('--year', type=int, help='Override time period in configuration file')
+@click.option('--task-slice', type=Slice(),
+              help="The subset of tasks to perform, using Python's slice syntax.")
+@click.option('--batch', type=int,
+              help="The number of batch jobs to launch using PBS and the serial executor.")
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
 @ui.global_cli_options
 @with_qsub_runner()
@@ -116,8 +122,20 @@ def gather_tile_indexes(tile_index, tile_index_file):
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
 def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
-         tile_index, tile_index_file, output_location, year):
-    if qsub is not None:
+         tile_index, tile_index_file, output_location, year, task_slice, batch):
+
+    if qsub is not None and batch is not None:
+        for i in range(batch):
+            child = qsub.clone()
+            child.reset_internal_args()
+            child.add_internal_args('--task-slice', '{}::{}'.format(i, batch))
+            click.echo(repr(child))
+            exit_code, _ = child(auto=True, auto_clean=[('--batch', 1)])
+            if exit_code != 0:
+                return exit_code
+        return 0
+
+    elif qsub is not None:
         # TODO: verify config before calling qsub submit
         click.echo(repr(qsub))
         exit_code, _ = qsub(auto=True)
@@ -142,9 +160,9 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
         app.save_tasks_to_file(save_tasks)
         failed = 0
     elif load_tasks:
-        successful, failed = app.run(runner, load_tasks)
+        successful, failed = app.run(runner, task_file=load_tasks, task_slice=task_slice)
     else:
-        successful, failed = app.run(runner)
+        successful, failed = app.run(runner, task_slice=task_slice)
 
     timer.pause('main')
     _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
@@ -282,11 +300,14 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
 
-    def run(self, runner, task_file=None):
+    def run(self, runner, task_file=None, task_slice=None):
         if task_file:
             tasks = unpickle_stream(task_file)
         else:
             tasks = self.generate_tasks(self.configure_outputs())
+
+        if task_slice is not None:
+            tasks = islice(tasks, task_slice.start, task_slice.stop, task_slice.step)
 
         app_info = _get_app_metadata(self.config_file)
 
