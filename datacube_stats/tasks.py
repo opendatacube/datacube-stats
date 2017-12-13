@@ -21,7 +21,7 @@ _LOG = logging.getLogger(__name__)
 
 
 def select_task_generator(input_region, storage, filter_product):
-    if input_region is None:
+    if input_region is None or input_region == {}:
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return GriddedTaskGenerator(storage)
     elif 'feature_id' in input_region:
