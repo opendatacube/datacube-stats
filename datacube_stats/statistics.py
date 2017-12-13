@@ -314,6 +314,37 @@ class PerBandIndexStat(SimpleStatistic):
                 index_measurements + text_measurements)
 
 
+class Percentile(PerBandIndexStat):
+    def __init__(self, q):
+        if isinstance(q, list):
+            self.qs = q
+        else:
+            self.qs = [q]
+
+        super(Percentile, self).__init__(stat_func=None)
+
+    def compute(self, data):
+        def single(q):
+            stat_func = partial(xarray.Dataset.reduce, dim='time',
+                                func=argpercentile, q=q)
+
+            renamed = data.rename({var: var + '_PC_' + str(q)
+                                   for var in data.data_vars})
+
+            return PerBandIndexStat(stat_func=stat_func).compute(renamed)
+
+        return xarray.merge(single(q) for q in self.qs)
+
+    def measurements(self, input_measurements):
+        inputs = Statistic.measurements(self, input_measurements)
+
+        renamed = [{**m, 'name': m['name'] + '_PC_' + str(q)}
+                   for q in self.qs
+                   for m in inputs]
+
+        return PerBandIndexStat.measurements(self, renamed)
+
+
 class PerPixelMetadata(object):
     __metaclass__ = abc.ABCMeta
 
@@ -405,14 +436,6 @@ class PerStatIndexStat(SimpleStatistic):
     def measurements(self, input_measurements):
         metadata_variables = [metadata_producer.measurement() for metadata_producer in self._metadata_producers]
         return super(PerStatIndexStat, self).measurements(input_measurements) + metadata_variables
-
-
-def percentile_stat(q):
-    return PerBandIndexStat(  # pylint: disable=redundant-keyword-arg
-        stat_func=partial(getattr(xarray.Dataset, 'reduce'),
-                          dim='time',
-                          func=argpercentile,
-                          q=q))
 
 
 class PercentileNoProv(Statistic):
@@ -680,7 +703,7 @@ class MaskMultiCounter(Statistic):
 
 STATS = {
     'simple': ReducingXarrayStatistic,
-    'percentile': percentile_stat,
+    'percentile': Percentile,
     'percentile_no_prov': PercentileNoProv,
     'medoid': Medoid,
     'medoid_no_prov': MedoidNoProv,
