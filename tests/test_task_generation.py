@@ -1,4 +1,5 @@
 from mock import MagicMock
+from pandas._libs import json
 
 from datacube.utils.geometry import Geometry, CRS
 from datacube_stats.tasks import NonGriddedTaskGenerator, ArbitraryTileMaker, GriddedTaskGenerator, \
@@ -81,11 +82,11 @@ def test_non_gridded_task_generation(mock_index):
     tasks = list(tasks)
     assert len(tasks) == 1
 
-    tile = task.sources[0].data
+    tile = tasks[0].sources[0]['data']
     assert tile.dims == ('time', 'latitude', 'longitude')
     assert tile.geobox.width == 15
     assert tile.geobox.height == 10
-    assert len(tile.sources.time) == 0
+    assert len(tile.sources.time) == 1
 
 
 def xtest_arbitrary_tile_maker_with_sources():
@@ -109,10 +110,16 @@ def xtest_arbitrary_tile_maker_with_sources():
     assert tile.geobox.height == 10
     assert len(tile.sources.time) == 2
 
-TEST_GEOJSON = '''{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[145,-34.4],[146,-34.4],[146,-34.1],[145,-34.1],[145,-34.4]]]}}]}'''
+
+TEST_GEOJSON = {"type": "FeatureCollection",
+                "features": [{"type": "Feature", "properties": {},
+                              "geometry": {"type": "Polygon", "coordinates": [
+                                  [[145, -34.4], [146, -34.4], [146, -34.1], [145, -34.1], [145, -34.4]]]}}]}
+
+
 def test_select_gridded_task_generator_from_extenal_geojson(tmpdir):
     shapefile = tmpdir.join('myfile.geojson')
-    shapefile.write(TEST_GEOJSON)
+    shapefile.write(json.dumps(TEST_GEOJSON))
     input_region = {'from_file': str(shapefile)}
     task_generator = select_task_generator(input_region, EXAMPLE_STORAGE, None)
 
@@ -135,6 +142,13 @@ def test_gridded_task_generation_when_no_input_region():
 
 def test_gridded_task_generation_when_empty_input_region():
     input_region = {}
+    task_generator = select_task_generator(input_region, EXAMPLE_STORAGE, None)
+
+    assert isinstance(task_generator, GriddedTaskGenerator)
+
+
+def test_gridded_task_generation_when_inline_geojson():
+    input_region = {'geometry': TEST_GEOJSON['features'][0]['geometry']}
     task_generator = select_task_generator(input_region, EXAMPLE_STORAGE, None)
 
     assert isinstance(task_generator, GriddedTaskGenerator)
