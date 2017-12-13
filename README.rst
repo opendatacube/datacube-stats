@@ -296,6 +296,9 @@ Input area of interest (optional)
 Shapefile
 ~~~~~~~~~
 
+An easy way to create a Shapefile is to use `GeoJSON.io <http://geojson.io>`_, draw your region of interest,
+then from the top menu ``Save -> Shapefile`` to download the zipped Shapefile.
+
 .. code-block:: yaml
 
     input_region:
@@ -347,17 +350,41 @@ this alters whether you are specifying x/y or latitude/longitude.
 
 .. note::
 
-    This input region does not perform tile based processing, and will result in a single output for the region.
+    This method of specifying extents will output a **single large file**, **not* a set of tiles.
 
 
 Everywhere
 ~~~~~~~~~~
 
-Don't specify any ``input_region`` to process all available data.
+Don't specify an ``input_region`` to process all available data.
 
 GeoJSON
 ~~~~~~~
 
+Use http://geojson.io/ to draw out a region of interest. Copy the ``geometry`` portion of the GeoJSON and paste
+it into your configuration file under ``input_region``. An `example for Australia <http://bl.ocks.org/d/e3b2cb64c170c6e306cf272cf9a60e41>`_:
+
+.. code-block:: yaml
+
+    input_region:
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [ [
+                [ 143.26171875, -9.88227549342994 ],
+                [ 129.7265625, -9.96885060854611 ],
+                [ 125.859375, -12.554563528593656 ],
+                [ 119.35546875000001, -18.22935133838667 ],
+                [ 111.005859375, -22.350075806124853 ],
+                [ 113.818359375, -36.17335693522159 ],
+                [ 117.94921874999999, -36.52729481454623 ],
+                [ 130.78125, -33.06392419812064 ],
+                [ 135.966796875, -37.43997405227057 ],
+                [ 147.041015625, -44.59046718130883 ],
+                [ 154.248046875, -34.234512362369856 ],
+                [ 154.775390625, -24.5271348225978 ],
+                [ 143.26171875, -9.88227549342994 ]
+              ] ]
+          }
 
 Output products/which statistics
 --------------------------------
