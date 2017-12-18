@@ -4,7 +4,7 @@ Classes for performing statistical data analysis.
 from __future__ import absolute_import
 
 import abc
-from collections import OrderedDict
+from collections import OrderedDict, Sequence
 from copy import copy
 from datetime import datetime
 from functools import partial
@@ -251,7 +251,15 @@ class PerBandIndexStat(SimpleStatistic):
     along with provenance information.
 
     :param stat_func: A function which takes an xarray.Dataset and returns an xarray.Dataset of indexes
+    :param per_pixel_metadata: list of metadata (source, observed, or observed_date) to attach
     """
+    def __init__(self, stat_func=None, per_pixel_metadata=None):
+        super(PerBandIndexStat, self).__init__(stat_func=stat_func)
+        if per_pixel_metadata is None:
+            self.per_pixel_metadata = []
+        else:
+            assert isinstance(per_pixel_metadata, Sequence)
+            self.per_pixel_metadata = per_pixel_metadata
 
     def compute(self, data):
         index = super(PerBandIndexStat, self).compute(data)
@@ -261,25 +269,38 @@ class PerBandIndexStat(SimpleStatistic):
 
         data_values = index.apply(index_dataset)
 
-        def index_time(var):
-            return data.time.values[var.values]
+        all_values = [data_values]
+        metadata = self.per_pixel_metadata
 
-        time_values = index.apply(
-            index_time).rename(
-                OrderedDict((name, name + '_observed')
-                            for name in index.data_vars))
+        if 'observed' in metadata or 'observed_date' in metadata:
+            def index_time(var):
+                return data.time.values[var.values]
 
-        text_values = time_values.apply(datetime64_to_inttime).rename(
-            OrderedDict((name, name + '_date')
-                        for name in time_values.data_vars))
+            time_values = index.apply(
+                index_time).rename(
+                    OrderedDict((name, name + '_observed')
+                                for name in index.data_vars))
 
-        def index_source(var):
-            return data.source.values[var.values]
+        if 'observed' in metadata:
+            all_values += [time_values]
 
-        source_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
-                                                                     for name in index.data_vars))
+        if 'observed_date' in metadata:
+            text_values = time_values.apply(datetime64_to_inttime).rename(
+                OrderedDict((name, name + '_date')
+                            for name in time_values.data_vars))
 
-        return xarray.merge([data_values, time_values, text_values, source_values])
+            all_values += [text_values]
+
+        if 'source' in metadata:
+            def index_source(var):
+                return data.source.values[var.values]
+
+            source_values = index.apply(index_source).rename(OrderedDict((name, name + '_source')
+                                                                         for name in index.data_vars))
+
+            all_values += [source_values]
+
+        return xarray.merge(all_values)
 
     def measurements(self, input_measurements):
         index_measurements = [
@@ -310,28 +331,51 @@ class PerBandIndexStat(SimpleStatistic):
             for measurement in input_measurements
         ]
 
-        return (super(PerBandIndexStat, self).measurements(input_measurements) + date_measurements +
-                index_measurements + text_measurements)
+        all_measurements = super(PerBandIndexStat, self).measurements(input_measurements)
+
+        metadata = self.per_pixel_metadata
+
+        if 'source' in metadata:
+            all_measurements += index_measurements
+
+        if 'observed' in metadata:
+            all_measurements += date_measurements
+
+        if 'observed_date' in metadata:
+            all_measurements += text_measurements
+
+        return all_measurements
 
 
 class Percentile(PerBandIndexStat):
-    def __init__(self, q):
-        if isinstance(q, list):
+    """
+    Per-band percentiles of observations through time.
+    The different percentiles are stored in the output as separate bands.
+    The q-th percentile of a band is named `{band}_PC_{q}`.
+
+    :param q: list of percentiles to compute
+    :param per_pixel_metadata: provenance metadata to attach to each pixel
+    """
+    def __init__(self, q, per_pixel_metadata=None):
+        if isinstance(q, Sequence):
             self.qs = q
         else:
             self.qs = [q]
 
-        super(Percentile, self).__init__(stat_func=None)
+        super(Percentile, self).__init__(per_pixel_metadata=per_pixel_metadata)
 
     def compute(self, data):
         def single(q):
             stat_func = partial(xarray.Dataset.reduce, dim='time',
                                 func=argpercentile, q=q)
 
+            per_pixel_metadata = self.per_pixel_metadata
+
             renamed = data.rename({var: var + '_PC_' + str(q)
                                    for var in data.data_vars})
 
-            return PerBandIndexStat(stat_func=stat_func).compute(renamed)
+            return PerBandIndexStat(stat_func=stat_func,
+                                    per_pixel_metadata=per_pixel_metadata).compute(renamed)
 
         return xarray.merge(single(q) for q in self.qs)
 
@@ -342,7 +386,7 @@ class Percentile(PerBandIndexStat):
                    for q in self.qs
                    for m in inputs]
 
-        return PerBandIndexStat.measurements(self, renamed)
+        return PerBandIndexStat(per_pixel_metadata=self.per_pixel_metadata).measurements(renamed)
 
 
 class PerPixelMetadata(object):
