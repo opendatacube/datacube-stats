@@ -225,8 +225,8 @@ class NormalisedDifferenceStats(Statistic):
     def measurements(self, input_measurements):
         measurement_names = [m['name'] for m in input_measurements]
         if self.band1 not in measurement_names or self.band2 not in measurement_names:
-            raise StatsConfigurationError('Input measurements for %s must include "%s" and "%s"',
-                                          self.name, self.band1, self.band2)
+            raise StatsConfigurationError('Input measurements for %s must include "%s" and "%s"' %
+                                          (self.name, self.band1, self.band2))
 
         return [dict(name='_'.join([self.name, stat]), dtype='float32', nodata=-1, units='1')
                 for stat in self.stats]

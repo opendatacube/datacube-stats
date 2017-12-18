@@ -405,7 +405,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
     def __str__(self):
         return "StatsApp: sources=({}), output_driver={}, output_products=({})".format(
             ', '.join(source['product'] for source in self.sources),
-            self.ouput_driver,
+            self.output_driver,
             ', '.join(out_spec['name'] for out_spec in self.output_product_specs)
         )
 
