@@ -10,6 +10,7 @@ from datacube.utils.geometry import CRS, GeoBox, Geometry
 from datacube_stats.models import StatsTask
 from datacube_stats.utils.dates import filter_time_by_source
 from datacube_stats.utils.tide_utility import geom_from_file, get_filter_product
+from .models import DataSource
 from .utils import report_unmatched_datasets
 from .utils.query import multi_product_list_cells
 from .utils.timer import MultiTimer
@@ -117,7 +118,7 @@ class GriddedTaskGenerator(object):
         # pylint: disable=too-many-locals
         tasks = {}
 
-        for source_spec in sources_spec:
+        for source_index, source_spec in enumerate(sources_spec):
             ep_range = filter_time_by_source(source_spec.get('time'), time_period)
             if ep_range is None:
                 _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
@@ -140,11 +141,10 @@ class GriddedTaskGenerator(object):
 
             for tile, sources in data.items():
                 task = tasks.setdefault(tile, StatsTask(time_period=ep_range, tile_index=tile))
-                task.sources.append({
-                    'data': sources,
-                    'masks': [mask.get(tile) for mask in masks],
-                    'spec': source_spec,
-                })
+                task.sources.append(DataSource(data=sources,
+                                               masks=[mask.get(tile) for mask in masks],
+                                               spec=source_spec,
+                                               source_index=source_index))
 
         return tasks.values()
 
@@ -195,20 +195,19 @@ class NonGriddedTaskGenerator(object):
         """
         remove_index_list = list()
         for i, sr in enumerate(task.sources):
-            for k, v in sr.items():
-                if k == 'data':
-                    if self.filter_product.get('method') == "by_hydrological_months":
-                        all_dates = [s.strftime("%Y-%m-%d") for s in
-                                     v.sources.time.values.astype('M8[s]').astype('O').tolist()]
-                    elif self.filter_product.get('method') == "by_tide_height":
-                        all_dates = [s.strftime("%Y-%m-%dT%H:%M:%S") for s in
-                                     v.sources.time.values.astype('M8[s]').astype('O').tolist()]
-                    if bool(set(all_dates) & set(filtered_times)):
-                        v.sources = v.sources.isel(time=[i for i, item in enumerate(all_dates) if item in
-                                                         filtered_times])
-                        _LOG.info("source included %s", v.sources.time)
-                    else:
-                        remove_index_list.append(i)
+            v = sr.data
+            if self.filter_product.get('method') == "by_hydrological_months":
+                all_dates = [s.strftime("%Y-%m-%d") for s in
+                             v.sources.time.values.astype('M8[s]').astype('O').tolist()]
+            elif self.filter_product.get('method') == "by_tide_height":
+                all_dates = [s.strftime("%Y-%m-%dT%H:%M:%S") for s in
+                             v.sources.time.values.astype('M8[s]').astype('O').tolist()]
+            if bool(set(all_dates) & set(filtered_times)):
+                v.sources = v.sources.isel(time=[i for i, item in enumerate(all_dates) if item in
+                                                 filtered_times])
+                _LOG.info("source included %s", v.sources.time)
+            else:
+                remove_index_list.append(i)
         if len(remove_index_list) > 0:
             for i in remove_index_list:
                 del task.sources[i]
@@ -228,10 +227,9 @@ class NonGriddedTaskGenerator(object):
         all_source_times = list()
         if self.filter_product is not None:
             for sr in task.sources:
-                for k, v in sr.items():
-                    if k == "data":
-                        all_source_times = all_source_times + \
-                                           [dd for dd in v.sources.time.data.astype('M8[s]').astype('O').tolist()]
+                v = sr.data
+                all_source_times = (all_source_times +
+                                    [dd for dd in v.sources.time.data.astype('M8[s]').astype('O').tolist()])
             all_source_times = sorted(all_source_times)
             extra_fn_args, filtered_times = \
                 get_filter_product(self.filter_product, self.feature, all_source_times, date_ranges)
@@ -252,7 +250,7 @@ class NonGriddedTaskGenerator(object):
         for time_period in date_ranges:
             task = StatsTask(time_period=time_period)
             _LOG.info("Doing for time range for %s", time_period)
-            for source_spec in sources_spec:
+            for source_index, source_spec in enumerate(sources_spec):
                 ep_range = filter_time_by_source(source_spec.get('time'), time_period)
                 if ep_range is None:
                     _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
@@ -268,11 +266,11 @@ class NonGriddedTaskGenerator(object):
                     _LOG.info("No matched for product %s", source_spec['product'])
                     continue
 
-                task.sources.append({
-                    'data': data,
-                    'masks': masks,
-                    'spec': source_spec,
-                })
+                task.sources.append(DataSource(data=data,
+                                               masks=masks,
+                                               spec=source_spec,
+                                               source_index=source_index))
+
             _LOG.info("make tile finished")
             if task.sources:
                 # Function which takes a Tile, containing sources, and returns a new 'filtered' Tile

@@ -82,7 +82,7 @@ def test_non_gridded_task_generation(mock_index):
     tasks = list(tasks)
     assert len(tasks) == 1
 
-    tile = tasks[0].sources[0]['data']
+    tile = tasks[0].sources[0].data
     assert tile.dims == ('time', 'latitude', 'longitude')
     assert tile.geobox.width == 15
     assert tile.geobox.height == 10

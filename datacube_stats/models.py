@@ -45,21 +45,21 @@ class StatsTask(object):
 
     @property
     def geobox(self):
-        return self.sources[0]['data'].geobox
+        return self.sources[0].data.geobox
 
     @property
     def sample_tile(self):
-        return self.sources[0]['data']
+        return self.sources[0].data
 
     @property
     def time_attributes(self):
-        return self.sources[0]['data'].sources.time.attrs
+        return self.sources[0].data.sources.time.attrs
 
     def data_sources_length(self):
-        return sum(len(d['data'].sources) for d in self.sources)
+        return sum(len(d.data.sources) for d in self.sources)
 
     def source_product_names(self):
-        return ', '.join(source['data'].product.name for source in self.sources)
+        return ', '.join(source.data.product.name for source in self.sources)
 
     def keys(self):
         return self.__dict__.keys()
@@ -85,7 +85,7 @@ class DataSource(object):
       * spec - Source specification. Dictionary copy of the specification from the config file,
                containing details about which bands to load and how to apply masks.
     """
-    def __init__(self, data, masks, spec):
+    def __init__(self, data, masks, spec, source_index=None):
         #: :type: Tile
         self.data = data
 
@@ -95,6 +95,10 @@ class DataSource(object):
         #: Original Specification from configuration file
         #: :type: dict
         self.spec = spec
+
+        # index of the product for this DataSource in the list of source products
+        #: :type: int
+        self.source_index = source_index
 
     def __getitem__(self, item):
         warnings.warn("Stop using dictionary based access for DataSource")

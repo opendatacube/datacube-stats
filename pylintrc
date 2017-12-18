@@ -20,6 +20,7 @@ disable=no-self-use,
 #   file-ignored,
     wrong-import-order,
     ungrouped-imports,
+    inconsistent-return-statements, # pylint bug
     len-as-condition,
     no-else-return,
     round-builtin, # py2.7

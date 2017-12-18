@@ -261,9 +261,9 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         def merge_sources(prod):
             # Merge data sources and mask sources
             # Align the data `Tile` with potentially many mask `Tile`s along their time axis
-            all_sources = xarray.align(prod['data'].sources,
-                                       *[mask_tile.sources for mask_tile in prod['masks'] if mask_tile])
-            # TODO: The following can fail if prod['data'] and prod['masks'] have different times
+            all_sources = xarray.align(prod.data.sources,
+                                       *[mask_tile.sources for mask_tile in prod.masks if mask_tile])
+            # TODO: The following can fail if prod.data and prod.masks have different times
             # Which can happen in the case of a missing PQ Scene, where there is a scene overlap
             # ie. Two overlapped NBAR scenes, One PQ scene (the later)
             return add_all(sources_.sum() for sources_ in all_sources)
@@ -557,7 +557,7 @@ class ENVIBILOutputDriver(GeoTiffOutputDriver):
         gdal_translate_command = ['gdal_translate', '--debug', 'ON', '-of', 'ENVI', '-co', 'INTERLEAVE=BIL',
                                   str(tif_file), str(dest_file)]
 
-        _LOG.debug('Executing: ' + ' '.join(gdal_translate_command))
+        _LOG.debug('Executing: %s', ' '.join(gdal_translate_command))
 
         try:
             subprocess.check_output(gdal_translate_command, stderr=subprocess.STDOUT)

@@ -520,8 +520,8 @@ def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
     def by_time(ds):
         return ds.time.values[0]
 
-    data = [load_masked_data_lazy(sub_tile_slice, source, reverse=reverse, src_idx=idx, timer=timer)
-            for idx, source in enumerate(sources)]
+    data = [load_masked_data_lazy(sub_tile_slice, source, reverse=reverse, src_idx=source.source_index, timer=timer)
+            for source in sources]
 
     if len(data) == 1:
         return data[0]
@@ -539,7 +539,6 @@ def load_data(sub_tile_slice, sources):
     """
     datasets = [load_masked_data(sub_tile_slice, source_prod)
                 for source_prod in sources]  # list of datasets
-    datasets = _mark_source_idx(datasets)
     datasets = _remove_emptys(datasets)
     if len(datasets) == 0:
         raise EmptyChunkException()
@@ -552,13 +551,6 @@ def load_data(sub_tile_slice, sources):
 
     # sort along time dim
     return datasets.isel(time=datasets.time.argsort())  # Copies all the data again
-
-
-def _mark_source_idx(datasets):
-    for idx, dataset in enumerate(datasets):
-        if dataset is not None:
-            dataset.coords['source'] = ('time', np.repeat(idx, dataset.time.size))
-    return datasets
 
 
 def _remove_emptys(datasets):
@@ -640,16 +632,16 @@ def load_masked_tile_lazy(tile, masks,
 
 
 def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False, src_idx=None, timer=None):
-    data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
+    data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
     data_tile = source_prod['data'][sub_tile_slice]
-    data_measurements = source_prod['spec'].get('measurements')
+    data_measurements = source_prod.spec.get('measurements')
 
-    mask_nodata = source_prod['spec'].get('mask_nodata', True)
-    mask_inplace = source_prod['spec'].get('mask_inplace', False)
+    mask_nodata = source_prod.spec.get('mask_nodata', True)
+    mask_inplace = source_prod.spec.get('mask_inplace', False)
     masks = []
 
-    if 'masks' in source_prod and 'masks' in source_prod['spec']:
-        for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
+    if 'masks' in source_prod.spec:
+        for mask_spec, mask_tile in zip(source_prod.spec['masks'], source_prod.masks):
             flags = mask_spec['flags']
             mask_fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
             opts = dict(skip_broken_datasets=True,
@@ -671,14 +663,14 @@ def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False, src_idx=No
 
 
 def load_masked_data(sub_tile_slice, source_prod):
-    data_fuse_func = import_function(source_prod['spec']['fuse_func']) if 'fuse_func' in source_prod['spec'] else None
-    data = GridWorkflow.load(source_prod['data'][sub_tile_slice],
-                             measurements=source_prod['spec'].get('measurements'),
+    data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
+    data = GridWorkflow.load(source_prod.data[sub_tile_slice],
+                             measurements=source_prod.spec.get('measurements'),
                              fuse_func=data_fuse_func,
                              skip_broken_datasets=True)
 
-    mask_inplace = source_prod['spec'].get('mask_inplace', False)
-    mask_nodata = source_prod['spec'].get('mask_nodata', True)
+    mask_inplace = source_prod.spec.get('mask_inplace', False)
+    mask_nodata = source_prod.spec.get('mask_nodata', True)
 
     if mask_nodata:
         data = sensible_mask_invalid_data(data)
@@ -689,8 +681,8 @@ def load_masked_data(sub_tile_slice, source_prod):
         # Discard empty slice
         return None
 
-    if 'masks' in source_prod and 'masks' in source_prod['spec']:
-        for mask_spec, mask_tile in zip(source_prod['spec']['masks'], source_prod['masks']):
+    if 'masks' in source_prod.spec:
+        for mask_spec, mask_tile in zip(source_prod.spec['masks'], source_prod.masks):
             if mask_tile is None:
                 # Discard data due to no mask data
                 return None
@@ -705,6 +697,10 @@ def load_masked_data(sub_tile_slice, source_prod):
             else:
                 data = sensible_where(data, mask)
             del mask
+
+    if source_prod.source_index is not None:
+        data.coords['source'] = ('time', np.repeat(source_prod.source_index, data.time.size))
+
     return data
 
 
