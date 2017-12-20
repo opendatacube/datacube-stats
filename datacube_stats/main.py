@@ -633,7 +633,7 @@ def load_masked_tile_lazy(tile, masks,
 
 def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False, src_idx=None, timer=None):
     data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
-    data_tile = source_prod['data'][sub_tile_slice]
+    data_tile = source_prod.data[sub_tile_slice]
     data_measurements = source_prod.spec.get('measurements')
 
     mask_nodata = source_prod.spec.get('mask_nodata', True)
