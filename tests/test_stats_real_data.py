@@ -17,7 +17,7 @@ CONFIG_TEMPLATE = """
 ## Define inputs to perform statistics on
 sources:
   - product: ls8_nbar_albers
-    measurements: [blue, green, red, nir, swir1, swir2]
+    measurements: [blue, green]
     group_by: solar_day
     resampling: bilinear
     masks:
@@ -41,9 +41,9 @@ sources:
 ## Define whether and how to chunk over time
 date_ranges:
   start_date: 2015-01-01
-  end_date: 2015-04-01
-  stats_duration: 3m
-  step_size: 3m
+  end_date: 2015-02-01
+  stats_duration: 1m
+  step_size: 1m
 
 storage:
   driver: NetCDF CF
@@ -53,8 +53,8 @@ storage:
           x: 100000.0
           y: 100000.0
   resolution:
-          x: 25000
-          y: -25000
+          x: 250
+          y: -250
   chunking:
       x: 200
       y: 200
@@ -222,15 +222,13 @@ filter_product:
 
 """
 CONFIG_TEMPLATE_DRY = """
+
 ## Define inputs to perform statistics on
 sources:
   - product: ls5_nbar_albers
     name: dry_period
-    measurements: [blue, green, red, nir, swir1, swir2]
+    measurements: [blue, green]
     group_by: solar_day
-#    source_filter:
-#      product: ls5_level1_scene
-#      gqa_cep90: (-0.25, 0.25)
     masks:
       - product: ls5_pq_albers
         measurement: pixelquality
@@ -252,8 +250,8 @@ sources:
 
 ## Define whether and how to chunk over time
 date_ranges:
-  start_date: 1986-01-01
-  end_date: 2015-04-01
+  start_date: 1993-01-01
+  end_date: 1994-01-01
 
 
 storage:
@@ -264,8 +262,8 @@ storage:
           x: 100000.0
           y: 100000.0
   resolution:
-          x: 25000
-          y: -25000
+          x: 250
+          y: -250
   chunking:
       x: 200
       y: 200
@@ -274,7 +272,7 @@ storage:
 
 input_region:
    from_file: /g/data/u46/users/ia1511/Work/data/qgis/bur_dry_albers.shp
-   feature_id: [3]
+   feature_id: [49]
 
 location: /g/data/u46/users/ia1511/Work/data/dummy
 
@@ -293,8 +291,6 @@ filter_product:
      type: dry
 # Here is to consider these months for the following year from polygon data
      months: ['10', '11']
-
-
 """
 CONFIG_TEMPLATE_WET = """
 ## Define inputs to perform statistics on
@@ -303,11 +299,8 @@ global_attributes:
 sources:
   - product: ls5_nbar_albers
     name: wet_period
-    measurements: [blue, green, red, nir, swir1, swir2]
+    measurements: [blue, green]
     group_by: solar_day
-#    source_filter:
-#      product: ls5_level1_scene
-#      gqa_cep90: (-0.25, 0.25)
     masks:
       - product: ls5_pq_albers
         measurement: pixelquality
@@ -328,20 +321,18 @@ sources:
 
 ## Define whether and how to chunk over time
 date_ranges:
-  start_date: 1986-01-01
-  end_date: 2017-01-01
+  start_date: 2008-01-01
+  end_date: 2012-01-01
 
 ## Define output directory and file structure
 location: '/g/data/r78/tmp'
 
 input_region:
-  #from_file: /g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp
   from_file: /g/data/u46/users/ia1511/Work/data/qgis/bur_dry_albers.shp
-  feature_id: [3]
-#
+  feature_id: [49]
+
 storage:
   driver: NetCDF CF
-  #driver: Geotiff
 
   crs: EPSG:3577
   tile_size:
@@ -374,7 +365,6 @@ filter_product:
      type: wet
 # Here is to consider these months for the following year from polygon data
      months: ['10', '11']
-
 """
 
 CONFIG_FILENAME = 'config.yaml'
@@ -389,7 +379,7 @@ def sample_geometry():
 RUNNING_ON_NCI_ENV = Path('/g/data/u46').exists()
 
 
-# takes ~5 mins to complete
+# takes ~30 seconds to complete
 @pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
                    reason="This test currently expects to be run in the DEA environment on NCI.")
 def test_input_region_single_tile():
@@ -449,7 +439,7 @@ def test_input_region_from_shapefile_item_std():
         assert outputfile.exists()
 
 
-# takes ~10 mins to complete
+# takes ~1 mins to complete
 @pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
                    reason="This test currently expects to be run in the DEA environment on NCI.")
 def test_input_region_from_shapefile_dry():
@@ -458,7 +448,7 @@ def test_input_region_from_shapefile_dry():
         with open(CONFIG_FILENAME, 'w') as f:
             f.write(CONFIG_TEMPLATE_DRY)
 
-        outputfile = Path(tmpdir) / 'GW_DRY_3_1990_2008.nc'
+        outputfile = Path(tmpdir) / 'GW_DRY_49_1991_1992.nc'
 
         result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
                                       '--output-location', Path(tmpdir).absolute()])
@@ -470,7 +460,7 @@ def test_input_region_from_shapefile_dry():
         assert outputfile.exists()
 
 
-# takes ~15 mins to complete
+# takes ~2 mins to complete
 @pytest.mark.xfail(not RUNNING_ON_NCI_ENV,
                    reason="This test currently expects to be run in the DEA environment on NCI.")
 def test_input_region_from_shapefile_wet():
@@ -479,7 +469,7 @@ def test_input_region_from_shapefile_wet():
         with open(CONFIG_FILENAME, 'w') as f:
             f.write(CONFIG_TEMPLATE_WET)
 
-        outputfile = Path(tmpdir) / 'GW_WET_3_1990_2008.nc'
+        outputfile = Path(tmpdir) / 'GW_WET_49_2007_2010.nc'
 
         result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
                                       '--output-location', Path(tmpdir).absolute()])

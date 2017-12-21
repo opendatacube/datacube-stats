@@ -3,6 +3,8 @@ import statistics
 from datetime import timedelta, datetime
 from operator import itemgetter
 
+from datacube.utils.geometry import CRS, Geometry
+
 from datacube_stats.statistics import StatsConfigurationError
 from datacube_stats.utils.dates import get_hydrological_years
 
@@ -18,13 +20,11 @@ _LOG = logging.getLogger('tide_utility')
 
 def geom_from_file(filename, feature_id):
     """
-    Return the geom for a feature id
-    :param filename: passed from input_region from_file parameter
-    :param feature_id: Currently supports a single element feature id from a list
-    :return:  boundary polygon or none
+    The geometry of a feature
+    :param filename: name of shape file
+    :param feature_id: the id of the wanted feature
     """
     import fiona
-    from datacube.utils.geometry import CRS, Geometry
 
     with fiona.open(filename) as input_region:
         for feature in input_region:
@@ -33,21 +33,6 @@ def geom_from_file(filename, feature_id):
                 crs = CRS(input_region.crs_wkt)
                 return feature['properties'], geom, input_region.crs_wkt, Geometry(geom, crs)
     _LOG.info("No geometry found")
-    try:
-        raise ValueError
-    except ValueError as exp:
-        _LOG.info("No geometry found ")
-
-
-class FilterDerivedProducts(object):
-    """
-    Setting Feature id and method
-    Filtering all derived products depending on methods
-    """
-
-    def __init__(self, feature_id, method):
-        self.feature_id = feature_id
-        self.method = method
 
 
 class Item(object):
@@ -90,13 +75,13 @@ class DryWet(object):
         return {k: v for k, v in feature.items() if sub_type in k.upper()}
 
 
-def load_tide_model(all_dates, ln, la):
+def load_tide_model(all_dates, lon, lat):
     """
     Load otps module and pass a list of tide information
 
     :param all_dates: Input a list of dates
-    :param ln: model longitude
-    :param la: model latitude
+    :param lon: model longitude
+    :param lat: model latitude
     :return: a list of tides
     """
     try:
@@ -107,13 +92,13 @@ def load_tide_model(all_dates, ln, la):
 
     tp = list()
     for dt in all_dates:
-        tp.append(TimePoint(ln, la, dt))
+        tp.append(TimePoint(lon, lat, dt))
     # Calling this routine to get the tide object for each timepoint
     tides = predict_tide(tp)
     return tides
 
 
-def range_tidal_data(all_dates, feature_id, tide_range, per, ln, la):
+def range_tidal_data(all_dates, feature_id, tide_range, per, lon, lat):
     """
     This routine is used for ITEM product and it returns a list of dates corresponding to the range interval.
 
@@ -121,12 +106,12 @@ def range_tidal_data(all_dates, feature_id, tide_range, per, ln, la):
     :param feature_id: It is used to have a log information
     :param tide_range: It supports 10 percentage. Can be changed through config file
     :param per: tide percentage to use
-    :param ln: model centroid longitude value from polygon feature
-    :param la: model centroid latitude value from polygon feature
+    :param lon: model centroid longitude value from polygon feature
+    :param lat: model centroid latitude value from polygon feature
     :return:  a list of filtered time
     """
 
-    tides = load_tide_model(all_dates, ln, la)
+    tides = load_tide_model(all_dates, lon, lat)
     if len(tides) == 0:
         raise ValueError("No tide height observed from OTPS model within lat/lon range")
     tide_dict = dict()
@@ -164,16 +149,14 @@ def input_range_data(per_range, tide_list, feature_id, per):
                        if x[1] >= inc_cnt and x[1] <= inc]
         median = float("%.3f" % (statistics.median([x[1] for x in range_value])))
         if per == (i + 1) * 10:
-            _LOG.info("MEDIAN INFO " + str(feature_id) + "," + str(per) + "," + str(inc_cnt) + "," +
-                      str(inc) + "," + str(len(range_value)) + "," +
-                      str(range_value[0][1]) + "," + str(range_value[-1][1]) + "," + str(median))
+            _LOG.info("MEDIAN INFO %s", ",".join(str(x) for x in [feature_id, per, inc_cnt, inc, len(range_value),
+                                                                  range_value[0][1], range_value[-1][1], median]))
             # return the date part only
-            range_value = [rv[0] for rv in range_value]
-            return range_value
+            return [rv[0] for rv in range_value]
     return []
 
 
-def extract_otps_computed_data(dates, date_ranges, per, ln, la):
+def extract_otps_computed_data(dates, date_ranges, per, lon, lat):
     """
     This function is used for composite products and also for sub class extraction
     like ebb/flow/peak high/low on the basis of 15 minutes before and after
@@ -181,28 +164,25 @@ def extract_otps_computed_data(dates, date_ranges, per, ln, la):
     :param dates: a list of source dates for valid pq datasets
     :param date_ranges: The date range passed
     :param per: tide percentage
-    :param ln: longitude
-    :param la: latitude
+    :param lon: longitude
+    :param lat: latitude
     :return:
     """
-    tide_dict = dict()
-    new_date_list = list()
+    def format_date(tt):
+        return datetime.strptime(tt.timepoint.timestamp.isoformat()[0:19], "%Y-%m-%dT%H:%M:%S")
+
     # add 15 min before and after to decide the type of tide for each dates
-    for dt in dates:
-        new_date_list.append(dt - timedelta(minutes=15))
-        new_date_list.append(dt)
-        new_date_list.append(dt + timedelta(minutes=15))
-    tides = load_tide_model(new_date_list, ln, la)
+    new_date_list = [x for dt in dates for x in [dt - timedelta(minutes=15), dt, dt + timedelta(minutes=15)]]
+    tides = load_tide_model(new_date_list, lon, lat)
     if len(tides) == 0:
         raise ValueError("No tide height observed from OTPS model within lat/lon range")
     # collect in ebb/flow list
-    for tt in tides:
-        tide_dict[datetime.strptime(tt.timepoint.timestamp.isoformat()[0:19], "%Y-%m-%dT%H:%M:%S")] = tt.tide_m
+    tide_dict = {format_date(tt): tt.time_m for tt in tides}
     # Here sort data now as predict_tide can return out of order tide list and
     # send now a list of sorted tidal height, sorted tidal date data, percentage and input date range
-    return list_time_otps_data(sorted(sorted(tide_dict.items(), key=lambda x: x[0])[1::3],
+    return list_time_otps_data(sorted(sorted(tide_dict.items(), key=itemgetter(0))[1::3],
                                       key=itemgetter(1)),
-                               sorted(tide_dict.items(), key=lambda x: x[0]),
+                               sorted(tide_dict.items(), key=itemgetter(0)),
                                per, date_ranges)
 
 
@@ -257,9 +237,8 @@ def low_high_ebb_flow(lmr, hlr, perc_adj, tide_data, date_ranges, ebb_flow_data)
     :param ebb_flow_data: input ebb flow data
     :return: individual list of low, high and ebb flow data
     """
-    list_low = list()
-    lowest_tide_dt = date_ranges[0][0]
-    highest_tide_dt = date_ranges[0][1]
+    list_low = []
+    lowest_tide_dt, highest_tide_dt = date_ranges[0]
 
     # doing for middle percentage to extract list of dates or for any percentage as per input.
     if perc_adj == 50:
@@ -286,11 +265,9 @@ def filter_sub_class(sub_class, list_low, list_high, ebb_flow):
     :param ebb_flow: a list of low or high ebb flow details
     :return:
     """
-    if list_low is not None:
-        key = set(e[0] for e in ebb_flow if e[1] == sub_class)
-        list_low = [ff for ff in list_low if ff[0] in key]
     key = set(e[0] for e in ebb_flow if e[1] == sub_class)
-    list_high = [ff for ff in list_high if ff[0] in key]
+    list_low = [f for f in list_low if f[0] in key]
+    list_high = [f for f in list_high if f[0] in key]
     return list_low, list_high
 
 
@@ -309,17 +286,17 @@ def get_ebb_flow(filter_product, list_low, list_high, ebb_flow):
               filter_product['args']['sub_class'], list_low, list_high)
     filtered_times = list_low if filter_product['args']['type'] == 'low' else list_high
     key = set(e[0] for e in filtered_times)
-    ebb_flow_details = [ff for ff in ebb_flow if ff[0] in key]
+    ebb_flow_details = [f for f in ebb_flow if f[0] in key]
     # dynamically capture ebb flow information for metadata purpose
     filter_product['args']['ebb_flow'] = {'ebb_flow': ebb_flow_details}
-    _LOG.info('\nCreated EBB FLOW for feature length %d,  \t%s',
+    _LOG.info('Created EBB FLOW for feature length %d, %s',
               len(ebb_flow_details), str(ebb_flow_details))
     return filtered_times
 
 
-def get_poly_fl_name(feature_id, tide_percent=None, lon=None, lat=None, years=None, sub_class=None):
+def get_poly_file_name(feature_id, tide_percent=None, lon=None, lat=None, years=None, sub_class=None):
     """
-      Returns poly index to be used in Statstask
+    Returns poly index to be used in StatsTask
     :param feature_id: Feature id
     :param tide_percent: tide percentage
     :param lon: model longitude for item/hltc
@@ -347,25 +324,27 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
     :param date_ranges: global date range
     :return: poly file name and filtered dates/times
     """
-    der_prod = FilterDerivedProducts(feature['ID'], filter_product.get('method'))
-    if der_prod.method == 'by_hydrological_months':
+    method = filter_product.get('method')
+    feature_id = feature['ID']
+
+    if method == 'by_hydrological_months':
         # Initialising DryWet class
         prod = DryWet(filter_product['args']['type'], filter_product['args'].get('months'))
         years = prod.get_years(feature)
-        poly_fl_name = get_poly_fl_name(feature_id=der_prod.feature_id, years=years)
+        poly_fl_name = get_poly_file_name(feature_id=feature_id, years=years)
         # filtered_times = get_hydrological_years(filter_product['year'], filter_product['args'].get('months'))
         filtered_times = get_hydrological_years(years, prod.months)
-    elif der_prod.method == 'by_tide_height':
+    elif method == 'by_tide_height':
         # get all relevant date time lists
-        if filter_product['args'].get('tide_range'):
+        if 'tide_range' in filter_product['args']:
             # It is ITEM product, Initialise Item class first
             prod = Item(tide_percent=filter_product['args']['tide_percent'], lon=feature['lon'], lat=feature['lat'],
                         tide_range=filter_product['args']['tide_range'])
 
-            filtered_times = range_tidal_data(all_dates, der_prod.feature_id, prod.tide_range,
+            filtered_times = range_tidal_data(all_dates, feature_id, prod.tide_range,
                                               prod.tide_percent, prod.lon, prod.lat)
-            poly_fl_name = get_poly_fl_name(feature_id=der_prod.feature_id, tide_percent=prod.tide_percent,
-                                            lon=prod.lon, lat=prod.lat)
+            poly_fl_name = get_poly_file_name(feature_id=feature_id, tide_percent=prod.tide_percent,
+                                              lon=prod.lon, lat=prod.lat)
         else:
             # This is for low/high composite. Initialising Hltc class
             prod = Hltc(tide_percent=filter_product['args']['tide_percent'], lon=feature['lon'], lat=feature['lat'],
@@ -376,14 +355,14 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
             # filter out dates as per sub classification of ebb flow
             if prod.sub_class:
                 filtered_times = get_ebb_flow(filter_product, list_low, list_high, ebb_flow)
-                poly_fl_name = get_poly_fl_name(feature_id=der_prod.feature_id, tide_percent=prod.tide_percent,
-                                                lon=prod.lon, lat=prod.lat, sub_class=prod.sub_class)
+                poly_fl_name = get_poly_file_name(feature_id=feature_id, tide_percent=prod.tide_percent,
+                                                  lon=prod.lon, lat=prod.lat, sub_class=prod.sub_class)
             else:
-                poly_fl_name = get_poly_fl_name(feature_id=der_prod.feature_id, tide_percent=prod.tide_percent,
-                                                lon=prod.lon, lat=prod.lat, sub_class=None)
+                poly_fl_name = get_poly_file_name(feature_id=feature_id, tide_percent=prod.tide_percent,
+                                                  lon=prod.lon, lat=prod.lat, sub_class=None)
 
             _LOG.info('\n DATE LIST for feature %d length %d, time period: %s \t%s',
-                      der_prod.feature_id, len(filtered_times), date_ranges, str(filtered_times))
+                      feature_id, len(filtered_times), date_ranges, str(filtered_times))
             filtered_times = [ft[0] for ft in filtered_times]
     else:
         _LOG.info("No filter values found ")

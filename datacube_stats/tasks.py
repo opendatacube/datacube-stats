@@ -202,7 +202,7 @@ class NonGriddedTaskGenerator(object):
             elif self.filter_product.get('method') == "by_tide_height":
                 all_dates = [s.strftime("%Y-%m-%dT%H:%M:%S") for s in
                              v.sources.time.values.astype('M8[s]').astype('O').tolist()]
-            if bool(set(all_dates) & set(filtered_times)):
+            if set(all_dates) & set(filtered_times):
                 v.sources = v.sources.isel(time=[i for i, item in enumerate(all_dates) if item in
                                                  filtered_times])
                 _LOG.info("source included %s", v.sources.time)
@@ -249,7 +249,8 @@ class NonGriddedTaskGenerator(object):
 
         for time_period in date_ranges:
             task = StatsTask(time_period=time_period)
-            _LOG.info("Doing for time range for %s", time_period)
+            _LOG.info('Making output product tasks for time period: %s', time_period)
+
             for source_index, source_spec in enumerate(sources_spec):
                 ep_range = filter_time_by_source(source_spec.get('time'), time_period)
                 if ep_range is None:

@@ -225,12 +225,6 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         self.global_attributes = None
         self.var_attributes = None
 
-        #: A function to process the result of a complated task
-        #: Takes a single argument of the task result
-        self.process_completed = None
-
-        self.queue_size = 50
-
     @classmethod
     def from_configuration_file(cls, config, index=None, tile_indexes=None, output_location=None, year=None):
         """
@@ -267,7 +261,6 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         stats_app.output_driver = _prepare_output_driver(stats_app.storage)
         stats_app.global_attributes = config.get('global_attributes', {})
         stats_app.var_attributes = config.get('var_attributes', {})
-        stats_app.process_completed = None
 
         return stats_app
 
@@ -280,7 +273,6 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         assert callable(self.output_driver)
         assert hasattr(self.output_driver, 'open_output_files')
         assert hasattr(self.output_driver, 'write_data')
-        assert self.process_completed is None or callable(self.process_completed)
 
     def _check_consistent_measurements(self):
         """Part of configuration validation"""
@@ -330,7 +322,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                                                                     source_products=[],
                                                                     output_products=[]))
 
-        result = runner(task_desc, tasks, task_runner, self.process_completed)
+        result = runner(task_desc, tasks, task_runner)
 
         _LOG.debug('Stopping runner.')
         runner.stop()
