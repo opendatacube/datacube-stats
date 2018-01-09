@@ -105,13 +105,20 @@ date_ranges_schema = Schema({
     'type': Any('simple', 'find_daily_data'),
 })
 
+computation_schema = Schema({
+    Inclusive('x', 'proj'): Any(float, int),
+    Inclusive('y', 'proj'): Any(float, int),
+    Inclusive('latitude', 'geo'): Any(float, int),
+    Inclusive('longitude', 'geo'): Any(float, int)
+})
+
 stats_schema = Schema({
     'date_ranges': date_ranges_schema,
     'location': str,
     'sources': All([source_schema], Length(min=1)),
     'storage': storage_schema,
     'output_products': All([output_product_schema], Length(min=1)),
-    Optional('computation'): {'chunking': dict},
+    Optional('computation'): {'chunking': computation_schema},
     Optional('input_region'): Any(single_tile, from_file, geometry, boundary_coords),
     Optional('global_attributes'): dict,
     Optional('var_attributes'): {str: {str: str}},
