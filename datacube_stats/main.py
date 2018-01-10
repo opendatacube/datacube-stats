@@ -13,6 +13,7 @@ from itertools import islice
 from textwrap import dedent
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, Iterable, Iterator, Tuple
 
 import click
 import numpy as np
@@ -28,7 +29,7 @@ from datacube.api import make_mask, GridWorkflow
 from datacube.ui import click as ui
 from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function
-from datacube.utils.geometry import CRS, Geometry
+from datacube.utils.geometry import CRS, Geometry, GeoBox
 from datacube_stats.models import OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
     NoSuchOutputDriver
@@ -42,6 +43,8 @@ from .utils.timer import MultiTimer, wrap_in_timer
 from .utils import sorted_interleave, Slice
 from .tasks import select_task_generator
 from .schema import stats_schema
+from .models import StatsTask, DataSource
+from .output_drivers import OutputDriver
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -338,7 +341,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         num_saved = pickle_stream(tasks, filename)
         _LOG.debug('Successfully saved %s tasks to %s.', num_saved, filename)
 
-    def generate_tasks(self, output_products):
+    def generate_tasks(self, output_products: Dict[str, OutputProduct]) -> Iterator[StatsTask]:
         """
         Generate a sequence of `StatsTask` definitions.
 
@@ -366,7 +369,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
             task.is_iterative = is_iterative
             yield task
 
-    def configure_outputs(self, metadata_type='eo'):
+    def configure_outputs(self, metadata_type='eo') -> Dict[str, OutputProduct]:
         """
         Return dict mapping Output Product Name<->Output Product
 
@@ -409,7 +412,8 @@ class StatsProcessingException(Exception):
     pass
 
 
-def geometry_mask(geoms, geobox, all_touched=False, invert=False):
+def geometry_mask(geoms: Iterable[Geometry], geobox: GeoBox,
+                  all_touched=False, invert=False) -> np.ndarray:
     return rasterio.features.geometry_mask([geom.to_crs(geobox.crs) for geom in geoms],
                                            out_shape=geobox.shape,
                                            transform=geobox.affine,
@@ -417,7 +421,7 @@ def geometry_mask(geoms, geobox, all_touched=False, invert=False):
                                            invert=invert)
 
 
-def execute_task(task, output_driver, chunking):
+def execute_task(task: StatsTask, output_driver, chunking) -> StatsTask:
     """
     Load data, run the statistical operations and write results out to the filesystem.
 
@@ -438,7 +442,7 @@ def execute_task(task, output_driver, chunking):
             for sub_tile_slice in tile_iter(task.sample_tile, chunking):
                 process_chunk(output_files, sub_tile_slice, task, timer)
     except OutputFileAlreadyExists as e:
-        _LOG.warning(e)
+        _LOG.warning(str(e))
     except Exception as e:
         _LOG.error("Error processing task: %s", task)
         raise StatsProcessingException("Error processing task: %s" % task)
@@ -449,7 +453,10 @@ def execute_task(task, output_driver, chunking):
     return task
 
 
-def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
+def load_process_save_chunk_iteratively(output_files: OutputDriver,
+                                        chunk: Tuple[slice, slice, slice],
+                                        task: StatsTask,
+                                        timer: MultiTimer):
     procs = [(stat.make_iterative_proc(), name, stat) for name, stat in task.output_products.items()]
 
     def update(ds):
@@ -469,7 +476,9 @@ def load_process_save_chunk_iteratively(output_files, chunk, task, timer):
             save(name, cast_back(proc(), stat.data_measurements))
 
 
-def load_process_save_chunk(output_files, chunk, task, timer):
+def load_process_save_chunk(output_files: OutputDriver,
+                            chunk: Tuple[slice, slice, slice],
+                            task: StatsTask, timer: MultiTimer):
     try:
         with timer.time('loading_data'):
             data = load_data(chunk, task.sources)
@@ -521,7 +530,8 @@ def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
     return sorted_interleave(*data, key=by_time, reverse=reverse)
 
 
-def load_data(sub_tile_slice, sources):
+def load_data(sub_tile_slice: Tuple[slice, slice, slice],
+              sources: Iterable[DataSource]) -> xarray.Dataset:
     """
     Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
 
@@ -537,12 +547,12 @@ def load_data(sub_tile_slice, sources):
 
     # TODO: Add check for compatible data variable attributes
     # flags_definition between pq products is different and is silently dropped
-    datasets = xarray.concat(datasets, dim='time')  # Copies all the data
-    if len(datasets.time) == 0:
+    ds = xarray.concat(datasets, dim='time')  # Copies all the data
+    if len(ds.time) == 0:
         raise EmptyChunkException()
 
     # sort along time dim
-    return datasets.isel(time=datasets.time.argsort())  # Copies all the data again
+    return ds.isel(time=ds.time.argsort())  # Copies all the data again
 
 
 def _remove_emptys(datasets):
@@ -623,7 +633,9 @@ def load_masked_tile_lazy(tile, masks,
         yield extract(i)
 
 
-def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False, src_idx=None, timer=None):
+def load_masked_data_lazy(sub_tile_slice: Tuple[slice, slice, slice],
+                          source_prod: DataSource,
+                          reverse=False, src_idx=None, timer=None) -> xarray.Dataset:
     data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
     data_tile = source_prod.data[sub_tile_slice]
     data_measurements = source_prod.spec.get('measurements')
@@ -654,7 +666,8 @@ def load_masked_data_lazy(sub_tile_slice, source_prod, reverse=False, src_idx=No
                                  skip_broken_datasets=True)
 
 
-def load_masked_data(sub_tile_slice, source_prod):
+def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
+                     source_prod: DataSource) -> xarray.Dataset:
     data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
     data = GridWorkflow.load(source_prod.data[sub_tile_slice],
                              measurements=source_prod.spec.get('measurements'),

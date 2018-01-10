@@ -8,6 +8,7 @@ from collections import OrderedDict, Sequence
 from copy import copy
 from datetime import datetime
 from functools import partial
+from typing import Iterable, Dict, Any
 
 import numpy as np
 import xarray
@@ -34,7 +35,7 @@ class Statistic(object):
     __metaclass__ = abc.ABCMeta
 
     @abc.abstractmethod
-    def compute(self, data):
+    def compute(self, data: xarray.Dataset) -> xarray.Dataset:
         """
         Compute a statistic on the given Dataset.
 
@@ -44,7 +45,7 @@ class Statistic(object):
         :return: xarray.Dataset
         """
 
-    def measurements(self, input_measurements):
+    def measurements(self, input_measurements: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
         """
         Turn a list of input measurements into a list of output measurements.
 
@@ -59,7 +60,7 @@ class Statistic(object):
             for measurement in input_measurements]
         return output_measurements
 
-    def is_iterative(self):
+    def is_iterative(self) -> bool:
         """
         Should return True if class supports iterative computation one time slice at a time.
 
@@ -584,7 +585,7 @@ class Medoid(Statistic):
         output_data = data[select_names(self.output_measurements,
                                         list(data.data_vars))]
 
-        def reduction(var):
+        def reduction(var: xarray.DataArray) -> xarray.DataArray:
             """ Extracts data at `index` for a `var` of type `DataArray`. """
 
             def worker(var_array, axis, nodata):

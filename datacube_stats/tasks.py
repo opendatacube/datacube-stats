@@ -1,4 +1,5 @@
 import logging
+from typing import Iterator
 
 import fiona
 from datacube import Datacube
@@ -58,7 +59,7 @@ def select_task_generator(input_region, storage, filter_product):
                                        filter_product=filter_product, geopolygon=None, feature=None)
 
 
-def boundary_polygon_from_file(filename):
+def boundary_polygon_from_file(filename: str) -> Geometry:
     # TODO: This should be refactored and moved into datacube.utils.geometry
     import shapely.ops
     from shapely.geometry import shape, mapping
@@ -77,7 +78,7 @@ class GriddedTaskGenerator(object):
         self.tile_indexes = tile_indexes
         self._total_unmatched = 0
 
-    def __call__(self, index, sources_spec, date_ranges):
+    def __call__(self, index, sources_spec, date_ranges) -> Iterator[StatsTask]:
         """
         Generate the required tasks through time and across a spatial grid.
 
@@ -154,7 +155,7 @@ class GriddedTaskGenerator(object):
                          self._total_unmatched)
 
 
-def _make_grid_spec(storage):
+def _make_grid_spec(storage) -> GridSpec:
     """Make a grid spec based on a storage spec."""
     assert 'tile_size' in storage
 
@@ -237,7 +238,7 @@ class NonGriddedTaskGenerator(object):
             task = self.set_task(task, filtered_times, extra_fn_args)
         return task
 
-    def __call__(self, index, sources_spec, date_ranges):
+    def __call__(self, index, sources_spec, date_ranges) -> Iterator[StatsTask]:
         """
 
         :param index: database index
@@ -295,7 +296,7 @@ class ArbitraryTileMaker(object):
         self.input_region = input_region
         self.storage = storage
 
-    def __call__(self, product, time, group_by):
+    def __call__(self, product, time, group_by) -> Tile:
         # Do for a specific poly whose boundary is known
         output_crs = CRS(self.storage['crs'])
         filtered_item = ['geopolygon', 'lon', 'lat', 'longitude', 'latitude', 'x', 'y']

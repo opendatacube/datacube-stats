@@ -3,6 +3,10 @@ try:
     from datacube.model import Product
 except ImportError:
     from datacube.model import DatasetType as Product
+
+from datacube.utils.geometry import GeoBox
+from datacube.api.grid_workflow import Tile
+
 from datacube_stats.statistics import STATS
 import warnings
 
@@ -43,19 +47,22 @@ class StatsTask(object):
         #: Will be available as named argument when producing the output filename
         self.extra_fn_params = extra_fn_params or {}
 
+        self.output_products = {}
+        self.is_iterative = False
+
     @property
-    def geobox(self):
+    def geobox(self) -> GeoBox:
         return self.sources[0].data.geobox
 
     @property
-    def sample_tile(self):
+    def sample_tile(self) -> Tile:
         return self.sources[0].data
 
     @property
     def time_attributes(self):
         return self.sources[0].data.sources.time.attrs
 
-    def data_sources_length(self):
+    def data_sources_length(self) -> int:
         return sum(len(d.data.sources) for d in self.sources)
 
     def source_product_names(self):

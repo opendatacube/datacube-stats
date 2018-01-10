@@ -14,6 +14,7 @@ import pydash
 from collections import OrderedDict
 from functools import reduce as reduce_
 from pathlib import Path
+from typing import Iterable, Tuple, List
 
 import numpy
 import rasterio
@@ -25,6 +26,8 @@ from datacube.storage import netcdf_writer
 from datacube.storage.storage import create_netcdf_storage_unit
 from datacube.utils import unsqueeze_data_array, geometry
 from six import with_metaclass
+
+from .models import OutputProduct
 
 _LOG = logging.getLogger(__name__)
 _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
@@ -125,7 +128,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
           'dimension_order': ['time', 'y', 'x']}
     :param app_info:
     """
-    valid_extensions = []
+    valid_extensions: List[str] = []
 
     def __init__(self, task, storage, output_path, app_info=None, global_attributes=None, var_attributes=None):
         self._storage = storage
@@ -152,7 +155,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         #: dict of str to dict of str to str
         self.var_attributes = var_attributes if var_attributes is not None else {}
 
-    def close_files(self, completed_successfully):
+    def close_files(self, completed_successfully: bool) -> Iterable[Path]:
         # Turn file_handles into paths
         written_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
 
@@ -169,7 +172,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         else:
             return written_paths
 
-    def _handle_to_path(self, file_handle):
+    def _handle_to_path(self, file_handle) -> Path:
         return Path(file_handle.name)
 
     @abc.abstractmethod
@@ -177,7 +180,9 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def write_data(self, prod_name, measurement_name, tile_index, values):
+    def write_data(self, prod_name, measurement_name,
+                   tile_index: Tuple[slice, slice, slice],
+                   values: numpy.ndarray) -> None:
         if len(self._output_file_handles) <= 0:
             raise StatsOutputError('No files opened for writing.')
 
@@ -193,7 +198,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         completed_successfully = exc_type is None
         self.close_files(completed_successfully)
 
-    def _prepare_output_file(self, output_product, **kwargs):
+    def _prepare_output_file(self, output_product: OutputProduct, **kwargs) -> Path:
         """
         Format the output filename for the current task,
         make sure it is valid and doesn't already exist
@@ -223,7 +228,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         return tmp_path
 
-    def _generate_output_filename(self, output_product, **kwargs):
+    def _generate_output_filename(self, output_product: OutputProduct, **kwargs) -> Path:
         # Fill parameters from config file filename specification
         params = {}
         if self._task.tile_index is not None:
@@ -240,7 +245,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                            output_product.file_path_template.format(**params))
         return output_path
 
-    def _find_source_datasets(self, stat, uri=None):
+    def _find_source_datasets(self, stat: OutputProduct, uri: str = None) -> xarray.DataArray:
         """
         Find all the source datasets for a task
 
@@ -307,10 +312,10 @@ class NetCDFCFOutputDriver(OutputDriver):
             output_filename = self._prepare_output_file(stat)
             self._output_file_handles[prod_name] = self._create_storage_unit(stat, output_filename)
 
-    def _handle_to_path(self, file_handle):
+    def _handle_to_path(self, file_handle) -> Path:
         return Path(file_handle.filepath())
 
-    def _create_storage_unit(self, stat, output_filename):
+    def _create_storage_unit(self, stat: OutputProduct, output_filename: Path):
         all_measurement_defns = list(stat.product.measurements.values())
 
         datasets = self._find_source_datasets(stat, uri=output_filename.as_uri())
@@ -326,7 +331,7 @@ class NetCDFCFOutputDriver(OutputDriver):
         nco['dataset'][:] = netcdf_writer.netcdfy_data(datasets.values)
         return nco
 
-    def _create_netcdf_var_params(self, stat):
+    def _create_netcdf_var_params(self, stat: OutputProduct):
         def build_attrs(name, attrs):
             return pydash.assign(dict(long_name=name,
                                       coverage_content_type='modelResult'),  # defaults
@@ -452,7 +457,7 @@ class GeoTiffOutputDriver(OutputDriver):
                     self._set_band_metadata(dest_fh, measurement_name, band=band)
                 self._output_file_handles[prod_name] = dest_fh
 
-    def write_yaml(self, stat, tmp_filename):
+    def write_yaml(self, stat: OutputProduct, tmp_filename: Path):
         output_filename = self.output_filename_tmpname[tmp_filename]
 
         datasets = self._find_source_datasets(stat, uri=output_filename.as_uri())

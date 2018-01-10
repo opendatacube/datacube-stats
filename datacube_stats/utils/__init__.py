@@ -4,6 +4,7 @@ Useful utilities used in Stats
 import itertools
 import pickle
 import functools
+from typing import Dict, Iterator, Tuple, Iterable, Any
 
 import cloudpickle
 import numpy as np
@@ -14,9 +15,10 @@ from datacube.api.query import Query
 
 from datacube.storage.masking import mask_invalid_data, create_mask_value
 from .dates import filter_time_by_source, datetime64_to_inttime
+from datacube.api import Tile
 
 
-def tile_iter(tile, chunk_size):
+def tile_iter(tile: Tile, chunk_size: Dict[str, int]) -> Iterator[Tuple[None, slice, slice]]:
     """
     Return the sequence of chunks to split a tile into computable regions.
 
@@ -81,7 +83,7 @@ def da_is_float(da):
     return da.dtype.kind == 'f'
 
 
-def ds_all_float(ds):
+def ds_all_float(ds: xarray.Dataset):
     """
     Check if dataset contains only floating point arrays
     """
@@ -193,7 +195,7 @@ def _convert_to_floats(data):
     return data.apply(to_float, keep_attrs=True)
 
 
-def cast_back(data, measurements):
+def cast_back(data: xarray.Dataset, measurements: Iterable[Dict[str, Any]]) -> xarray.Dataset:
     """
     Cast calculated statistic `Dataset` into intended data types.
     When going through intermediate representation as floats,

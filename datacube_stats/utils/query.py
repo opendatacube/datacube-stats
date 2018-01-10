@@ -1,4 +1,5 @@
 from functools import reduce
+
 from datacube.api.query import query_group_by
 from datacube.api import GridWorkflow
 
@@ -58,7 +59,8 @@ def common_obs_per_cell(*tile_obs):
             [pick_unmatched(o) for o in tile_obs])
 
 
-def multi_product_list_cells(products, gw, cell_index=None, product_query=None, **query):
+def multi_product_list_cells(products,
+                             gw, cell_index=None, product_query=None, **query):
     """This is similar to GridWorkflow.list_cells but generalised to multiple
     products. Only datasets that are available in all of the products are
     reported.
