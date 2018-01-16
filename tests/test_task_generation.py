@@ -74,6 +74,7 @@ def test_non_gridded_task_generation(mock_index):
         'latitude': [-41, -42],
         'longitude': [137, 138.5]
     }
+    input_region = [input_region]
     non_gridded_task_generator = NonGriddedTaskGenerator(input_region, filter_product=None, geopolygon=None,
                                                          feature=None, storage=EXAMPLE_STORAGE)
 

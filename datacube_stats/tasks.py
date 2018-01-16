@@ -26,11 +26,13 @@ def select_task_generator(input_region, storage, filter_product):
     if input_region is None or input_region == {}:
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return GriddedTaskGenerator(storage)
+
     elif 'feature_id' in input_region:
         _LOG.info('Generating date filtered polygon images.')
         feature, geom_feat, crs_txt, geometry = geom_from_file(input_region['from_file'], input_region['feature_id'])
         input_region['geom_feat'] = geom_feat
         input_region['crs_txt'] = crs_txt
+        input_region = [input_region]
         return NonGriddedTaskGenerator(input_region=input_region, filter_product=filter_product,
                                        geopolygon=geometry, feature=feature, storage=storage)
 
@@ -49,14 +51,35 @@ def select_task_generator(input_region, storage, filter_product):
 
     elif 'from_file' in input_region:
         _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])
-
-        geometry = boundary_polygon_from_file(input_region['from_file'])
-        return GriddedTaskGenerator(storage, geopolygon=geometry)
-
+        feature, geom_feat, crs_txt, geometry = geom_from_file(input_region['from_file'], None)
+        _LOG.info('emma/feature 0: %s', feature[0])
+        if 'ID' not in feature[0]:
+            geometry = boundary_geo_polygon(geometry, CRS(crs_txt))
+            return GriddedTaskGenerator(storage, geopolygon=geometry)
+        else:
+            input_region_list = []
+            input_region['crs_txt'] = crs_txt
+            for a_feature, a_geo in zip(feature, geom_feat):
+                input_region['geom_feat'] = a_geo
+                input_region['feature_id'] = a_feature['ID']
+                input_region_list.append(input_region.copy())
+            return NonGriddedTaskGenerator(input_region=input_region_list,
+                                           filter_product=filter_product, geopolygon=geom_feat,
+                                           feature=feature, storage=storage)
     else:
         _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
+        input_region = [input_region]
         return NonGriddedTaskGenerator(input_region=input_region, storage=storage,
                                        filter_product=filter_product, geopolygon=None, feature=None)
+
+
+def boundary_geo_polygon(geometry, crs):
+    import shapely.ops
+    from shapely.geometry import shape, mapping
+    joined = shapely.ops.unary_union(list(shape(geom) for geom in geometry))
+    final = joined.convex_hull
+    boundary_polygon = Geometry(mapping(final), crs)
+    return boundary_polygon
 
 
 def boundary_polygon_from_file(filename: str) -> Geometry:
@@ -186,7 +209,7 @@ class NonGriddedTaskGenerator(object):
         self.feature = feature
         self.storage = storage
 
-    def set_task(self, task, filtered_times, extra_fn_args):
+    def set_task(self, task, input_region, filtered_times, extra_fn_args):
         """
         Set up task after applying filtered date/times
         :param task:
@@ -212,12 +235,12 @@ class NonGriddedTaskGenerator(object):
         if len(remove_index_list) > 0:
             for i in remove_index_list:
                 del task.sources[i]
-        task.geom_feat = self.input_region['geom_feat']
-        task.crs_txt = self.input_region['crs_txt']
+        task.geom_feat = input_region['geom_feat']
+        task.crs_txt = input_region['crs_txt']
         task.tile_index = extra_fn_args
         return task
 
-    def filter_task(self, task, date_ranges):
+    def filter_task(self, task, input_region, date_ranges):
 
         """
         Filters dates and added to task geometry feature, crs txt and extra file name details
@@ -226,16 +249,21 @@ class NonGriddedTaskGenerator(object):
         :return: new task in case of filtering
         """
         all_source_times = list()
-        if self.filter_product is not None:
+        if self.filter_product is not None and self.filter_product != {}:
             for sr in task.sources:
                 v = sr.data
                 all_source_times = (all_source_times +
                                     [dd for dd in v.sources.time.data.astype('M8[s]').astype('O').tolist()])
             all_source_times = sorted(all_source_times)
             extra_fn_args, filtered_times = \
-                get_filter_product(self.filter_product, self.feature, all_source_times, date_ranges)
+                get_filter_product(self.filter_product, self.feature[0], all_source_times, date_ranges)
             _LOG.info("Filtered times %s", filtered_times)
-            task = self.set_task(task, filtered_times, extra_fn_args)
+            task = self.set_task(task, input_region, filtered_times, extra_fn_args)
+        else:
+            if self.feature is not None:
+                task.geom_feat = input_region['geom_feat']
+                task.extra_fn_params = {'feature_id': str(input_region['feature_id'])}
+                task.crs_txt = input_region['crs_txt']
         return task
 
     def __call__(self, index, sources_spec, date_ranges) -> Iterator[StatsTask]:
@@ -246,39 +274,41 @@ class NonGriddedTaskGenerator(object):
                              x/y spatial boundaries.
         :return:
         """
-        make_tile = ArbitraryTileMaker(index, self.input_region, self.storage)
+        for input_region in self.input_region:
+            make_tile = ArbitraryTileMaker(index, input_region, self.storage)
 
-        for time_period in date_ranges:
-            task = StatsTask(time_period=time_period)
-            _LOG.info('Making output product tasks for time period: %s', time_period)
+            for time_period in date_ranges:
+                task = StatsTask(time_period=time_period)
+                _LOG.info('Making output product tasks for time period: %s', time_period)
 
-            for source_index, source_spec in enumerate(sources_spec):
-                ep_range = filter_time_by_source(source_spec.get('time'), time_period)
-                if ep_range is None:
-                    _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'], time_period)
-                    continue
-                group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
+                for source_index, source_spec in enumerate(sources_spec):
+                    ep_range = filter_time_by_source(source_spec.get('time'), time_period)
+                    if ep_range is None:
+                        _LOG.info("Datasets not included for %s and time range for %s", source_spec['product'],
+                                  time_period)
+                        continue
+                    group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
-                # Build Tile
-                data = make_tile(product=source_spec['product'], time=ep_range, group_by=group_by_name)
-                masks = [make_tile(product=mask['product'], time=ep_range, group_by=group_by_name)
-                         for mask in source_spec.get('masks', [])]
+                    # Build Tile
+                    data = make_tile(product=source_spec['product'], time=ep_range, group_by=group_by_name)
+                    masks = [make_tile(product=mask['product'], time=ep_range, group_by=group_by_name)
+                             for mask in source_spec.get('masks', [])]
 
-                if len(data.sources.time) == 0:
-                    _LOG.info("No matched for product %s", source_spec['product'])
-                    continue
+                    if len(data.sources.time) == 0:
+                        _LOG.info("No matched for product %s", source_spec['product'])
+                        continue
 
-                task.sources.append(DataSource(data=data,
-                                               masks=masks,
-                                               spec=source_spec,
-                                               source_index=source_index))
+                    task.sources.append(DataSource(data=data,
+                                                   masks=masks,
+                                                   spec=source_spec,
+                                                   source_index=source_index))
 
-            _LOG.info("make tile finished")
-            if task.sources:
-                # Function which takes a Tile, containing sources, and returns a new 'filtered' Tile
-                task = self.filter_task(task, date_ranges)
-                _LOG.info('Created task for time period: %s', time_period)
-                yield task
+                _LOG.info("make tile finished")
+                if task.sources:
+                    # Function which takes a Tile, containing sources, and returns a new 'filtered' Tile
+                    task = self.filter_task(task, input_region, date_ranges)
+                    _LOG.info('Created task for time period: %s', time_period)
+                    yield task
 
 
 class ArbitraryTileMaker(object):

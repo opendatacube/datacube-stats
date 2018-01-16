@@ -78,7 +78,9 @@ class StatsTask(object):
         return getattr(self, item, default)
 
     def __str__(self):
-        return "StatsTask(time_period={}, tile_index={})".format(self.time_period, self.tile_index)
+        return "StatsTask(time_period={}, tile_index={}, extra_fn_params={})".format(self.time_period,
+                                                                                     self.tile_index,
+                                                                                     self.extra_fn_params)
 
     def __repr__(self):
         return self.__str__()
