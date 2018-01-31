@@ -52,11 +52,12 @@ def select_task_generator(input_region, storage, filter_product):
     elif 'from_file' in input_region:
         _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])
         feature, geom_feat, crs_txt, geometry = geom_from_file(input_region['from_file'], None)
-        _LOG.info('emma/feature 0: %s', feature[0])
-        if 'ID' not in feature[0]:
+        if input_region.get('gridded') is True or 'ID' not in feature[0]:
+            _LOG.info('gridded')
             geometry = boundary_geo_polygon(geometry, CRS(crs_txt))
             return GriddedTaskGenerator(storage, geopolygon=geometry)
         else:
+            _LOG.info('non-gridded')
             input_region_list = []
             input_region['crs_txt'] = crs_txt
             for a_feature, a_geo in zip(feature, geom_feat):

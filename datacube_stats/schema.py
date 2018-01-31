@@ -76,7 +76,7 @@ filter_prod_args = Schema({
 })
 
 single_tile = Schema({'tile': [int, int]})
-from_file = Schema({'from_file': str, Optional('feature_id'): [int]})
+from_file = Schema({'from_file': str, Optional('feature_id'): [int], Optional('gridded'): bool})
 filter_product = Schema({
     Required('method'): str,
     Required('args'): filter_prod_args
