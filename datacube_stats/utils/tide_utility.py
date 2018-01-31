@@ -26,23 +26,24 @@ def geom_from_file(filename, feature_id):
     """
     import fiona
 
+    geometry_list = []
+    geopolygon_list = []
+    feature_list = []
+
     with fiona.open(filename) as input_region:
-        geom_list = []
-        geopolygon_list = []
-        feature_list = []
         crs = CRS(input_region.crs_wkt)
         for feature in input_region:
-            if feature_id is not None and feature_id != {}:
-                if feature['properties']['ID'] in feature_id:
-                    geom = feature['geometry']
-                    return feature['properties'], geom, input_region.crs_wkt, Geometry(geom, crs)
-            else:
-                geom = feature['geometry']
-                feature_list.append(feature['properties'])
-                geom_list.append(geom)
-                geopolygon_list.append(Geometry(geom, crs))
+            properties = feature['properties']
 
-        return feature_list, geom_list, input_region.crs_wkt, geopolygon_list
+            if feature_id is None or properties.get('ID') in feature_id or properties.get('id') in feature_id:
+                geometry = feature['geometry']
+                geopolygon = Geometry(geometry, crs)
+
+                feature_list.append(properties)
+                geometry_list.append(geometry)
+                geopolygon_list.append(geopolygon)
+
+        return feature_list, geometry_list, input_region.crs_wkt, geopolygon_list
 
     _LOG.info("No geometry found")
 

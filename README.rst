@@ -304,6 +304,15 @@ then from the top menu ``Save -> Shapefile`` to download the zipped Shapefile.
     input_region:
       from_file: /home/user/mdb_floodplan/mdb_floodplain.shp
 
+Whether the output will be gridded (tile-based, default) or not (feature-based) may be specified by
+setting ``gridded: true`` or ``gridded: false`` respectively. The features to generate output for
+may also be specified (in which case the output is feature-based),
+
+.. code-block:: yaml
+
+    input_region:
+      from_file: /home/user/mdb_floodplan/mdb_floodplain.shp
+      feature_id: [39]
 
 
 Tile index

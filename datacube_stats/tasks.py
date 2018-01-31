@@ -27,15 +27,6 @@ def select_task_generator(input_region, storage, filter_product):
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return GriddedTaskGenerator(storage)
 
-    elif 'feature_id' in input_region:
-        _LOG.info('Generating date filtered polygon images.')
-        feature, geom_feat, crs_txt, geometry = geom_from_file(input_region['from_file'], input_region['feature_id'])
-        input_region['geom_feat'] = geom_feat
-        input_region['crs_txt'] = crs_txt
-        input_region = [input_region]
-        return NonGriddedTaskGenerator(input_region=input_region, filter_product=filter_product,
-                                       geopolygon=geometry, feature=feature, storage=storage)
-
     elif 'tile' in input_region:  # For one tile
         return GriddedTaskGenerator(storage, tile_indexes=[input_region['tile']])
 
@@ -51,21 +42,27 @@ def select_task_generator(input_region, storage, filter_product):
 
     elif 'from_file' in input_region:
         _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])
-        feature, geom_feat, crs_txt, geometry = geom_from_file(input_region['from_file'], None)
-        _LOG.info('emma/feature 0: %s', feature[0])
-        if 'ID' not in feature[0]:
-            geometry = boundary_geo_polygon(geometry, CRS(crs_txt))
-            return GriddedTaskGenerator(storage, geopolygon=geometry)
-        else:
+
+        if 'feature_id' in input_region or input_region.get('gridded') is False:
+            _LOG.info('Generating tasks based on feature polygons.')
+            feature, geom_feat, crs_txt, geometry = geom_from_file(input_region['from_file'],
+                                                                   input_region.get('feature_id'))
+
             input_region_list = []
-            input_region['crs_txt'] = crs_txt
+            new_input_region = input_region.copy()
+            new_input_region['crs_txt'] = crs_txt
             for a_feature, a_geo in zip(feature, geom_feat):
-                input_region['geom_feat'] = a_geo
-                input_region['feature_id'] = a_feature['ID']
-                input_region_list.append(input_region.copy())
+                new_input_region['geom_feat'] = a_geo
+                new_input_region['feature_id'] = a_feature.get('ID') or a_feature.get('id')
+                input_region_list.append(new_input_region.copy())
             return NonGriddedTaskGenerator(input_region=input_region_list,
                                            filter_product=filter_product, geopolygon=geom_feat,
                                            feature=feature, storage=storage)
+
+        else:
+            _LOG.info('Generating tasks based on grid.')
+            geometry = boundary_polygon_from_file(input_region['from_file'])
+            return GriddedTaskGenerator(storage, geopolygon=geometry)
     else:
         _LOG.info('Generating statistics for an ungridded `input region`. Output as a single file.')
         input_region = [input_region]
@@ -255,8 +252,10 @@ class NonGriddedTaskGenerator(object):
                 all_source_times = (all_source_times +
                                     [dd for dd in v.sources.time.data.astype('M8[s]').astype('O').tolist()])
             all_source_times = sorted(all_source_times)
-            extra_fn_args, filtered_times = \
-                get_filter_product(self.filter_product, self.feature[0], all_source_times, date_ranges)
+
+            extra_fn_args, filtered_times = get_filter_product(self.filter_product,
+                                                               self.feature[0],  # this looks wrong!
+                                                               all_source_times, date_ranges)
             _LOG.info("Filtered times %s", filtered_times)
             task = self.set_task(task, input_region, filtered_times, extra_fn_args)
         else:
