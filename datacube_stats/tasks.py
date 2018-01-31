@@ -252,9 +252,10 @@ class NonGriddedTaskGenerator(object):
                 all_source_times = (all_source_times +
                                     [dd for dd in v.sources.time.data.astype('M8[s]').astype('O').tolist()])
             all_source_times = sorted(all_source_times)
-            extra_fn_args, filtered_times = \
-                get_filter_product(self.filter_product, self.feature[0], all_source_times, date_ranges)
-                # TODO: the `self.feature[0]` bit looks plain wrong!
+
+            extra_fn_args, filtered_times = get_filter_product(self.filter_product,
+                                                               self.feature[0],  # this looks wrong!
+                                                               all_source_times, date_ranges)
             _LOG.info("Filtered times %s", filtered_times)
             task = self.set_task(task, input_region, filtered_times, extra_fn_args)
         else:
