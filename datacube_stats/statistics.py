@@ -805,19 +805,6 @@ try:
 
             return data.transpose(*to).to_dataset(dim='variable')
 
-        def measurements(self, input_measurements):
-            """
-            Outputs will have the same name as inputs, but dtype will always be float32.
-            """
-            output_measurements = [
-                {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
-                for measurement in input_measurements]
-            for measurement in output_measurements:
-                measurement['dtype'] = 'float32'
-                measurement['nodata'] = np.nan
-
-            return output_measurements
-
         @staticmethod
         def _vars_to_transpose(data):
             """
