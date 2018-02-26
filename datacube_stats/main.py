@@ -552,7 +552,7 @@ def load_data(sub_tile_slice: Tuple[slice, slice, slice],
         raise EmptyChunkException()
 
     # sort along time dim
-    return ds.isel(time=ds.time.argsort())  # Copies all the data again
+    return ds.sortby('time')  # Copies all the data again
 
 
 def _remove_emptys(datasets):
