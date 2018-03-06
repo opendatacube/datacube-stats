@@ -835,9 +835,10 @@ try:
     from pcm import gmpcm
 
     class NewGeomedianStatistic(Statistic):
-        def __init__(self, eps=1e-3):
+        def __init__(self, eps=1e-3, num_threads=None):
             super(NewGeomedianStatistic, self).__init__()
             self.eps = eps
+            self.num_threads = num_threads
 
         def compute(self, data):
             """
@@ -859,7 +860,7 @@ try:
                 del output_coords['source']
 
             # Call Dale's function here
-            squashed = gmpcm(squashed.data)
+            squashed = gmpcm(squashed.data, num_threads=self.num_threads)
 
             # Jam the raw numpy array back into a pleasantly labelled DataArray
             output_dims = squashed_together_dimensions[:-1]
@@ -904,9 +905,10 @@ try:
     import pcm
 
     class SpectralMAD(Statistic):
-        def __init__(self, eps=1e-3):
+        def __init__(self, eps=1e-3, num_threads=None):
             super(SpectralMAD, self).__init__()
             self.eps = eps
+            self.num_threads = num_threads
 
         def compute(self, data):
             """
@@ -930,8 +932,8 @@ try:
                 del output_coords['source']
 
             # Call Dale's geometric median & spectral mad functions here
-            gm = pcm.gmpcm(squashed.data)
-            squashed = pcm.smad(squashed.data, gm)
+            gm = pcm.gmpcm(squashed.data, num_threads=self.num_threads)
+            squashed = pcm.smad(squashed.data, gm, num_threads=self.num_threads)
 
             # Jam the raw numpy array back into a pleasantly labelled DataArray
             as_datarray = xarray.DataArray(squashed, dims=output_dimensions, coords=output_coords)
