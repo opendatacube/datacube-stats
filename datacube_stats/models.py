@@ -129,7 +129,8 @@ class OutputProduct(object):
 
     # pylint: disable=too-many-arguments
     def __init__(self, metadata_type, product_type, input_measurements, storage, name, file_path_template,
-                 stat_name, statistic, output_params=None, extras=None, stats_metadata=None):
+                 stat_name, statistic, output_params=None, extras=None,
+                 stats_metadata=None, custom_metadata=None):
 
         #: The product name.
         self.name = name
@@ -147,7 +148,8 @@ class OutputProduct(object):
 
         #: The ODC Product (formerly DatasetType)
         self.product = self._create_product(metadata_type, product_type, self.data_measurements, storage,
-                                            stats_metadata=stats_metadata or {})
+                                            stats_metadata=stats_metadata or {},
+                                            custom_metadata=custom_metadata or {})
 
         self.output_params = output_params
 
@@ -165,7 +167,8 @@ class OutputProduct(object):
                    stat_name=definition['statistic'],
                    statistic=STATS[definition['statistic']](**definition.get('statistic_args', {})),
                    output_params=definition.get('output_params'),
-                   stats_metadata=stats_metadata)
+                   stats_metadata=stats_metadata,
+                   custom_metadata=definition.get('metadata'))
 
     @property
     def compute(self):
@@ -179,7 +182,8 @@ class OutputProduct(object):
     def make_iterative_proc(self):
         return self.statistic.make_iterative_proc
 
-    def _create_product(self, metadata_type, product_type, data_measurements, storage, stats_metadata):
+    def _create_product(self, metadata_type, product_type, data_measurements, storage, stats_metadata,
+                        custom_metadata):
         product_definition = {
             'name': self.name,
             'description': 'Description for ' + self.name,
@@ -191,6 +195,7 @@ class OutputProduct(object):
                 },
                 'product_type': product_type,
                 'statistics': stats_metadata,
+                **custom_metadata
             },
             'storage': storage,
             'measurements': data_measurements

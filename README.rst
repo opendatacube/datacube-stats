@@ -505,6 +505,16 @@ Will output filenames similar to:
     10_15/LS_PQ_COUNT_3577_10_15_2010-01-01_2011-01-01.nc
 
 
+Custom metadata
+~~~~~~~~~~~~~~~
+
+This is useful if other metadata fail to specify which product the output belongs to.
+
+.. code-block:: yaml
+
+      metadata:
+          platform: LANDSAT-8
+
 
 Complete example
 ~~~~~~~~~~~~~~~~

@@ -48,6 +48,7 @@ output_product_schema = Schema({
     'statistic_args': dict,
     'output_params': dict,
     'file_path_template': All(str, valid_format_string(valid_filepath_fields)),
+    'metadata': dict
 })
 
 spatial_attrs = {Inclusive('x', 'proj'): Any(float, int),
