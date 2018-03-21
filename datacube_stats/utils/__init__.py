@@ -446,3 +446,12 @@ class Slice(click.ParamType):
 
         except ValueError:
             self.fail('Invalid Python slice')
+
+
+def prettier_slice(sl):
+    def to_str(x):
+        if x is None:
+            return ''
+        return str(x)
+
+    return "[{}:{}:{}]".format(to_str(sl.start), to_str(sl.stop), to_str(sl.step))

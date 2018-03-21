@@ -50,7 +50,11 @@ class MultiTimer(object):
     def __str__(self):
         formatted_sizes = {k: sizeof_fmt(v) for k, v in self.max_rss.items()}
         formatted_times = {k: '{:.0f}m {:.0f}s'.format(*divmod(v, 60)) for k, v in self.run_times.items()}
-        return 'Run times: {}, Max RSS: {}'.format(formatted_times, formatted_sizes)
+        return 'Run times: {}, Max RSS: {}'.format(prettier_dict(formatted_times), prettier_dict(formatted_sizes))
+
+
+def prettier_dict(d):
+    return "({})".format(", ".join("{}={}".format(key, value) for key, value in d.items()))
 
 
 def sizeof_fmt(num, suffix='B'):
