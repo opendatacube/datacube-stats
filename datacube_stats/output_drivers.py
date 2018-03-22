@@ -275,6 +275,11 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
         sources = add_all(merge_sources(prod) for prod in task.sources)
 
+        def unique(index, dataset_tuple):
+            return tuple(set(dataset_tuple))
+
+        sources = xr_apply(sources, unique, dtype='O')
+
         # Sources has no time at this point, so insert back in the start of our stats epoch
         start_time, _ = task.time_period
         sources = unsqueeze_data_array(sources, dim='time', pos=0, coord=start_time,
