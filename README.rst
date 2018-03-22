@@ -508,12 +508,15 @@ Will output filenames similar to:
 Custom metadata
 ~~~~~~~~~~~~~~~
 
-This is useful if other metadata fail to specify which product the output belongs to.
+Specify arbitrary custom metadata to attach to the produced datasets.
+This is useful to resolve product ambiguity when indexing the datasets
+back to the datacube.
 
 .. code-block:: yaml
 
       metadata:
-          platform: LANDSAT-8
+          platform:
+              code: LANDSAT-8
 
 
 Complete example

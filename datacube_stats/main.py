@@ -40,7 +40,7 @@ from datacube_stats.utils.dates import date_sequence
 from digitalearthau.qsub import with_qsub_runner
 from digitalearthau.runners.model import TaskDescription, DefaultJobParameters
 from .utils.timer import MultiTimer, wrap_in_timer
-from .utils import sorted_interleave, Slice
+from .utils import sorted_interleave, Slice, prettier_slice
 from .tasks import select_task_generator
 from .schema import stats_schema
 from .models import StatsTask, DataSource
@@ -448,7 +448,7 @@ def execute_task(task: StatsTask, output_driver, chunking) -> StatsTask:
         raise StatsProcessingException("Error processing task: %s" % task)
 
     timer.pause('total')
-    _LOG.info('Completed %s %s task with %s data sources. Processing took: %s', task.tile_index,
+    _LOG.info('Completed %s %s task with %s data sources; %s', task.tile_index,
               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
     return task
 
@@ -490,8 +490,10 @@ def load_process_save_chunk(output_files: OutputDriver,
 
         last_idx = len(task.output_products) - 1
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):
-            _LOG.info("Computing %s in tile %s %s. Current timing: %s",
-                      prod_name, task.tile_index, chunk, timer)
+            _LOG.info("Computing %s in tile %s %s; %s",
+                      prod_name, task.tile_index,
+                      "({})".format(", ".join(prettier_slice(c) for c in chunk)),
+                      timer)
 
             measurements = stat.data_measurements
             with timer.time(prod_name):
