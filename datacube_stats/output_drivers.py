@@ -253,7 +253,8 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                            output_product.file_path_template.format(**params))
         return output_path
 
-    def _find_source_datasets(self, stat: OutputProduct, uri: str = None) -> xarray.DataArray:
+    def _find_source_datasets(self, stat: OutputProduct, uri: str = None,
+                              multiband: bool = False) -> xarray.DataArray:
         """
         Find all the source datasets for a task
 
@@ -308,6 +309,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                                 extent=geobox.extent,
                                 center_time=labels['time'],
                                 uri=uri,
+                                band_uris=uri if multiband else None,
                                 app_info=app_info,
                                 valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
         datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
@@ -479,7 +481,7 @@ class GeoTiffOutputDriver(OutputDriver):
     def write_yaml(self, stat: OutputProduct, tmp_filename: Path):
         output_filename = self.output_filename_tmpname[tmp_filename]
 
-        datasets = self._find_source_datasets(stat, uri=output_filename.as_uri())
+        datasets = self._find_source_datasets(stat, uri=output_filename.as_uri(), multiband=True)
 
         yaml_filename = str(output_filename.with_suffix('.yaml'))
 
