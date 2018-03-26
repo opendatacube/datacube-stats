@@ -27,18 +27,16 @@ def select_task_generator(input_region, storage, filter_product):
         _LOG.info('No input_region specified. Generating full available spatial region, gridded files.')
         return GriddedTaskGenerator(storage)
 
+    elif 'geometry' in input_region:  # Larger spatial region
+        # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
+        geometry = Geometry(input_region['geometry'], CRS('EPSG:4326'))  # GeoJSON is always 4326
+        return GriddedTaskGenerator(storage, geopolygon=geometry, tile_indexes=input_region.get('tiles'))
+
     elif 'tile' in input_region:  # For one tile
         return GriddedTaskGenerator(storage, tile_indexes=[input_region['tile']])
 
     elif 'tiles' in input_region:  # List of tiles
         return GriddedTaskGenerator(storage, tile_indexes=input_region['tiles'])
-
-    elif 'geometry' in input_region:  # Larger spatial region
-        # A large, multi-tile input region, specified as geojson. Output will be individual tiles.
-        _LOG.info('Found geojson `input_region`, outputing tiles.')
-
-        geometry = Geometry(input_region['geometry'], CRS('EPSG:4326'))  # GeoJSON is always 4326
-        return GriddedTaskGenerator(storage, geopolygon=geometry)
 
     elif 'from_file' in input_region:
         _LOG.info('Input spatial region specified by file: %s', input_region['from_file'])

@@ -239,8 +239,14 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         :return: read to run StatsApp
         """
         input_region = config.get('input_region')
-        if tile_indexes and not input_region:
-            input_region = {'tiles': tile_indexes}
+
+        if tile_indexes is not None:
+            if input_region is None:
+                input_region = {'tiles': tile_indexes}
+            elif 'geometry' in input_region:
+                input_region.update({'tiles': tile_indexes})
+            elif 'from_file' not in input_region:
+                input_region = {'tiles': tile_indexes}
 
         if year is not None:
             if 'date_ranges' not in config:
