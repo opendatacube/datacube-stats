@@ -77,6 +77,7 @@ filter_prod_args = Schema({
 })
 
 single_tile = Schema({'tile': [int, int]})
+tile_list = Schema({'tiles': list})
 from_file = Schema({'from_file': str, Optional('feature_id'): [int], Optional('gridded'): bool})
 filter_product = Schema({
     Required('method'): str,
@@ -120,7 +121,7 @@ stats_schema = Schema({
     'storage': storage_schema,
     'output_products': All([output_product_schema], Length(min=1)),
     Optional('computation'): {'chunking': computation_schema},
-    Optional('input_region'): Any(single_tile, from_file, geometry, boundary_coords),
+    Optional('input_region'): Any(single_tile, tile_list, from_file, geometry, boundary_coords),
     Optional('global_attributes'): dict,
     Optional('var_attributes'): {str: {str: str}},
     Optional('filter_product'): filter_product
