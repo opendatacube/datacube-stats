@@ -179,6 +179,10 @@ class OutputDriver(with_metaclass(RegisterDriver)):
     def open_output_files(self):
         raise NotImplementedError
 
+    def write_chunk(self, prod_name, chunk, result):
+        for var_name, var in result.data_vars.items():
+            self.write_data(prod_name, var_name, chunk, var.values)
+
     @abc.abstractmethod
     def write_data(self, prod_name, measurement_name,
                    tile_index: Tuple[slice, slice, slice],

@@ -513,8 +513,7 @@ def load_process_save_chunk(output_files: OutputDriver,
 
             # For each of the data variables, shove this chunk into the output results
             with timer.time('writing_data'):
-                for var_name, var in result.data_vars.items():  # TODO: Move this loop into output_files
-                    output_files.write_data(prod_name, var_name, chunk, var.values)
+                output_files.write_chunk(prod_name, chunk, result)
 
     except EmptyChunkException:
         _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
