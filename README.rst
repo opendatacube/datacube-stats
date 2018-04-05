@@ -689,9 +689,9 @@ To submit a job to PBS, run ``datacube-stats`` like
 
 .. code-block:: bash
 
-    $ datacube-stats --qsub="project=u46,nodes=100,walltime=5h,mem=high,queue=normal" example.yaml
+    $ datacube-stats --qsub="project=u46,nodes=100,walltime=5h,mem=large,queue=normal" example.yaml
 
-The ``mem`` specification can be ``small``, ``medium``, or ``high``, for 2GB, 4GB, or 8GB
+The ``mem`` specification can be ``small``, ``medium``, or ``large``, for 2GB, 4GB, or 8GB
 memory per core respectively. For more details, run
 
 .. code-block:: bash
