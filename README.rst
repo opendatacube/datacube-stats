@@ -35,7 +35,7 @@ Installation
 
 .. code-block:: bash
 
-    $ pip install https://github.com/GeoscienceAustralia/agdc_statistics/
+    $ pip install https://github.com/GeoscienceAustralia/datacube-stats/
 
 Usage
 =====
@@ -49,6 +49,13 @@ At it's simplest, Data Cube Statistics only requires specifying a configuration 
 
     $ datacube-stats example-configuration.yaml
 
+More detailed usage information is also available:
+
+.. code-block:: bash
+
+    $ datacube-stats --help
+    
+
 Parallel processing
 -------------------
 
@@ -56,7 +63,7 @@ Parallel operation is provided by executors in ODC. For example to run across 4 
 
 .. code-block:: bash
 
-    $ datacube-stats --executor multiproc 4 example-configuration.yaml
+    $ datacube-stats --parallel 4 example-configuration.yaml
 
 Overrides for testing
 ---------------------
@@ -111,7 +118,7 @@ eliminating data which doesn't meet the minimum required spatial accuracy:
         group_by: solar_day
         source_filter:
           product: ls5_level1_scene
-          gqa_mean_xy: [-1, 1]
+          gqa_iterative_mean_xy: [0, 1]
         masks:
           - product: ls5_pq_albers
             measurement: pixelquality
@@ -134,7 +141,7 @@ eliminating data which doesn't meet the minimum required spatial accuracy:
         group_by: solar_day
         source_filter:
           product: ls7_level1_scene
-          gqa_mean_xy: [-1, 1]
+          gqa_iterative_mean_xy: [0, 1]
         masks:
           - product: ls7_pq_albers
             measurement: pixelquality
@@ -235,15 +242,15 @@ For example, to output 100×100km tiles, with 25m per pixel:
 .. code-block:: yaml
 
     storage:
-      driver: NetCDFCF
+      driver: NetCDF CF
 
       crs: EPSG:3577
       tile_size:
-              x: 100000.0
-              y: 100000.0
+          x: 100000.0
+          y: 100000.0
       resolution:
-              x: 25
-              y: -25
+          x: 25
+          y: -25
       chunking:
           x: 200
           y: 200
@@ -261,15 +268,15 @@ Output 1°×1° tiles, with 4000×4000 pixels per tile:
 .. code-block:: yaml
 
     storage:
-      driver: Geotiff
+      driver: GeoTiff
 
       crs: EPSG:4326
       tile_size:
-              longitude: 1.0
-              latitude: 1.0
+          longitude: 1.0
+          latitude: 1.0
       resolution:
-              longitude: 0.00025
-              latitude: -0.00025
+          longitude: 0.00025
+          latitude: -0.00025
       chunking:
           longitude: 400
           latitude: 400
@@ -324,7 +331,9 @@ A list of tiles can be passed on to ``tiles`` parameter.
 .. code-block:: yaml
 
     input_region:
-      tile: [16, -39]
+      tiles:
+        - [16, -39]
+        - [17, -39]
 
 
 Period of interest
@@ -359,7 +368,7 @@ this alters whether you are specifying x/y or latitude/longitude.
 
 .. note::
 
-    This method of specifying extents will output a **single large file**, **not* a set of tiles.
+    This method of specifying extents will output a *single* large file, *not* a set of tiles.
 
 
 Everywhere
