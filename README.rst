@@ -54,7 +54,7 @@ More detailed usage information is also available:
 .. code-block:: bash
 
     $ datacube-stats --help
-    
+
 
 Parallel processing
 -------------------

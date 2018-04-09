@@ -282,7 +282,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                 if self.time is None:
                     self.time = source.coords['time']
                 else:
-                    self.time = xarray.merge([self.time, source.coords['time']], compat='no_conflicts')
+                    self.time = self.time.combine_first(source.coords['time'])
             _LOG.debug('time dimension is %s', self.time)
             return add_all(sources_.sum() for sources_ in all_sources)
 
