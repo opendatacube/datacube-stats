@@ -155,6 +155,9 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         #: dict of str to dict of str to str
         self.var_attributes = var_attributes if var_attributes is not None else {}
 
+        #: xarray of time coordinates of source
+        self.time = None
+
     def close_files(self, completed_successfully: bool) -> Iterable[Path]:
         # Turn file_handles into paths
         written_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
@@ -275,6 +278,12 @@ class OutputDriver(with_metaclass(RegisterDriver)):
             # TODO: The following can fail if prod.data and prod.masks have different times
             # Which can happen in the case of a missing PQ Scene, where there is a scene overlap
             # ie. Two overlapped NBAR scenes, One PQ scene (the later)
+            for source in all_sources:
+                if self.time is None:
+                    self.time = source.coords['time']
+                else:
+                    self.time = xarray.merge([self.time, source.coords['time']], compat='no_conflicts')
+            _LOG.debug('time dimension is %s', self.time)
             return add_all(sources_.sum() for sources_ in all_sources)
 
         sources = add_all(merge_sources(prod) for prod in task.sources)
@@ -288,7 +297,6 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         start_time, _ = task.time_period
         sources = unsqueeze_data_array(sources, dim='time', pos=0, coord=start_time,
                                        attrs=task.time_attributes)
-
         if not sources:
             raise StatsOutputError('No valid sources found, or supplied sources do not align to the same time.\n'
                                    'Unable to write dataset metadata.')
@@ -579,6 +587,69 @@ class ENVIBILOutputDriver(GeoTiffOutputDriver):
             tif_file.unlink()
         except subprocess.CalledProcessError as cpe:
             _LOG.error('Error running gdal_translate: %s', cpe.output)
+
+
+class NoneOutputDriver(OutputDriver):
+    """
+    return data as xarray for plotting without writing data to file
+
+    """
+    _driver_name = 'None'
+    result = {}
+    source = {}
+
+    def close_files(self, completed_successfully):
+        pass
+
+    def open_output_files(self):
+        for prod_name, stat in self._output_products.items():
+            datasets = self._find_source_datasets(stat)
+            all_measurement_defns = list(stat.product.measurements.values())
+            self.create_result_storage(prod_name, datasets, all_measurement_defns)
+
+        self.create_source_storage(all_measurement_defns)
+
+    def create_result_storage(self, prod_name, datasets, measurements):
+        coordinates = self.create_coords(datasets)
+        shape = [coordinates['time'].shape[0], coordinates['y'].shape[0], coordinates['x'].shape[0]]
+        variables = self.create_variables(datasets.dims+self._geobox.dimensions, measurements, shape)
+        self.result[prod_name] = xarray.Dataset(variables, coords=coordinates)
+
+    def create_coords(self, datasets):
+        coordinates = OrderedDict((name, coord.values)
+                                  for name, coord in datasets.coords.items())
+        for name, coord in self._geobox.coordinates.items():
+            coordinates.update({name: coord.values})
+        return coordinates
+
+    def create_variables(self, dims, measurements, shape):
+        variables = OrderedDict()
+        for variable in measurements:
+            nodata = numpy.array([variable['nodata']]*(shape[0]*shape[1]*shape[2]),
+                                 dtype=variable['dtype']).reshape(shape)
+            variables.update({variable['name']: (dims, nodata)})
+        return variables
+
+    def create_source_storage(self, measurements):
+        coordinates = self.create_coords(self.time)
+        shape = [coordinates['time'].shape[0], coordinates['y'].shape[0], coordinates['x'].shape[0]]
+        variables = self.create_variables(self.time.dims+self._geobox.dimensions, measurements, shape)
+        self.source['source'] = xarray.Dataset(variables, coords=coordinates)
+
+    def _handle_to_path(self, file_handle) -> Path:
+        return Path(file_handle.filepath())
+
+    def write_data(self, prod_name, measurement_name, tile_index, values):
+        shape = self.result[prod_name][measurement_name].shape
+        dims = self.result[prod_name][measurement_name].dims
+        self.result[prod_name][measurement_name] = (dims, values.reshape(shape))
+
+    def write_global_attributes(self, attributes):
+        pass
+
+    def get_source(self, datasets):
+        for measurement, values in datasets.data_vars.items():
+            self.source['source'][measurement] = (values.dims, values.values.astype('int16'))
 
 
 class TestOutputDriver(OutputDriver):

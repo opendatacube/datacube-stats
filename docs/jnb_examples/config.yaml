@@ -1,0 +1,41 @@
+sources:
+    - product: ls8_nbar_albers
+      measurements: [red, green, blue]
+      group_by: solar_day
+
+date_ranges:
+    start_date: 2014-06-01
+    end_date: 2014-07-01
+
+location: /home/547/ea6141/datafile/stats-tests/output
+
+storage:
+  driver: None 
+
+  crs: EPSG:3577
+  tile_size:
+          x: 100000.0
+          y: 100000.0
+  resolution:
+          x: 25
+          y: -25
+  chunking:
+      x: 200
+      y: 200
+      time: 1
+  dimension_order: [time, y, x]
+
+input_region:
+      tile: [15, -41]
+
+output_products:
+    - name: nbar_mean
+      product_type: quick_test
+      statistic: simple
+      statistic_args:
+           reduction_function: mean
+
+      output_params:
+           zlib: True
+           fletcher32: True
+      file_path_template: 'ITEM_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'

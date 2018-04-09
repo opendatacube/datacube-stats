@@ -10,12 +10,15 @@ import cloudpickle
 import numpy as np
 import xarray
 import click
+from datetime import timezone
+from datetime import timedelta
 
 from datacube.api.query import Query
 
 from datacube.storage.masking import mask_invalid_data, create_mask_value
 from .dates import filter_time_by_source, datetime64_to_inttime
 from datacube.api import Tile
+from datacube.model import Range
 
 
 def tile_iter(tile: Tile, chunk_size: Dict[str, int]) -> Iterator[Tuple[None, slice, slice]]:
@@ -416,14 +419,19 @@ def _find_periods_with_data(index, product_names, period_duration='1 day',
     :return: sequence of (start_date, end_date) tuples
     """
     # TODO: Read 'simple' job configuration from file
-    query = dict(y=(-3760000, -3820000), x=(1375400.0, 1480600.0), crs='EPSG:3577', time=(start_date, end_date))
+    # TODO: need get rid of the hard-coded query
+    query = dict(y=(-41*(40000-1600), -41*40000), x=(15*40000, 15*(40000+1600)),
+                 crs='EPSG:3577', time=(start_date, end_date))
 
     valid_dates = set()
     for product in product_names:
         counts = index.datasets.count_product_through_time(period_duration, product=product,
                                                            **Query(**query).search_terms)
-        valid_dates.update(time_range for time_range, count in counts if count > 0)
-
+        for time_range, count in counts:
+            if count > 0:
+                time_range = Range(time_range.begin.astimezone(timezone.utc),
+                                   time_range.end.astimezone(timezone.utc))
+                valid_dates.add(time_range)
     for time_range in sorted(valid_dates):
         yield time_range.begin, time_range.end
 

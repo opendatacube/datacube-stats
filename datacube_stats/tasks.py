@@ -115,6 +115,7 @@ class GriddedTaskGenerator(object):
 
             if self.tile_indexes is not None:
                 for tile_index in self.tile_indexes:
+                    _LOG.debug('task for tile %s', tile_index)
                     for task in self.collect_tasks(workflow, time_period, sources_spec, tile_index):
                         created_tasks += 1
                         yield task

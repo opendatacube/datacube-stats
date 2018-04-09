@@ -488,11 +488,13 @@ def load_process_save_chunk(output_files: OutputDriver,
     try:
         with timer.time('loading_data'):
             data = load_data(chunk, task.sources)
-
             # mask as per geometry now
             if task.geom_feat:
                 geom = Geometry(task.geom_feat, CRS(task.crs_txt))
                 data = data.where(geometry_mask([geom], data.geobox, invert=True))
+            # pylint: disable=protected-access
+            if output_files._driver_name == 'None':
+                output_files.get_source(data)
 
         last_idx = len(task.output_products) - 1
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):
@@ -548,6 +550,7 @@ def load_data(sub_tile_slice: Tuple[slice, slice, slice],
     """
     datasets = [load_masked_data(sub_tile_slice, source_prod)
                 for source_prod in sources]  # list of datasets
+    _LOG.debug('raw datasets %s', datasets[0].coords['time'])
     datasets = _remove_emptys(datasets)
     if len(datasets) == 0:
         raise EmptyChunkException()
@@ -811,7 +814,8 @@ def _configure_date_ranges(index, config):
                                     end=pd.to_datetime(date_ranges['end_date']),
                                     stats_duration=date_ranges['stats_duration'],
                                     step_size=date_ranges['step_size']))
-    elif date_ranges['type'] == 'find_daily_data':
+
+    elif date_ranges.get('type') == 'find_daily_data':
         sources = config['sources']
         product_names = [source['product'] for source in sources]
         output = list(_find_periods_with_data(index, product_names=product_names,
