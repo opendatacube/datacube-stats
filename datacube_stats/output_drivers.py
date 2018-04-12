@@ -28,6 +28,7 @@ from datacube.utils import unsqueeze_data_array, geometry
 from six import with_metaclass
 
 from .models import OutputProduct
+from .utils import prettier_slice
 
 _LOG = logging.getLogger(__name__)
 _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
@@ -283,7 +284,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                     self.time = source.coords['time']
                 else:
                     self.time = self.time.combine_first(source.coords['time'])
-            _LOG.debug('time dimension is %s', self.time)
+
             return add_all(sources_.sum() for sources_ in all_sources)
 
         sources = add_all(merge_sources(prod) for prod in task.sources)
@@ -392,7 +393,8 @@ class NetCDFCFOutputDriver(OutputDriver):
         self._output_file_handles[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(
             values)
         self._output_file_handles[prod_name].sync()
-        _LOG.debug("Updated %s %s", measurement_name, tile_index[1:])
+        _LOG.debug("Updated %s %s", measurement_name,
+                   "({})".format(", ".join(prettier_slice(x) for x in tile_index[1:])))
 
     def write_global_attributes(self, attributes):
         for output_file in self._output_file_handles.values():
@@ -543,7 +545,8 @@ class GeoTiffOutputDriver(OutputDriver):
 
         t, y, x = tile_index
         window = ((y.start, y.stop), (x.start, x.stop))
-        _LOG.debug("Updating %s.%s %s", prod_name, measurement_name, window)
+        _LOG.debug("Updating %s.%s %s", prod_name, measurement_name,
+                   "({})".format(", ".join(prettier_slice(x) for x in tile_index[1:])))
 
         dtype = self._get_dtype(prod_name, measurement_name)
 

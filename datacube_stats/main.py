@@ -550,7 +550,7 @@ def load_data(sub_tile_slice: Tuple[slice, slice, slice],
     """
     datasets = [load_masked_data(sub_tile_slice, source_prod)
                 for source_prod in sources]  # list of datasets
-    _LOG.debug('raw datasets %s', datasets[0].coords['time'])
+
     datasets = _remove_emptys(datasets)
     if len(datasets) == 0:
         raise EmptyChunkException()
