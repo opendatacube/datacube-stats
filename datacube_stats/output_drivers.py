@@ -639,10 +639,26 @@ class NoneOutputDriver(OutputDriver):
     def _handle_to_path(self, file_handle) -> Path:
         return Path(file_handle.filepath())
 
+    def write_chunk(self, prod_name, chunk, result):
+        for var_name, var in result.data_vars.items():
+            shape = var.shape
+            dims = var.dims
+            # sanity check
+            # everything match -> fine
+            # with/without time dimension -> fix it
+            if shape == self.result[prod_name][var_name].shape and dims == self.result[prod_name][var_name].dims:
+                pass
+            elif 'time' not in dims:
+                shape = self.result[prod_name][var_name].shape
+                dims = self.result[prod_name][var_name].dims
+            elif 'time' in dims:
+                self.result[prod_name].coords['time'] = result.coords['time']
+            else:
+                raise StatsOutputError('Kill me...cannot handle any more\n')
+            self.result[prod_name][var_name] = (dims, var.values.reshape(shape))
+
     def write_data(self, prod_name, measurement_name, tile_index, values):
-        shape = self.result[prod_name][measurement_name].shape
-        dims = self.result[prod_name][measurement_name].dims
-        self.result[prod_name][measurement_name] = (dims, values.reshape(shape))
+        pass
 
     def write_global_attributes(self, attributes):
         pass
