@@ -658,7 +658,8 @@ class NoneOutputDriver(OutputDriver):
                 self.result[prod_name].coords['time'] = result.coords['time']
             else:
                 raise StatsOutputError('Kill me...cannot handle any more\n')
-            self.result[prod_name][var_name] = (dims, var.values.reshape(shape))
+            time_dim = self.result[prod_name].coords['time'].shape[0]
+            self.result[prod_name][var_name][(slice(0, time_dim, None),) + chunk[1:]] = var.values
 
     def write_data(self, prod_name, measurement_name, tile_index, values):
         pass
@@ -666,9 +667,10 @@ class NoneOutputDriver(OutputDriver):
     def write_global_attributes(self, attributes):
         pass
 
-    def get_source(self, datasets):
+    def get_source(self, chunk, datasets):
         for measurement, values in datasets.data_vars.items():
-            self.source['source'][measurement] = (values.dims, values.values.astype('int16'))
+            time_dim = self.source['source'].coords['time'].shape[0]
+            self.source['source'][measurement][(slice(0, time_dim, None),)+chunk[1:]] = values.values.astype('int16')
 
 
 class TestOutputDriver(OutputDriver):
