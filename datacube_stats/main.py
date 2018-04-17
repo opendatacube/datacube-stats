@@ -793,7 +793,7 @@ def _get_app_metadata(config_file):
             'algorithm': {
                 'name': 'datacube-stats',
                 'version': datacube_stats.__version__,
-                'repo_url': 'https://github.com/GeoscienceAustralia/agdc_statistics.git',
+                'repo_url': 'https://github.com/GeoscienceAustralia/datacube-stats.git',
                 'parameters': {'configuration_file': config_file}
             },
         }

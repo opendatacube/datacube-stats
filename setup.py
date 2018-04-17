@@ -13,7 +13,7 @@ setup(
     name='datacube-stats',
     version=__version__,
     packages=find_packages(),
-    url='https://github.com/GeoscienceAustralia/agdc_statistics/',
+    url='https://github.com/GeoscienceAustralia/datacube-stats/',
     license='Apache',
     author='Geoscience Australia',
     author_email='datacube@ga.gov.au',
