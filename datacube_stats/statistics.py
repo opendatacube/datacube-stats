@@ -233,6 +233,93 @@ class NormalisedDifferenceStats(Statistic):
                 for stat in self.stats]
 
 
+class TCWStats(Statistic):
+    """
+    Simple Tasseled Cap Wetness, Brightness and Greeness summary statistics.
+
+    Based on the Crist 1985 RF coefficients
+    You can provide your own coefficients, however at this stage it will run the same coefficients for all sensors.
+
+    Default Tasseled Cap coefficient Values:
+    brightness_coeff = {'blue':0.2043, 'green':0.4158, 'red':0.5524, 'nir':0.5741, 'swir1':0.3124, 'swir2':0.2303}
+    greenness_coeff = {'blue':-0.1603, 'green':-0.2819, 'red':-0.4934, 'nir':0.7940, 'swir1':-0.0002, 'swir2':-0.1446}
+    wetness_coeff = {'blue':0.0315, 'green':0.2021, 'red':0.3102, 'nir':0.1594, 'swir1':-0.6806, 'swir2':-0.6109}
+
+    Default Thresholds used for calculating the percentage exceedance statistics for Brightness, Greenness and Wetness:
+        brightness': 4000
+        greenness': 600
+        wetness': -600
+
+    Outputs
+    If you output as geotiff these will be your bands:
+    Band1: pct_exceedance_brightness
+    Band2: pct_exceedance_greenness
+    Band3: pct_exceedance_wetness
+    Band4: mean_brightness
+    Band5: mean_greenness
+    Band6: mean_wetness
+    Band7: std_brightness
+    Band8: std_greenness
+    Band9: std_wetness
+
+    """
+
+    def __init__(self, thresholds=None, coeffs=None):
+        if thresholds is None:
+            self.thresholds = {
+                'brightness': 4000,
+                'greenness': 600,
+                'wetness': -600
+            }
+        else:
+            self.thresholds = thresholds
+
+        if coeffs is None:
+            self.coeffs = {
+                'brightness': {'blue': 0.2043, 'green': 0.4158, 'red': 0.5524, 'nir': 0.5741,
+                               'swir1': 0.3124, 'swir2': 0.2303},
+                'greenness': {'blue': -0.1603, 'green': -0.2819, 'red': -0.4934, 'nir': 0.7940,
+                              'swir1': -0.0002, 'swir2': -0.1446},
+                'wetness': {'blue': 0.0315, 'green': 0.2021, 'red': 0.3102, 'nir': 0.1594,
+                            'swir1': -0.6806, 'swir2': -0.6109}
+            }
+        else:
+            self.coeffs = coeffs
+
+    def compute(self, data):
+        coeffs = self.coeffs
+        thresholds = self.thresholds
+        bands = ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+        categories = ['brightness', 'greenness', 'wetness']
+
+        results = {}
+        for cat in categories:
+            data[cat] = sum([data[band] * coeffs[cat][band] for band in bands])
+            results['pct_exceedance_' + cat] = \
+                data[cat].where(data[cat] > thresholds[cat]).count(dim='time')/data[cat].count(dim='time')
+
+            results['mean_' + cat] = data[cat].mean(dim='time')
+            results['std_' + cat] = data[cat].std(dim='time', keep_attrs=True, skipna=True)
+            data.drop(cat)
+
+        data.drop(bands)
+
+        return xarray.Dataset(results, attrs=dict(crs=data.crs))
+
+    def measurements(self, input_measurements):
+        measurement_names = [
+            'pct_exceedance_brightness',
+            'pct_exceedance_greenness',
+            'pct_exceedance_wetness',
+            'mean_brightness',
+            'mean_greenness',
+            'mean_wetness',
+            'std_brightness',
+            'std_greenness',
+            'std_wetness']
+        return [dict(name=m_name, dtype='float32', nodata=-1, units='1') for m_name in measurement_names]
+
+
 class IndexStat(SimpleStatistic):
     def compute(self, data):
         index = super(IndexStat, self).compute(data)
@@ -759,6 +846,7 @@ STATS = {
     # 'ndvi_daily': NormalisedDifferenceStats(name='ndvi', band1='nir', band2='red', stats=['squeeze']),
     'none': NoneStat,
     'wofs_summary': WofsStats,
+    'tcwbg_summary': TCWStats,
     'masked_multi_count': MaskMultiCounter,
     'external': ExternalPlugin,
 }

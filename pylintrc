@@ -23,6 +23,7 @@ disable=no-self-use,
     inconsistent-return-statements, # pylint bug
     len-as-condition,
     no-else-return,
+    too-many-lines,
     round-builtin, # py2.7
     map-builtin-not-iterating, # py2.7
     range-builtin-not-iterating, # py2.7

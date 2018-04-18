@@ -19,7 +19,7 @@ from datacube.utils.geometry import CRS
 from datacube_stats.incremental_stats import mk_incremental_mean, mk_incremental_min, mk_incremental_sum, \
     mk_incremental_max, mk_incremental_counter
 from datacube_stats.stat_funcs import nan_percentile, argpercentile, axisindex
-from datacube_stats.statistics import NormalisedDifferenceStats, WofsStats, \
+from datacube_stats.statistics import NormalisedDifferenceStats, WofsStats, TCWStats, \
     StatsConfigurationError, Medoid, GeoMedian
 
 
@@ -111,6 +111,22 @@ def test_new_med_ndwi():
     assert isinstance(result, xr.Dataset)
     assert 'crs' in result.attrs
     assert 'ndwi_median' in result.data_vars
+
+
+def test_tcw_stats():
+    tc_stats = TCWStats()
+    bands = ['blue', 'green', 'red', 'nir', 'swir1', 'swir2']
+    data_vars = {}
+    for band in bands:
+        arr = np.random.uniform(low=-1, high=1, size=(5, 100, 100))
+        data_vars[band] = xr.DataArray(arr, dims=('time', 'y', 'x'),
+                                       coords={'time': list(range(5))}, attrs={'crs': 'Fake CRS'})
+
+    dataset = xr.Dataset(data_vars=data_vars, attrs={'crs': 'Fake CRS'})
+    result = tc_stats.compute(dataset)
+    assert isinstance(result, xr.Dataset)
+    assert 'crs' in result.attrs
+    assert 'pct_exceedance_wetness' in result.data_vars
 
 
 def test_masked_count():

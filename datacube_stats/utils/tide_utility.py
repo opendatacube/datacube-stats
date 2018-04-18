@@ -293,7 +293,11 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
     :return: poly file name and filtered dates/times
     """
     method = filter_product.get('method')
-    feature_id = feature['ID']
+
+    try:
+        feature_id = feature['ID']
+    except KeyError:
+        feature_id = feature['id']
 
     def by_hydrological_months(args):
         prod_type = args['type']
