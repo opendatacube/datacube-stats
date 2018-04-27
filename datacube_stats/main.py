@@ -39,7 +39,7 @@ from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence
-from digitalearthau.qsub import with_qsub_runner
+from digitalearthau.qsub import with_qsub_runner, TaskRunner
 from digitalearthau.runners.model import TaskDescription, DefaultJobParameters
 from .utils.timer import MultiTimer, wrap_in_timer
 from .utils import sorted_interleave, Slice, prettier_slice
@@ -327,12 +327,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
 
-    def run(self, runner, task_file=None, task_slice=None):
-        if task_file:
-            tasks = unpickle_stream(task_file)
-        else:
-            tasks = self.generate_tasks(self.configure_outputs())
-
+    def run_tasks(self, tasks, runner=None, task_slice=None):
         if task_slice is not None:
             tasks = islice(tasks, task_slice.start, task_slice.stop, task_slice.step)
 
@@ -357,6 +352,9 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                                                                     source_products=[],
                                                                     output_products=[]))
 
+        if runner is None:
+            runner = TaskRunner()
+
         result = runner(task_desc, tasks, task_runner)
 
         _LOG.debug('Stopping runner.')
@@ -364,6 +362,14 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         _LOG.debug('Runner stopped.')
 
         return result
+
+    def run(self, runner, task_file=None, task_slice=None):
+        if task_file:
+            tasks = unpickle_stream(task_file)
+        else:
+            tasks = self.generate_tasks(self.configure_outputs())
+
+        return self.run_tasks(tasks, runner=runner, task_slice=task_slice)
 
     def save_tasks_to_file(self, filename):
         _LOG.debug('Saving tasks to %s.', filename)
@@ -373,7 +379,9 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         num_saved = pickle_stream(tasks, filename)
         _LOG.debug('Successfully saved %s tasks to %s.', num_saved, filename)
 
-    def generate_tasks(self, output_products: Dict[str, OutputProduct]) -> Iterator[StatsTask]:
+    def generate_tasks(self,
+                       output_products: Dict[str, OutputProduct] = None,
+                       metadata_type='eo') -> Iterator[StatsTask]:
         """
         Generate a sequence of `StatsTask` definitions.
 
@@ -393,6 +401,9 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         :param output_products: List of output product definitions
         :return:
         """
+        if output_products is None:
+            output_products = self.configure_outputs(metadata_type)
+
         is_iterative = all(op.is_iterative() for op in output_products.values())
 
         for task in self.task_generator(index=self.index, date_ranges=self.date_ranges,
