@@ -604,12 +604,10 @@ class ENVIBILOutputDriver(GeoTiffOutputDriver):
             _LOG.error('Error running gdal_translate: %s', cpe.output)
 
 
-class NoneOutputDriver(OutputDriver):
-    """
-    return data as xarray for plotting without writing data to file
+class XarrayOutputDriver(OutputDriver):
+    """ Save results as `xarray.Dataset`s. """
 
-    """
-    _driver_name = 'None'
+    _driver_name = 'xarray'
     result = {}
     source = {}
 
@@ -713,14 +711,3 @@ def atomic_rename(src, dest):
     """Wrap boltons.fileutils.atomic_rename to allow passing  `str` or `pathlib.Path`"""
     _LOG.info('renaming %s to %s', src, dest)
     fileutils.replace(str(src), str(dest))
-
-
-class XarrayOutputDriver(OutputDriver):
-    def write_data(self, prod_name, measurement_name, tile_index, values):
-        pass
-
-    def write_global_attributes(self, attributes):
-        pass
-
-    def open_output_files(self):
-        pass
