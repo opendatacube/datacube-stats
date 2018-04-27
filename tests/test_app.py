@@ -11,13 +11,13 @@ import pytest
 
 from datacube.model import MetadataType
 from datacube_stats.main import OutputProduct
-from datacube_stats.main import StatsApp
+from datacube_stats.main import StatsApp, normalize_config
 from datacube_stats.models import StatsTask
 from datacube_stats.statistics import StatsConfigurationError, ReducingXarrayStatistic
 
 
 def test_create_and_validate_stats_app(sample_stats_config):
-    stats_app = StatsApp.from_configuration_file(config=sample_stats_config)
+    stats_app = StatsApp.from_configuration_file(config=normalize_config(sample_stats_config))
     assert stats_app is not None
     stats_app.validate()
 
@@ -26,12 +26,12 @@ def test_raises_error_on_invalid_driver(sample_stats_config):
     sample_stats_config['storage']['driver'] = 'foo'
 
     with pytest.raises(StatsConfigurationError):
-        StatsApp.from_configuration_file(sample_stats_config)
+        StatsApp.from_configuration_file(config=normalize_config(sample_stats_config))
 
 
 def test_raises_error_on_no_sources(sample_stats_config):
     sample_stats_config['sources'] = []
-    stats_app = StatsApp.from_configuration_file(config=sample_stats_config)
+    stats_app = StatsApp.from_configuration_file(config=normalize_config(sample_stats_config))
 
     with pytest.raises(StatsConfigurationError):
         stats_app.validate()
@@ -46,7 +46,7 @@ def test_create_trivial_stats_app():
 
 def test_can_create_output_products(sample_stats_config, mock_index):
     # GIVEN: A simple stats app
-    stats_app = StatsApp.from_configuration_file(config=sample_stats_config)
+    stats_app = StatsApp.from_configuration_file(config=normalize_config(sample_stats_config))
     stats_app.index = mock_index
     stats_app.output_products = _SAMPLE_OUTPUTS_SPEC
 
@@ -95,7 +95,7 @@ _EXPECTED_DB_FILTER = {'cell_index': None,
 
 
 def create_app_with_products(sample_stats_config, mock_index):
-    stats_app = StatsApp.from_configuration_file(config=sample_stats_config)
+    stats_app = StatsApp.from_configuration_file(config=normalize_config(sample_stats_config))
     stats_app.index = mock_index
     stats_app.output_products = _SAMPLE_OUTPUTS_SPEC
     output_prods = stats_app.configure_outputs()

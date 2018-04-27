@@ -93,12 +93,14 @@ def gather_tile_indexes(tile_index, tile_index_file):
     assert tile_index is None or tile_index_file is None, \
         "must not specify both tile_index and tile_index_file"
 
-    if tile_index:
+    if tile_index is not None:
         return [tile_index]
 
     with open(tile_index_file) as fl:
-        return [tuple(int(x) for x in l.split())
-                for l in fl]
+        tile_indexes = [tuple(int(x) for x in l.split()) for l in fl]
+        if len(tile_indexes) == 0:
+            return None
+        return tile_indexes
 
 
 # pylint: disable=broad-except
@@ -157,10 +159,10 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
 
         _, config = next(read_documents(stats_config_file))
         stats_schema(config)
+        config = normalize_config(config,
+                                  tile_index, tile_index_file, year, output_location)
 
-        app = StatsApp.from_configuration_file(config, index,
-                                               gather_tile_indexes(tile_index, tile_index_file),
-                                               output_location, year)
+        app = StatsApp.from_configuration_file(config, index)
         app.validate()
 
         if save_tasks:
@@ -187,6 +189,39 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
 def _log_setup():
     _LOG.debug('Loaded datacube_stats %s from %s.', datacube_stats.__version__, datacube_stats.__path__)
     _LOG.debug('Running against datacube-core %s from %s', datacube.__version__, datacube.__path__)
+
+
+def normalize_config(config, tile_index=None, tile_index_file=None,
+                     year=None, output_location=None):
+    if tile_index is not None and len(tile_index) == 0:
+        tile_index = None
+
+    tile_indexes = gather_tile_indexes(tile_index, tile_index_file)
+
+    input_region = config.get('input_region')
+    if tile_indexes is not None:
+        if input_region is None:
+            input_region = {'tiles': tile_indexes}
+        elif 'geometry' in input_region:
+            input_region.update({'tiles': tile_indexes})
+        elif 'from_file' not in input_region:
+            input_region = {'tiles': tile_indexes}
+    config['input_region'] = input_region
+
+    if year is not None:
+        if 'date_ranges' not in config:
+            config['date_ranges'] = {}
+
+        config['date_ranges']['start_date'] = '{}-01-01'.format(year)
+        config['date_ranges']['end_date'] = '{}-01-01'.format(year + 1)
+
+    config['location'] = output_location or config.get('location', '')
+    config['computation'] = config.get('computation', {})
+    config['global_attributes'] = config.get('global_attributes', {})
+    config['var_attributes'] = config.get('var_attributes', {})
+    config['filter_product'] = config.get('filter_product', {})
+
+    return config
 
 
 class StatsApp(object):  # pylint: disable=too-many-instance-attributes
@@ -237,32 +272,14 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         self.var_attributes = None
 
     @classmethod
-    def from_configuration_file(cls, config, index=None, tile_indexes=None, output_location=None, year=None):
+    def from_configuration_file(cls, config, index=None):
         """
         Create a StatsApp to run a processing job, based on a configuration file
 
         :param config: dictionary based configuration
         :param index: open database connection
-        :param tile_indexes: list of tiles for a gridded job. (useful for debugging)
         :return: read to run StatsApp
         """
-        input_region = config.get('input_region')
-
-        if tile_indexes is not None:
-            if input_region is None:
-                input_region = {'tiles': tile_indexes}
-            elif 'geometry' in input_region:
-                input_region.update({'tiles': tile_indexes})
-            elif 'from_file' not in input_region:
-                input_region = {'tiles': tile_indexes}
-
-        if year is not None:
-            if 'date_ranges' not in config:
-                config['date_ranges'] = {}
-
-            config['date_ranges']['start_date'] = '{}-01-01'.format(year)
-            config['date_ranges']['end_date'] = '{}-01-01'.format(year + 1)
-
         stats_app = cls()
         stats_app.index = index
         stats_app.config_file = config
@@ -270,14 +287,15 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         stats_app.sources = config['sources']
         stats_app.output_product_specs = config['output_products']
         # Write files to current directory if not set in config or command line
-        stats_app.location = output_location or config.get('location', '')
-        stats_app.computation = config.get('computation', {})
+        stats_app.location = config['location']
+        stats_app.computation = config['computation']
         stats_app.date_ranges = _configure_date_ranges(index, config)
-        stats_app.filter_product = config.get('filter_product', {})
-        stats_app.task_generator = select_task_generator(input_region, stats_app.storage, stats_app.filter_product)
+        stats_app.filter_product = config['filter_product']
+        stats_app.task_generator = select_task_generator(config['input_region'],
+                                                         stats_app.storage, stats_app.filter_product)
         stats_app.output_driver = _prepare_output_driver(stats_app.storage)
-        stats_app.global_attributes = config.get('global_attributes', {})
-        stats_app.var_attributes = config.get('var_attributes', {})
+        stats_app.global_attributes = config['global_attributes']
+        stats_app.var_attributes = config['var_attributes']
 
         return stats_app
 

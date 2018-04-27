@@ -271,7 +271,7 @@ storage:
   dimension_order: [time, y, x]
 
 input_region:
-   from_file: /g/data/u46/users/ia1511/Work/data/qgis/bur_dry_albers.shp
+   from_file: /g/data/u46/users/ia1511/Work/data/ITEM-files/bur_dry_albers.shp
    feature_id: [49]
 
 location: /g/data/u46/users/ia1511/Work/data/dummy
@@ -328,7 +328,7 @@ date_ranges:
 location: '/g/data/r78/tmp'
 
 input_region:
-  from_file: /g/data/u46/users/ia1511/Work/data/qgis/bur_dry_albers.shp
+  from_file: /g/data/u46/users/ia1511/Work/data/ITEM-files/bur_dry_albers.shp
   feature_id: [49]
 
 storage:
