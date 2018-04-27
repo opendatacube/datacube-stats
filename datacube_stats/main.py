@@ -154,15 +154,10 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
 
         timer = MultiTimer().start('main')
 
-        if len(tile_index) == 0:
-            tile_index = None
-
-        _, config = next(read_documents(stats_config_file))
-        stats_schema(config)
-        config = normalize_config(config,
+        config = normalize_config(read_config(stats_config_file),
                                   tile_index, tile_index_file, year, output_location)
 
-        app = StatsApp.from_configuration_file(config, index)
+        app = StatsApp(config, index)
         app.validate()
 
         if save_tasks:
@@ -191,6 +186,12 @@ def _log_setup():
     _LOG.debug('Running against datacube-core %s from %s', datacube.__version__, datacube.__path__)
 
 
+def read_config(stats_config_file):
+    _, config = next(read_documents(stats_config_file))
+    stats_schema(config)
+    return config
+
+
 def normalize_config(config, tile_index=None, tile_index_file=None,
                      year=None, output_location=None):
     if tile_index is not None and len(tile_index) == 0:
@@ -206,6 +207,7 @@ def normalize_config(config, tile_index=None, tile_index_file=None,
             input_region.update({'tiles': tile_indexes})
         elif 'from_file' not in input_region:
             input_region = {'tiles': tile_indexes}
+
     config['input_region'] = input_region
 
     if year is not None:
@@ -215,11 +217,14 @@ def normalize_config(config, tile_index=None, tile_index_file=None,
         config['date_ranges']['start_date'] = '{}-01-01'.format(year)
         config['date_ranges']['end_date'] = '{}-01-01'.format(year + 1)
 
+    # Write files to current directory if not set in config or command line
     config['location'] = output_location or config.get('location', '')
+
     config['computation'] = config.get('computation', {})
+    config['filter_product'] = config.get('filter_product', {})
+
     config['global_attributes'] = config.get('global_attributes', {})
     config['var_attributes'] = config.get('var_attributes', {})
-    config['filter_product'] = config.get('filter_product', {})
 
     return config
 
@@ -229,75 +234,53 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
     A StatsApp can produce a set of time based statistical products.
     """
 
-    def __init__(self):
+    def __init__(self, config, index=None):
+        """
+        Create a StatsApp to run a processing job, based on a configuration dict.
+        """
+        config = normalize_config(config)
+
         #: Dictionary containing the configuration
-        self.config_file = None
+        self.config_file = config
 
         #: Description of output file format
-        self.storage = None
+        self.storage = config['storage']
 
         #: Definition of source products, including their name, which variables to pull from them, and
         #: a specification of any masking that should be applied.
-        self.sources = []
+        self.sources = config['sources']
 
         #: List of filenames and statistical methods used, describing what the outputs of the run will be.
-        self.output_product_specs = []
+        self.output_product_specs = config['output_products']
 
         #: Base directory to write output files to.
         #: Files may be created in a sub-directory, depending on the configuration of the
         #: :attr:`output_driver`.
-        self.location = None
+        self.location = config['location']
 
         #: How to slice a task up spatially to to fit into memory.
-        self.computation = None
+        self.computation = config['computation']
 
         #: Define filter product to accept all derive product attributes
-        self.filter_product = None
+        self.filter_product = config['filter_product']
 
         #: An iterable of date ranges.
-        self.date_ranges = None
+        self.date_ranges = _configure_date_ranges(index, config)
 
         #: Generates tasks to compute statistics. These tasks should be :class:`StatsTask` objects
         #: and will define spatial and temporal boundaries, as well as statistical operations to be run.
-        self.task_generator = None
+        self.task_generator = select_task_generator(config['input_region'],
+                                                    self.storage, self.filter_product)
 
         #: A class which knows how to create and write out data to a permanent storage format.
         #: Implements :class:`.output_drivers.OutputDriver`.
-        self.output_driver = None
+        self.output_driver = _prepare_output_driver(self.storage)
 
         #: An open database connection
-        self.index = None
+        self.index = index
 
-        self.global_attributes = None
-        self.var_attributes = None
-
-    @classmethod
-    def from_configuration_file(cls, config, index=None):
-        """
-        Create a StatsApp to run a processing job, based on a configuration file
-
-        :param config: dictionary based configuration
-        :param index: open database connection
-        :return: read to run StatsApp
-        """
-        stats_app = cls()
-        stats_app.index = index
-        stats_app.config_file = config
-        stats_app.storage = config['storage']
-        stats_app.sources = config['sources']
-        stats_app.output_product_specs = config['output_products']
-        # Write files to current directory if not set in config or command line
-        stats_app.location = config['location']
-        stats_app.computation = config['computation']
-        stats_app.date_ranges = _configure_date_ranges(index, config)
-        stats_app.filter_product = config['filter_product']
-        stats_app.task_generator = select_task_generator(config['input_region'],
-                                                         stats_app.storage, stats_app.filter_product)
-        stats_app.output_driver = _prepare_output_driver(stats_app.storage)
-        stats_app.global_attributes = config['global_attributes']
-        stats_app.var_attributes = config['var_attributes']
-
-        return stats_app
+        self.global_attributes = config['global_attributes']
+        self.var_attributes = config['var_attributes']
 
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""
