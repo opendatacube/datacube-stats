@@ -713,7 +713,10 @@ class ExternalPlugin(Statistic):
 
     def __init__(self, impl, *args, **kwargs):
         from pydoc import locate  # TODO: probably should use importlib, but this works so easily
+        import sys
+        import os
 
+        sys.path.append(os.getcwd())
         impl_class = locate(impl)
 
         if impl_class is None:
