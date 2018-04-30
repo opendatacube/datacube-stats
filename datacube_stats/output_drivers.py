@@ -365,7 +365,10 @@ class NetCDFCFOutputDriver(OutputDriver):
         for measurement in stat.data_measurements:
             name = measurement['name']
 
-            v_params = stat.output_params.copy()
+            if stat.output_params is None:
+                v_params = {}
+            else:
+                v_params = stat.output_params.copy()
             v_params['chunksizes'] = chunking
             v_params.update(
                 {k: v for k, v in measurement.items() if k in _NETCDF_VARIABLE__PARAMETER_NAMES})
