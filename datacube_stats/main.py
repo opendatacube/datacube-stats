@@ -16,6 +16,7 @@ from textwrap import dedent
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Iterable, Iterator, Tuple
+from os import path
 
 import click
 import numpy as np
@@ -29,7 +30,6 @@ import datacube
 import datacube_stats
 from datacube.api import make_mask, GridWorkflow
 from datacube.ui import click as ui
-from datacube.ui.click import to_pathlib
 from datacube.utils import read_documents, import_function
 from datacube.utils.geometry import CRS, Geometry, GeoBox
 from datacube_stats.models import OutputProduct
@@ -50,6 +50,13 @@ from .output_drivers import OutputDriver
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
+
+
+def _default_config(ctx, param, value):
+    if path.exists(value):
+        return value
+
+    ctx.fail('STATS_CONFIG_FILE not provided.')
 
 
 def _print_version(ctx, param, value):
@@ -76,12 +83,8 @@ def list_statistics(ctx, param, value):
     if not value or ctx.resilient_parsing:
         return
 
-    #       click.echo("{:>20} | {}".format(name, inspect.getdoc(stat)))
     for name, stat in STATS.items():
         click.echo(name)
-        # click.echo(inspect.getdoc(stat))
-        # click.echo('\n\n')
-    #     click.echo(pd.Series({name: inspect.getdoc(stat) for name, stat in STATS.items()}))
 
     ctx.exit()
 
@@ -107,9 +110,8 @@ def gather_tile_indexes(tile_index, tile_index_file):
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 @click.command(name='datacube-stats')
-@click.argument('stats_config_file',
-                type=click.Path(exists=True, readable=True, writable=False, dir_okay=False),
-                callback=to_pathlib)
+@click.argument('stats_config_file', type=str, callback=_default_config, default='config.yaml',
+                metavar='STATS_CONFIG_FILE')
 @click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
 @click.option('--load-tasks', type=click.Path(exists=True, readable=True))
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
@@ -293,6 +295,8 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         assert hasattr(self.output_driver, 'open_output_files')
         assert hasattr(self.output_driver, 'write_data')
 
+        _LOG.debug('config file is valid.')
+
     def _check_consistent_measurements(self):
         """Part of configuration validation"""
         try:
@@ -310,6 +314,12 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         if duplicate_names:
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
+
+    def _log_config(self):
+        config = self.config_file
+        _LOG.info('statistic: \'%s\' location: \'%s\'',
+                  config['output_products'][0]['statistic'],
+                  config['location'])
 
     def run_tasks(self, tasks, runner=None, task_slice=None):
         if task_slice is not None:
@@ -348,6 +358,8 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         return result
 
     def run(self, runner, task_file=None, task_slice=None):
+        self._log_config()
+
         if task_file:
             tasks = unpickle_stream(task_file)
         else:
@@ -402,7 +414,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
 
         StatProduct describes the structure and how to compute the output product.
         """
-        _LOG.info('Creating output products')
+        _LOG.debug('Creating output products')
 
         output_products = {}
 
@@ -475,8 +487,8 @@ def execute_task(task: StatsTask, output_driver, chunking) -> StatsTask:
         raise StatsProcessingException("Error processing task: %s" % task)
 
     timer.pause('total')
-    _LOG.info('Completed %s %s task with %s data sources; %s', task.tile_index,
-              [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
+    _LOG.debug('Completed %s %s task with %s data sources; %s', task.tile_index,
+               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
     return task
 
 
@@ -519,16 +531,27 @@ def load_process_save_chunk(output_files: OutputDriver,
 
         last_idx = len(task.output_products) - 1
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):
-            _LOG.info("Computing %s in tile %s %s; %s",
-                      prod_name, task.tile_index,
-                      "({})".format(", ".join(prettier_slice(c) for c in chunk)),
-                      timer)
+            _LOG.debug("Computing %s in tile %s %s; %s",
+                       prod_name, task.tile_index,
+                       "({})".format(", ".join(prettier_slice(c) for c in chunk)),
+                       timer)
 
             measurements = stat.data_measurements
-            with timer.time(prod_name):
-                result = stat.compute(data)
 
-                if idx == last_idx:  # make sure input data is released early
+            with timer.time(prod_name):
+                _LOG.debug('Computing statistic')
+                try:
+                    # Try to preprocess and postprocess if the object has this
+                    # capability
+                    s = stat.statistic
+                    result = s.postprocess(s.compute(s.preprocess(data)))
+                except AttributeError as e:
+                    # Otherwise just do the default compute
+                    _LOG.debug(e)
+                    result = stat.compute(data)
+
+                # make sure input data is released early
+                if idx == last_idx:
                     del data
 
                 # restore nodata values back
