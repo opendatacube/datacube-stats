@@ -19,7 +19,8 @@ setup(
     author_email='datacube@ga.gov.au',
     description='Perform statistics operations on a Data Cube',
     install_requires=['xarray', 'click', 'pandas', 'numpy', 'datacube', 'rasterio', 'pyyaml',
-                      'cloudpickle', 'boltons', 'pydash', 'python-dateutil', 'fiona', 'voluptuous'],
+                      'cloudpickle', 'boltons', 'pydash', 'python-dateutil', 'fiona', 'voluptuous',
+                      'psutil'],
     setup_requires=['pytest-runner'],
     tests_require=['pytest', 'mock', 'hypothesis'],
     entry_points={
