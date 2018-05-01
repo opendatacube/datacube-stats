@@ -31,17 +31,9 @@ def test_raises_error_on_invalid_driver(sample_stats_config):
 
 def test_raises_error_on_no_sources(sample_stats_config):
     sample_stats_config['sources'] = []
-    stats_app = StatsApp(config=sample_stats_config)
 
     with pytest.raises(StatsConfigurationError):
-        stats_app.validate()
-
-
-def xtest_create_trivial_stats_app():
-    stats_app = StatsApp()
-    assert stats_app is not None
-    with pytest.raises(Exception):
-        stats_app.validate()
+        stats_app = StatsApp(config=sample_stats_config)
 
 
 def test_can_create_output_products(sample_stats_config, mock_index):

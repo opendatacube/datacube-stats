@@ -158,7 +158,6 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
                                   tile_index, tile_index_file, year, output_location)
 
         app = StatsApp(config, index)
-        app.validate()
 
         if save_tasks:
             app.save_tasks_to_file(save_tasks)
@@ -281,6 +280,8 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
 
         self.global_attributes = config['global_attributes']
         self.var_attributes = config['var_attributes']
+
+        self.validate()
 
     def validate(self):
         """Check StatsApp is correctly configured and raise an error if errors are found."""

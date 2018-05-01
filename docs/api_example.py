@@ -48,7 +48,6 @@ print(yaml.dump(config, indent=4))
 
 dc = Datacube()
 app = StatsApp(config, dc.index)
-app.validate()
 
 print('generating tasks')
 tasks = app.generate_tasks()
@@ -56,7 +55,7 @@ tasks = app.generate_tasks()
 print('running tasks')
 app.run_tasks(tasks)
 
-# this is only available for the None output driver
+# this is only available for the xarray output driver
 nbar_mean = app.output_driver.result['nbar_mean']
 print('result of computation')
 print(nbar_mean)
