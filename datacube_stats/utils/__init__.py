@@ -16,7 +16,6 @@ from datetime import timedelta
 from datacube.api.query import Query
 
 from datacube.storage.masking import mask_invalid_data, create_mask_value
-from .dates import filter_time_by_source, datetime64_to_inttime
 from datacube.api import Tile
 from datacube.model import Range
 
@@ -307,13 +306,6 @@ def wofs_fuser(dest, src):
         wofs_mask(src, wet=True) & wofs_mask(dest, dry=True))
     np.copyto(dest, 2, where=invalid)
     return dest
-
-
-def tile_to_list(tile):
-    """
-    Extract tile sources xarray into a list of tuples of datasets
-    """
-    return [a.item() for a in tile.sources]
 
 
 def tile_flatten_sources(tile):

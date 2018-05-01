@@ -5,7 +5,7 @@ import pytest
 from hypothesis import given, strategies as st
 
 from datacube.utils.dates import date_sequence
-from datacube_stats.utils import filter_time_by_source, datetime64_to_inttime
+from datacube_stats.utils.dates import filter_time_by_source, datetime64_to_inttime
 
 
 def parse(*dates):

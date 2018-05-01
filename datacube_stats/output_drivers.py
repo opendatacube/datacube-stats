@@ -428,8 +428,6 @@ class GeoTiffOutputDriver(OutputDriver):
     def __init__(self, *args, **kwargs):
         super(GeoTiffOutputDriver, self).__init__(*args, **kwargs)
 
-        self._measurement_bands = {}
-
     def _get_dtype(self, out_prod_name, measurement_name=None):
         if measurement_name:
             dtype = self._output_products[out_prod_name].product.measurements[measurement_name]['dtype']
@@ -695,13 +693,6 @@ class TestOutputDriver(OutputDriver):
 
     def open_output_files(self):
         pass
-
-
-def _format_filename(path_template, **kwargs):
-    x, y = kwargs['tile_index']
-    epoch_start, epoch_end = kwargs['time_period']
-    return Path(str(path_template).format(x=x, y=y, epoch_start=epoch_start, epoch_end=epoch_end,
-                                          **kwargs))
 
 
 def _polygon_from_sources_extents(sources, geobox):

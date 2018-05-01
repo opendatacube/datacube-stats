@@ -8,12 +8,6 @@ from datacube.utils.geometry import CRS, Geometry
 from datacube_stats.statistics import StatsConfigurationError
 from datacube_stats.utils.dates import get_hydrological_years
 
-DERIVED_PRODS = ['dry', 'wet', 'item', 'low', 'high']
-FILTER_METHOD = {
-    'by_tidal_height': ['item', 'low', 'high'],
-    'by_hydrological_months': ['dry', 'wet'],
-}
-PROD_SUB_LIST = ['e', 'f', 'ph', 'pl']
 
 _LOG = logging.getLogger('tide_utility')
 

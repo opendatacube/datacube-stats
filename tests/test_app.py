@@ -11,7 +11,7 @@ import pytest
 
 from datacube.model import MetadataType
 from datacube_stats.main import OutputProduct
-from datacube_stats.main import StatsApp, normalize_config
+from datacube_stats.main import StatsApp
 from datacube_stats.models import StatsTask
 from datacube_stats.statistics import StatsConfigurationError, ReducingXarrayStatistic
 

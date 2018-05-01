@@ -17,7 +17,6 @@ from .utils.query import multi_product_list_cells
 from .utils.timer import MultiTimer
 
 DEFAULT_GROUP_BY = 'time'
-DEFAULT_COMPUTATION_OPTIONS = {'chunking': {'x': 1000, 'y': 1000}}
 
 _LOG = logging.getLogger(__name__)
 
@@ -66,15 +65,6 @@ def select_task_generator(input_region, storage, filter_product):
         input_region = [input_region]
         return NonGriddedTaskGenerator(input_region=input_region, storage=storage,
                                        filter_product=filter_product, geopolygon=None, feature=None)
-
-
-def boundary_geo_polygon(geometry, crs):
-    import shapely.ops
-    from shapely.geometry import shape, mapping
-    joined = shapely.ops.unary_union(list(shape(geom) for geom in geometry))
-    final = joined.convex_hull
-    boundary_polygon = Geometry(mapping(final), crs)
-    return boundary_polygon
 
 
 def boundary_polygon_from_file(filename: str) -> Geometry:
