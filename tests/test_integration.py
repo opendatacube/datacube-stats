@@ -134,13 +134,17 @@ input_region:
 location: /g/data/u46/users/ia1511/Work/data/dummy
 
 output_products:
- - name: med_ndwi
-   statistic: med_ndwi
-   # statistic: std_ndwi
+ - name: ndwi_mean
+   statistic: simple_normalised_difference
+   statistic_args:
+       name: ndwi
+       band1: green
+       band2: swir1
+       stats: [min, mean, max, std]
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
+   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
    product_type: ITEM
 
 filter_product:
@@ -151,78 +155,8 @@ filter_product:
      tide_percent: 10
 
 """
-CONFIG_TEMPLATE_ITEM_STD = """
-## Define inputs to perform statistics on
-sources:
-  - product: ls8_nbar_albers
-    measurements: [blue, green, red, nir, swir1, swir2]
-    group_by: solar_day
-    resampling: bilinear
-    masks:
-      - product: ls8_pq_albers
-        measurement: pixelquality
-        group_by: solar_day
-        fuse_func: datacube.helpers.ga_pq_fuser
-        flags:
-          contiguous: True
-          cloud_acca: no_cloud
-          cloud_fmask: no_cloud
-          cloud_shadow_acca: no_cloud_shadow
-          cloud_shadow_fmask: no_cloud_shadow
-          blue_saturated: False
-          green_saturated: False
-          red_saturated: False
-          nir_saturated: False
-          swir1_saturated: False
-          swir2_saturated: False
 
-## Define whether and how to chunk over time
-date_ranges:
-  start_date: 2015-01-01
-  end_date: 2015-04-01
-
-
-storage:
-  driver: NetCDF CF
-
-  crs: EPSG:3577
-  tile_size:
-          x: 100000.0
-          y: 100000.0
-  resolution:
-          x: 25000
-          y: -25000
-  chunking:
-      x: 200
-      y: 200
-      time: 1
-  dimension_order: [time, y, x]
-
-input_region:
-   from_file: /g/data/v10/ITEM/ITEMv2_tidalmodel.shp
-   feature_id: [280]
-
-location: /g/data/u46/users/ia1511/Work/data/dummy
-
-output_products:
- - name: med_stddev
-   statistic: std_ndwi
-   output_params:
-      zlib: True
-      fletcher32: True
-   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
-   product_type: ITEM
-
-filter_product:
-  method: by_tide_height
-  args:
-     # tide_range used to differentiate item with low/high composite and for exploring future incremental change
-     tide_range: 10
-     tide_percent: 10
-
-"""
 CONFIG_TEMPLATE_DRY = """
-
 ## Define inputs to perform statistics on
 sources:
   - product: ls5_nbar_albers
@@ -399,7 +333,6 @@ def test_input_region_single_tile():
         assert outputfile.exists()
 
 
-@pytest.mark.skip(reason="currently NDWI stats are unavailable")
 @pytest.mark.xfail(not OTPS_MODULE_EXISTS, reason="otps module is not available")
 def test_input_region_from_shapefile_item_ndwi():
     runner = CliRunner()
@@ -407,27 +340,7 @@ def test_input_region_from_shapefile_item_ndwi():
         with open(CONFIG_FILENAME, 'w') as f:
             f.write(CONFIG_TEMPLATE_ITEM_NDWI)
 
-        outputfile = Path(tmpdir) / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_medndwi.nc'
-
-        result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
-                                      '--output-location', str(Path(tmpdir).absolute())])
-
-        assert 'error' not in result.output.lower()
-        assert 'exception' not in result.output.lower()
-        assert result.exit_code == 0
-
-        assert outputfile.exists()
-
-
-@pytest.mark.skip(reason="currently NDWI stats are unavailable")
-@pytest.mark.xfail(not OTPS_MODULE_EXISTS, reason="otps module is not available")
-def test_input_region_from_shapefile_item_std():
-    runner = CliRunner()
-    with runner.isolated_filesystem() as tmpdir:
-        with open(CONFIG_FILENAME, 'w') as f:
-            f.write(CONFIG_TEMPLATE_ITEM_STD)
-
-        outputfile = Path(tmpdir) / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401_STD.nc'
+        outputfile = Path(tmpdir) / 'ITEM_280_142.63_-10.31_PER_10_20150101_20150401.nc'
 
         result = runner.invoke(main, ['-v', '-v', '-v', CONFIG_FILENAME,
                                       '--output-location', str(Path(tmpdir).absolute())])
