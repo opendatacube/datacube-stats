@@ -49,6 +49,9 @@ At it's simplest, Data Cube Statistics only requires specifying a configuration 
 
     $ datacube-stats example-configuration.yaml
 
+If a configuration file is not provided and a file named ``config.yaml`` is found in the 
+current directory, then it will be used automatically.
+
 More detailed usage information is also available:
 
 .. code-block:: bash
@@ -656,9 +659,10 @@ a list of values for ``water`` that indicate "wetness" as an argument named
 
             return [wet]
 
-Suppose the package that contains this implementation is called
-``pseudo.example``, and it is available in the Python path. Then the configuration file could look like
-(eliding ``location``, ``computation``, and ``storage`` specifications)
+Suppose the package that contains this implementation is called ``pseudo.example``,
+and it is available in the Python path (with the current directory added). Then 
+the configuration file could look like (eliding ``location``, ``computation``, 
+and ``storage`` specifications)
 
 .. code-block:: yaml
 
