@@ -18,6 +18,7 @@ from datacube.api.query import Query
 from datacube.storage.masking import mask_invalid_data, create_mask_value
 from datacube.api import Tile
 from datacube.model import Range
+from datacube.ui.task_app import pickle_stream, unpickle_stream
 
 
 def tile_iter(tile: Tile, chunk_size: Dict[str, int]) -> Iterator[Tuple[None, slice, slice]]:
@@ -380,23 +381,6 @@ def sorted_interleave(*iterators, key=lambda x: x, reverse=False):
         x = advance(it)
         if x is not None:
             vv.append(x)
-
-
-def pickle_stream(objs, filename):
-    idx = 0
-    with open(filename, 'wb') as stream:
-        for idx, obj in enumerate(objs, start=1):
-            cloudpickle.dump(obj, stream, pickle.HIGHEST_PROTOCOL)
-    return idx
-
-
-def unpickle_stream(filename):
-    with open(filename, 'rb') as stream:
-        while True:
-            try:
-                yield pickle.load(stream)
-            except EOFError:
-                break
 
 
 def _find_periods_with_data(index, product_names, period_duration='1 day',
