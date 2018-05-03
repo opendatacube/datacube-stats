@@ -695,12 +695,6 @@ class TestOutputDriver(OutputDriver):
         pass
 
 
-def _polygon_from_sources_extents(sources, geobox):
-    sources_union = geometry.unary_union(source.extent.to_crs(geobox.crs) for source in sources)
-    valid_data = geobox.extent.intersection(sources_union)
-    return valid_data
-
-
 def atomic_rename(src, dest):
     """Wrap boltons.fileutils.atomic_rename to allow passing  `str` or `pathlib.Path`"""
     _LOG.info('renaming %s to %s', src, dest)
