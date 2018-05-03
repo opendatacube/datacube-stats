@@ -189,10 +189,6 @@ class OutputProduct(object):
             'description': 'Description for ' + self.name,
             'metadata_type': metadata_type.name,
             'metadata': {
-                # TODO: Setting format here is wrong. does it have to be set? Hopefully it's optional
-                'format': {
-                    'name': 'NetCDF'
-                },
                 'product_type': product_type,
                 'statistics': stats_metadata,
                 **custom_metadata
