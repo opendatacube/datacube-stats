@@ -15,12 +15,16 @@ from hypothesis import given, settings
 
 import datacube_stats.statistics
 
+from datacube.model import Measurement
 from datacube.utils.geometry import CRS
 from datacube_stats.incremental_stats import mk_incremental_mean, mk_incremental_min, mk_incremental_sum, \
     mk_incremental_max, mk_incremental_counter
 from datacube_stats.stat_funcs import nan_percentile, argpercentile, axisindex
 from datacube_stats.statistics import NormalisedDifferenceStats, WofsStats, TCWStats, \
     StatsConfigurationError, Medoid, GeoMedian
+
+
+FAKE_MEASUREMENT_INFO = {'dtype': 'int16', 'nodata': -1, 'units': '1'}
 
 
 def test_nan_percentile():
@@ -199,10 +203,10 @@ def eo_wofs_dataset(draw):
 def test_wofs_stats(dataset):
     wofsstat = WofsStats()
     # Check that measurements() does something useful
-    output_measurements = wofsstat.measurements([{'name': 'water'}])
+    output_measurements = wofsstat.measurements([Measurement(name='water', **FAKE_MEASUREMENT_INFO)])
     assert len(output_measurements) == 3
     expected_vars = {'count_wet', 'count_clear', 'frequency'}
-    output_names = set(m['name'] for m in output_measurements)
+    output_names = set(m.name for m in output_measurements)
     assert expected_vars == output_names
 
     # Check the computation returns something reasonable
@@ -258,13 +262,13 @@ def test_normalised_difference_stats(dataset, output_name):
 
     # Check the measurements() function raises an error on bad input_measurements
     with pytest.raises(StatsConfigurationError):
-        invalid_names = [{'name': 'foo'}]
+        invalid_names = [Measurement(name='foo', **FAKE_MEASUREMENT_INFO)]
         ndstat.measurements(invalid_names)
 
     # Check the measurements() function returns something reasonable
-    input_measurements = [{'name': name} for name in (var1, var2)]
+    input_measurements = [Measurement(name=name, **FAKE_MEASUREMENT_INFO) for name in (var1, var2)]
     output_measurements = ndstat.measurements(input_measurements)
-    measurement_names = set(m['name'] for m in output_measurements)
+    measurement_names = set(m.name for m in output_measurements)
     assert expected_output_varnames == measurement_names
 
 

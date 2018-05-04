@@ -8,12 +8,13 @@ from collections import OrderedDict, Sequence
 from copy import copy
 from datetime import datetime
 from functools import partial
-from typing import Iterable, Dict, Any
+from typing import Iterable
 
 import numpy as np
 import xarray
 from pkg_resources import iter_entry_points
 
+from datacube.model import Measurement
 from datacube.storage.masking import create_mask_value
 from datacube_stats.utils.dates import datetime64_to_inttime
 from .incremental_stats import (mk_incremental_sum, mk_incremental_or,
@@ -45,7 +46,7 @@ class Statistic(object):
         :return: xarray.Dataset
         """
 
-    def measurements(self, input_measurements: Iterable[Dict[str, Any]]) -> Iterable[Dict[str, Any]]:
+    def measurements(self, input_measurements: Iterable[Measurement]) -> Iterable[Measurement]:
         """
         Turn a list of input measurements into a list of output measurements.
 
@@ -53,12 +54,9 @@ class Statistic(object):
 
         # FIXME: Explain the purpose of this
 
-        :rtype: list(dict)
+        :rtype: List[Measurement]
         """
-        output_measurements = [
-            {attr: measurement[attr] for attr in ['name', 'dtype', 'nodata', 'units']}
-            for measurement in input_measurements]
-        return output_measurements
+        return input_measurements
 
     def is_iterative(self) -> bool:
         """
@@ -89,9 +87,6 @@ class Statistic(object):
 class NoneStat(Statistic):
     def compute(self, data):
         return data
-
-    def measurements(self, input_measurements):
-        return input_measurements
 
 
 class SimpleStatistic(Statistic):
@@ -158,21 +153,13 @@ class WofsStats(Statistic):
                                    'frequency': frequency}, attrs=dict(crs=data.crs))
 
     def measurements(self, input_measurements):
-        measurement_names = set(m['name'] for m in input_measurements)
+        measurement_names = set(m.name for m in input_measurements)
         assert 'water' in measurement_names
 
-        wet = {'name': 'count_wet',
-               'dtype': 'int16',
-               'nodata': -1,
-               'units': '1'}
-        dry = {'name': 'count_clear',
-               'dtype': 'int16',
-               'nodata': -1,
-               'units': '1'}
-        frequency = {'name': 'frequency',
-                     'dtype': 'float32',
-                     'nodata': -1,
-                     'units': '1'}
+        wet = Measurement(name='count_wet', dtype='int16', nodata=-1, units='1')
+        dry = Measurement(name='count_clear', dtype='int16', nodata=-1, units='1')
+        frequency = Measurement(name='frequency', dtype='float32', nodata=-1, units='1')
+
         if self.freq_only:
             return [frequency]
         else:
@@ -224,12 +211,12 @@ class NormalisedDifferenceStats(Statistic):
             dataarray.values[dataarray.values > 1] = np.nan
 
     def measurements(self, input_measurements):
-        measurement_names = [m['name'] for m in input_measurements]
+        measurement_names = set(m.name for m in input_measurements)
         if self.band1 not in measurement_names or self.band2 not in measurement_names:
             raise StatsConfigurationError('Input measurements for %s must include "%s" and "%s"' %
                                           (self.name, self.band1, self.band2))
 
-        return [dict(name='_'.join([self.name, stat]), dtype='float32', nodata=-1, units='1')
+        return [Measurement(name='_'.join([self.name, stat]), dtype='float32', nodata=-1, units='1')
                 for stat in self.stats]
 
 
@@ -317,7 +304,8 @@ class TCWStats(Statistic):
             'std_brightness',
             'std_greenness',
             'std_wetness']
-        return [dict(name=m_name, dtype='float32', nodata=-1, units='1') for m_name in measurement_names]
+        return [Measurement(name=m_name, dtype='float32', nodata=-1, units='1')
+                for m_name in measurement_names]
 
 
 class IndexStat(SimpleStatistic):
@@ -391,33 +379,16 @@ class PerBandIndexStat(SimpleStatistic):
         return xarray.merge(all_values)
 
     def measurements(self, input_measurements):
-        index_measurements = [
-            {
-                'name': measurement['name'] + '_source',
-                'dtype': 'int8',
-                'nodata': -1,
-                'units': '1'
-            }
-            for measurement in input_measurements
-        ]
-        date_measurements = [
-            {
-                'name': measurement['name'] + '_observed',
-                'dtype': 'float64',
-                'nodata': 0,
-                'units': 'seconds since 1970-01-01 00:00:00'
-            }
-            for measurement in input_measurements
-        ]
-        text_measurements = [
-            {
-                'name': measurement['name'] + '_observed_date',
-                'dtype': 'int32',
-                'nodata': 0,
-                'units': 'Date as YYYYMMDD'
-            }
-            for measurement in input_measurements
-        ]
+        index_measurements = [Measurement(name=measurement.name + '_source', dtype='int8', nodata=-1, units='1')
+                              for measurement in input_measurements]
+
+        date_measurements = [Measurement(name=measurement.name + '_observed', dtype='float64', nodata=0,
+                                         units='seconds since 1970-01-01 00:00:00')
+                             for measurement in input_measurements]
+
+        text_measurements = [Measurement(name=measurement.name + '_observed_date', dtype='int32', nodata=0,
+                                         units='Date as YYYYMMDD')
+                             for measurement in input_measurements]
 
         all_measurements = super(PerBandIndexStat, self).measurements(input_measurements)
 
@@ -468,11 +439,9 @@ class Percentile(PerBandIndexStat):
         return xarray.merge(single(q) for q in self.qs)
 
     def measurements(self, input_measurements):
-        inputs = Statistic.measurements(self, input_measurements)
-
-        renamed = [{**m, 'name': m['name'] + '_PC_' + str(q)}
+        renamed = [Measurement(**{**vars(m), 'name': m['name'] + '_PC_' + str(q)})
                    for q in self.qs
-                   for m in inputs]
+                   for m in input_measurements]
 
         return PerBandIndexStat(per_pixel_metadata=self.per_pixel_metadata).measurements(renamed)
 
@@ -505,12 +474,8 @@ class ObservedDaysSince(PerPixelMetadata):
         return self._var_name, xarray.Variable(('y', 'x'), days_since)
 
     def measurement(self):
-        return {
-            'name': self._var_name,
-            'dtype': 'int16',
-            'nodata': 0,
-            'units': 'days since {:%Y-%m-%d %H:%M:%S}'.format(self._since)
-        }
+        return Measurement(name=self._var_name, dtype='int16', nodata=0,
+                           units='days since {:%Y-%m-%d %H:%M:%S}'.format(self._since))
 
 
 class ObservedDateInt(PerPixelMetadata):
@@ -520,12 +485,8 @@ class ObservedDateInt(PerPixelMetadata):
         return self._var_name, observed_date
 
     def measurement(self):
-        return {
-            'name': self._var_name,
-            'dtype': 'int32',
-            'nodata': 0,
-            'units': 'Date as YYYYMMDD'
-        }
+        return Measurement(name=self._var_name, dtype='int32', nodata=0,
+                           units='Date as YYYYMMDD')
 
 
 class SourceIndex(PerPixelMetadata):
@@ -533,12 +494,7 @@ class SourceIndex(PerPixelMetadata):
         return self._var_name, xarray.Variable(('y', 'x'), data.source.values[selected_indexes])
 
     def measurement(self):
-        return {
-            'name': self._var_name,
-            'dtype': 'int8',
-            'nodata': -1,
-            'units': '1'
-        }
+        return Measurement(name=self._var_name, dtype='int8', nodata=-1, units='1')
 
 
 class PerStatIndexStat(SimpleStatistic):
@@ -645,9 +601,9 @@ class Medoid(Statistic):
         base = super(Medoid, self).measurements(input_measurements)
 
         selected_names = select_names(self.output_measurements,
-                                      [m['name'] for m in base])
+                                      [m.name for m in base])
 
-        selected = [m for m in base if m['name'] in selected_names]
+        selected = [m for m in base if m.name in selected_names]
 
         extra = [producer.measurement()
                  for producer in self._metadata_producers]
@@ -688,7 +644,7 @@ class Medoid(Statistic):
             # used to attach time stamp on the medoid observations
             for metadata_producer in self._metadata_producers:
                 var_name, var_data = metadata_producer.compute(data, index)
-                nodata = metadata_producer.measurement()['nodata']
+                nodata = metadata_producer.measurement().nodata
                 var_data.data[not_enough] = nodata
                 result[var_name] = var_data
 
@@ -708,7 +664,6 @@ class Medoid(Statistic):
 class ExternalPlugin(Statistic):
     """
     Run externally defined plugin.
-
     """
 
     def __init__(self, impl, *args, **kwargs):
@@ -763,7 +718,7 @@ class MaskMultiCounter(Statistic):
 
     def measurements(self, input_measurements):
         nodata = -1
-        bit_defs = input_measurements[0]['flags_definition']
+        bit_defs = input_measurements[0].flags_definition
 
         if self._nodata_flags is not None:
             self._valid_pq_mask = mk_masker(*create_mask_value(bit_defs, **self._nodata_flags), invert=True)
@@ -773,10 +728,8 @@ class MaskMultiCounter(Statistic):
             v['_mask'] = create_mask_value(bit_defs, **flags)
             v['mask'] = mk_masker(*v['_mask'])
 
-        return [dict(name=v['name'],
-                     dtype='int16',
-                     units='1',
-                     nodata=nodata) for v in self._vars]
+        return [Measurement(name=v['name'], dtype='int16', units='1', nodata=nodata)
+                for v in self._vars]
 
     def is_iterative(self):
         return True
@@ -1033,7 +986,7 @@ try:
             return as_datarray.transpose(*output_dimensions).to_dataset(name='smad')
 
         def measurements(self, input_measurements):
-            return [dict(name='smad', dtype='float32', nodata=np.nan, units='1')]
+            return [Measurement(name='smad', dtype='float32', nodata=np.nan, units='1')]
 
         @staticmethod
         def _vars_to_transpose(data):

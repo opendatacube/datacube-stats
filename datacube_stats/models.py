@@ -4,6 +4,7 @@ try:
 except ImportError:
     from datacube.model import DatasetType as Product
 
+from datacube.model import Measurement
 from datacube.utils.geometry import GeoBox
 from datacube.api.grid_workflow import Tile
 
@@ -144,7 +145,11 @@ class OutputProduct(object):
         #: Will provide `compute` and `measurements` functions.
         self.statistic = statistic
 
-        self.data_measurements = statistic.measurements(input_measurements)
+        inputs = [Measurement(name=measurement['name'], dtype=measurement['dtype'],
+                              nodata=measurement['nodata'], units=measurement['units'])
+                  for measurement in input_measurements]
+        self.data_measurements = [vars(output)
+                                  for output in statistic.measurements(inputs)]
 
         #: The ODC Product (formerly DatasetType)
         self.product = self._create_product(metadata_type, product_type, self.data_measurements, storage,
