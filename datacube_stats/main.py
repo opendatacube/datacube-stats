@@ -539,19 +539,9 @@ def load_process_save_chunk(output_files: OutputDriver,
             measurements = stat.data_measurements
 
             with timer.time(prod_name):
-                _LOG.debug('Computing statistic')
-                try:
-                    # Try to preprocess and postprocess if the object has this
-                    # capability
-                    s = stat.statistic
-                    result = s.postprocess(s.compute(s.preprocess(data)))
-                except AttributeError as e:
-                    # Otherwise just do the default compute
-                    _LOG.debug(e)
-                    result = stat.compute(data)
+                result = stat.compute(data)
 
-                # make sure input data is released early
-                if idx == last_idx:
+                if idx == last_idx:  # make sure input data is released early
                     del data
 
                 # restore nodata values back
