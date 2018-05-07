@@ -46,7 +46,7 @@ from .utils import sorted_interleave, Slice, prettier_slice
 from .tasks import select_task_generator
 from .schema import stats_schema
 from .models import StatsTask, DataSource
-from .output_drivers import OutputDriver
+from .output_drivers import OutputDriver, XarrayOutputDriverResult
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -321,18 +321,36 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                   config['output_products'][0]['statistic'],
                   config['location'])
 
+    def _partially_applied_output_driver(self):
+        app_info = _get_app_metadata(self.config_file)
+
+        return partial(self.output_driver,
+                       output_path=self.location,
+                       app_info=app_info,
+                       storage=self.storage,
+                       global_attributes=self.global_attributes,
+                       var_attributes=self.var_attributes)
+
+    def execute_task(self, task):
+        """
+        Execute an individual task locally.
+        Intended to be used interactively rather than on a cluster.
+        """
+        try:
+            execute_task(task,
+                         output_driver=self._partially_applied_output_driver(),
+                         chunking=self.computation.get('chunking', {}))
+
+            raise StatsProcessingException('task {} finished without raising an XarrayOutputDriverResult'
+                                           .format(task))
+        except XarrayOutputDriverResult as e:
+            return e
+
     def run_tasks(self, tasks, runner=None, task_slice=None):
         if task_slice is not None:
             tasks = islice(tasks, task_slice.start, task_slice.stop, task_slice.step)
 
-        app_info = _get_app_metadata(self.config_file)
-
-        output_driver = partial(self.output_driver,
-                                output_path=self.location,
-                                app_info=app_info,
-                                storage=self.storage,
-                                global_attributes=self.global_attributes,
-                                var_attributes=self.var_attributes)
+        output_driver = self._partially_applied_output_driver()
         task_runner = partial(execute_task,
                               output_driver=output_driver,
                               chunking=self.computation.get('chunking', {}))
@@ -482,6 +500,10 @@ def execute_task(task: StatsTask, output_driver, chunking) -> StatsTask:
                 process_chunk(output_files, sub_tile_slice, task, timer)
     except OutputFileAlreadyExists as e:
         _LOG.warning(str(e))
+    except XarrayOutputDriverResult as e:
+        # was run interactively
+        # re-raise result to be caught again by StatsApp.execute_task
+        raise e
     except Exception as e:
         _LOG.error("Error processing task: %s", task)
         raise StatsProcessingException("Error processing task: %s" % task)
