@@ -145,8 +145,7 @@ class OutputProduct(object):
         #: Will provide `compute` and `measurements` functions.
         self.statistic = statistic
 
-        inputs = [Measurement(name=measurement['name'], dtype=measurement['dtype'],
-                              nodata=measurement['nodata'], units=measurement['units'])
+        inputs = [Measurement(**measurement)
                   for measurement in input_measurements]
         self.data_measurements = [vars(output)
                                   for output in statistic.measurements(inputs)]
