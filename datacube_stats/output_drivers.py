@@ -605,7 +605,7 @@ class ENVIBILOutputDriver(GeoTiffOutputDriver):
             _LOG.error('Error running gdal_translate: %s', cpe.output)
 
 
-class XarrayOutputDriverResult(Exception):
+class OutputDriverResult(Exception):
     def __init__(self, result, source, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.result = result
@@ -623,7 +623,7 @@ class XarrayOutputDriver(OutputDriver):
         self.source = {}
 
     def close_files(self, completed_successfully):
-        raise XarrayOutputDriverResult(self.result, self.source)
+        raise OutputDriverResult(self.result, self.source)
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():

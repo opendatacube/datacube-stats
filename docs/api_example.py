@@ -1,5 +1,5 @@
 import yaml
-from datacube_stats.main import StatsApp
+from datacube_stats import StatsApp
 from datacube import Datacube
 
 

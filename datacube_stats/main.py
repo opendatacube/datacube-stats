@@ -46,7 +46,7 @@ from .utils import sorted_interleave, Slice, prettier_slice
 from .tasks import select_task_generator
 from .schema import stats_schema
 from .models import StatsTask, DataSource
-from .output_drivers import OutputDriver, XarrayOutputDriverResult
+from .output_drivers import OutputDriver, OutputDriverResult
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -342,7 +342,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                          chunking=self.computation.get('chunking', {}))
 
             _LOG.debug('task %s finished', task)
-        except XarrayOutputDriverResult as e:
+        except OutputDriverResult as e:
             return e
 
     def run_tasks(self, tasks, runner=None, task_slice=None):
@@ -499,7 +499,7 @@ def execute_task(task: StatsTask, output_driver, chunking) -> StatsTask:
                 process_chunk(output_files, sub_tile_slice, task, timer)
     except OutputFileAlreadyExists as e:
         _LOG.warning(str(e))
-    except XarrayOutputDriverResult as e:
+    except OutputDriverResult as e:
         # was run interactively
         # re-raise result to be caught again by StatsApp.execute_task
         raise e
