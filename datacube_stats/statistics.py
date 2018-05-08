@@ -905,7 +905,8 @@ try:
 
             # Call Dale's function here
             squashed = gmpcm(squashed.data, num_threads=self.num_threads)
-            squashed[squashed == 0.] = np.nan
+            all_zeros = (squashed == 0.).all(axis=-1)
+            squashed[all_zeros] = np.nan
 
             # Jam the raw numpy array back into a pleasantly labelled DataArray
             output_dims = squashed_together_dimensions[:-1]
