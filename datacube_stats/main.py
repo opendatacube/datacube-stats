@@ -341,8 +341,7 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                          output_driver=self._partially_applied_output_driver(),
                          chunking=self.computation.get('chunking', {}))
 
-            raise StatsProcessingException('task {} finished without raising an XarrayOutputDriverResult'
-                                           .format(task))
+            _LOG.debug('task %s finished', task)
         except XarrayOutputDriverResult as e:
             return e
 
