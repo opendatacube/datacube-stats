@@ -462,6 +462,9 @@ Any extra arguments to pass to the output driver for an individual output band:
 Filter product
 ~~~~~~~~~~~~~~
 
+    **NOTE**: This feature is being deprecated. We expect to remove it in the next release
+    after release 0.9b1 and replace it with something more general.
+
 To filter out sources that correspond to any derived products. It currently supports two methods
 to filter out list of dates. Filtering in hydrological months ('by_hydrological_months'), can be
 used to filter months from July to November for the year after the dry or wet years collected from
@@ -713,6 +716,39 @@ memory per core respectively. For more details, run
 
 Release Notes
 =============
+
+0.9b1 release
+-------------
+    **Note:** We expect several backwards incompatible changes to the ``datacube-stats`` package
+    in the near future. Release 0.9b1 is intended to be the last release fully supporting
+    configurations from earlier releases.
+
+- Add tasseled cap indices statistic
+- Fix GeoTiff output driver
+- Preliminary Python API and an ``xarray`` output driver to produce in-momery results
+- Support default configurations (``config.yaml`` in the current working folder)
+- Support discoverable external plugins (in the current working folder)
+
+0.9a9 release
+-------------
+- Fix ``xarray`` sorting bug
+- Add ability to specify ``num_threads`` to the ``new_geomedian`` statistic
+- Add ability to attach custom metadata to generated datasets
+
+0.9a8 release
+-------------
+- Add ability for feature-based task generation from a shapefile
+- Fix issue with ``hdmedian`` GeoMedian statistics
+
+0.9a7 release
+-------------
+- Move task execution code to the ``digitalearthau`` repository
+- ITEM and low/high tide composite, FC percentile
+- Schema-validated configuration
+
+0.9a6 release
+-------------
+- Time filters on individual source products
 
 0.9 release
 -----------
