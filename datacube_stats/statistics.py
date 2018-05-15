@@ -3,17 +3,22 @@ Classes for performing statistical data analysis.
 """
 from __future__ import absolute_import
 
+import logging
 import abc
+import sys
+import os
+
 from collections import OrderedDict, Sequence
-from copy import copy
-from datetime import datetime
 from functools import partial
+from datetime import datetime
 from typing import Iterable
+from pydoc import locate
+from copy import copy
 
 import numpy as np
 import xarray
-from pkg_resources import iter_entry_points
 
+from pkg_resources import iter_entry_points
 from datacube.model import Measurement
 from datacube.storage.masking import create_mask_value
 from datacube_stats.utils.dates import datetime64_to_inttime
@@ -22,6 +27,9 @@ from .incremental_stats import (mk_incremental_sum, mk_incremental_or,
 from .utils import da_nodata, mk_masker, first_var
 from .stat_funcs import axisindex, argpercentile, _compute_medoid
 from .stat_funcs import anynan, section_by_index, medoid_indices
+
+
+LOG = logging.getLogger(__name__)
 
 
 class StatsConfigurationError(RuntimeError):
@@ -667,29 +675,37 @@ class ExternalPlugin(Statistic):
     """
 
     def __init__(self, impl, *args, **kwargs):
-        from pydoc import locate  # TODO: probably should use importlib, but this works so easily
-        import sys
-        import os
+        # Temporarily, add current path
+        sys.path.insert(0, os.getcwd())
 
-        sys.path.append(os.getcwd())
+        LOG.debug('Looking for external plugin `%s` in %s', impl, sys.path)
         impl_class = locate(impl)
+
+        # Remove the path that was added
+        sys.path = sys.path[1:]
 
         if impl_class is None:
             raise StatsProcessingError("Failed to load external plugin: '{}'".format(impl))
+        else:
+            LOG.debug('Found external plugin `%s`', impl)
 
-        self._impl = impl_class(*args, **kwargs)
+        self.impl = impl_class(*args, **kwargs)
 
-    def compute(self, data):
-        return self._impl.compute(data)
-
-    def measurements(self, input_measurements):
-        return self._impl.measurements(input_measurements)
-
-    def is_iterative(self):
-        return self._impl.is_iterative()
+    def is_iterative(self) -> bool:
+        return self.impl.is_iterative()
 
     def make_iterative_proc(self):
-        return self._impl.make_iterative_proc()
+        return self.impl.make_iterative_proc()
+
+    def measurements(self, input_measurements: Iterable[Measurement]) -> Iterable[Measurement]:
+        return self.impl.measurements(input_measurements)
+
+    def compute(self, data: xarray.Dataset) -> xarray.Dataset:
+        return self.impl.compute(data)
+
+    def __getattr__(self, name):
+        # If attribute not on current object or on Statistic, try to find it on self.impl
+        return getattr(self.impl, name)
 
 
 class MaskMultiCounter(Statistic):
