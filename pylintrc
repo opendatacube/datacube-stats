@@ -18,19 +18,21 @@ disable=no-self-use,
     fixme,
     no-value-for-parameter,
 #   file-ignored,
+    no-absolute-import,
+    old-division,
     wrong-import-order,
     ungrouped-imports,
     inconsistent-return-statements, # pylint bug
     len-as-condition,
     no-else-return,
     too-many-lines,
+    comprehension-escape,
     round-builtin, # py2.7
     map-builtin-not-iterating, # py2.7
     range-builtin-not-iterating, # py2.7
     zip-builtin-not-iterating, # py2.7
     nonzero-method, # py2.7
     eq-without-hash # py2.7
-
 
 [BASIC]
 

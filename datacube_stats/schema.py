@@ -44,7 +44,7 @@ available_stats_msg = ('not a valid statistic name (available statistics are {})
 output_product_schema = Schema({
     Required('name'): str,
     'product_type': str,
-    Required('statistic'): In(STATS.keys(), msg=available_stats_msg),
+    Required('statistic'): In(list(STATS.keys()), msg=available_stats_msg),
     'statistic_args': dict,
     'output_params': dict,
     'file_path_template': All(str, valid_format_string(valid_filepath_fields)),
@@ -60,7 +60,7 @@ available_drivers_msg = ('not a valid output driver (available drivers are {})'
                          .format(", ".join(list(OUTPUT_DRIVERS.keys()))))
 
 storage_schema = Schema({
-    'driver': In(OUTPUT_DRIVERS.keys(), msg=available_drivers_msg),
+    'driver': In(list(OUTPUT_DRIVERS.keys()), msg=available_drivers_msg),
     'tile_size': spatial_attrs,
     'resolution': spatial_attrs,
     'chunking': {**spatial_attrs, 'time': int},

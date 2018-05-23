@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 """ test app for qsub submission
 """
-from __future__ import print_function
-
 from collections import namedtuple
 import pathlib
 

@@ -1,8 +1,6 @@
 """
 Classes for performing statistical data analysis.
 """
-from __future__ import absolute_import
-
 import logging
 import abc
 import sys
@@ -40,9 +38,7 @@ class StatsProcessingError(RuntimeError):
     pass
 
 
-class Statistic(object):
-    __metaclass__ = abc.ABCMeta
-
+class Statistic(abc.ABC):
     @abc.abstractmethod
     def compute(self, data: xarray.Dataset) -> xarray.Dataset:
         """
@@ -454,9 +450,7 @@ class Percentile(PerBandIndexStat):
         return PerBandIndexStat(per_pixel_metadata=self.per_pixel_metadata).measurements(renamed)
 
 
-class PerPixelMetadata(object):
-    __metaclass__ = abc.ABCMeta
-
+class PerPixelMetadata(abc.ABC):
     def __init__(self, var_name='observed'):
         self._var_name = var_name
 

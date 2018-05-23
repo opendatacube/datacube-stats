@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 try:
     from datacube.model import Product
 except ImportError:
@@ -70,7 +69,7 @@ class StatsTask(object):
         return ', '.join(source.data.product.name for source in self.sources)
 
     def keys(self):
-        return self.__dict__.keys()
+        return list(self.__dict__.keys())
 
     def __getitem__(self, item):
         return getattr(self, item)

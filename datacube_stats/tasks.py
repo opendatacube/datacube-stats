@@ -156,7 +156,7 @@ class GriddedTaskGenerator(object):
                                                spec=source_spec,
                                                source_index=source_index))
 
-        return tasks.values()
+        return list(tasks.values())
 
     def __del__(self):
         if self._total_unmatched > 0:

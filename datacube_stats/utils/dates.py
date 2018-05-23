@@ -3,8 +3,6 @@ Date utility functions to be used by statistics apps
 
 
 """
-from __future__ import absolute_import
-
 import logging
 from datetime import datetime
 

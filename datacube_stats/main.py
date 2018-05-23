@@ -4,8 +4,6 @@ Create statistical summaries command.
 This command is run as ``datacube-stats``, all operation are driven by a configuration file.
 
 """
-from __future__ import absolute_import, print_function
-
 import copy
 import logging
 import sys
@@ -838,7 +836,7 @@ def _prepare_output_driver(storage):
         else:
             msg = 'No output driver specified.'
         raise StatsConfigurationError('{} Specify one of {} in storage->driver in the '
-                                      'configuration file.'.format(msg, OUTPUT_DRIVERS.keys()))
+                                      'configuration file.'.format(msg, list(OUTPUT_DRIVERS.keys())))
 
 
 def _configure_date_ranges(index, config):

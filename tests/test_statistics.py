@@ -2,8 +2,6 @@
 Tests for the custom statistics functions
 
 """
-from __future__ import absolute_import
-
 import string
 from datetime import datetime
 
