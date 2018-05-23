@@ -291,9 +291,9 @@ class TCWStats(Statistic):
 
             results['mean_' + cat] = data[cat].mean(dim='time')
             results['std_' + cat] = data[cat].std(dim='time', keep_attrs=True, skipna=True)
-            data.drop(cat)
+            data = data.drop(cat)
 
-        data.drop(bands)
+        data = data.drop(bands)
 
         return xarray.Dataset(results, attrs=dict(crs=data.crs))
 
