@@ -409,11 +409,11 @@ class NetCDFCFOutputDriver(OutputDriver):
 
 class GeoTiffOutputDriver(OutputDriver):
     """
-    Save data to file/s using rasterio. Eg. GeoTiff
+    Save data to file/s using rasterio. Eg. GeoTIFF
 
     Con write all statistics to the same output file, or each statistic to a different file.
     """
-    _driver_name = 'GeoTiff'
+    _driver_name = 'GeoTIFF'
     valid_extensions = ['.tif', '.tiff']
     default_profile = {
         'compress': 'lzw',
@@ -437,7 +437,7 @@ class GeoTiffOutputDriver(OutputDriver):
                 dtype = dtypes.pop()
             else:
                 raise StatsOutputError('Not all measurements for %s have the same dtype.'
-                                       'For GeoTiff output they must ' % out_prod_name)
+                                       'For GeoTIFF output they must ' % out_prod_name)
         return self._dtype_map.get(dtype, dtype)
 
     def _get_nodata(self, prod_name, measurement_name=None):

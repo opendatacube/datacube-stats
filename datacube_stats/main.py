@@ -361,6 +361,10 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
                                                                     source_products=[],
                                                                     output_products=[]))
 
+        task_desc.logs_path.mkdir(parents=True, exist_ok=False)
+        task_desc.events_path.mkdir(parents=True, exist_ok=False)
+        task_desc.jobs_path.mkdir(parents=True, exist_ok=False)
+
         if runner is None:
             runner = TaskRunner()
 
