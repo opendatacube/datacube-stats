@@ -355,15 +355,16 @@ class StatsApp(object):  # pylint: disable=too-many-instance-attributes
         # does not need to be thorough for now
         task_desc = TaskDescription(type_='datacube_stats',
                                     task_dt=datetime.utcnow().replace(tzinfo=tz.tzutc()),
-                                    events_path=Path(self.location),
-                                    logs_path=Path(self.location),
+                                    events_path=Path(self.location) / 'events',
+                                    logs_path=Path(self.location) / 'logs',
+                                    jobs_path=Path(self.location) / 'jobs',
                                     parameters=DefaultJobParameters(query={},
                                                                     source_products=[],
                                                                     output_products=[]))
 
-        task_desc.logs_path.mkdir(parents=True, exist_ok=False)
-        task_desc.events_path.mkdir(parents=True, exist_ok=False)
-        task_desc.jobs_path.mkdir(parents=True, exist_ok=False)
+        task_desc.logs_path.mkdir(parents=True, exist_ok=True)
+        task_desc.events_path.mkdir(parents=True, exist_ok=True)
+        task_desc.jobs_path.mkdir(parents=True, exist_ok=True)
 
         if runner is None:
             runner = TaskRunner()
