@@ -49,7 +49,7 @@ storage:
   resolution:
           x: 25
           y: -25
-  chunking:
+  chunking: # Must be divisible by 16 for GeoTiff
       x: 400
       y: 400
       time: 1
