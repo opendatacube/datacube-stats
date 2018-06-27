@@ -23,23 +23,29 @@ def geom_from_file(filename, feature_id):
     geometry_list = []
     geopolygon_list = []
     feature_list = []
+    find_feature = False
 
     with fiona.open(filename) as input_region:
         crs = CRS(input_region.crs_wkt)
         for feature in input_region:
+            find_feature = False
             properties = feature['properties']
-
             if feature_id is None or properties.get('ID') in feature_id or properties.get('id') in feature_id:
+                feature_list.append(properties)
+                find_feature = True
+            if int(feature.get('id')) in feature_id:
+                feature_list.append(feature)
+                find_feature = True
+            if find_feature:
                 geometry = feature['geometry']
                 geopolygon = Geometry(geometry, crs)
-
-                feature_list.append(properties)
                 geometry_list.append(geometry)
                 geopolygon_list.append(geopolygon)
 
-        return feature_list, geometry_list, input_region.crs_wkt, geopolygon_list
+        if not geometry_list:
+            _LOG.info("No geometry found")
 
-    _LOG.info("No geometry found")
+        return feature_list, geometry_list, input_region.crs_wkt, geopolygon_list
 
 
 def load_tide_model(all_dates, lon, lat):
