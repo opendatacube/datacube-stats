@@ -271,7 +271,7 @@ Output 1°×1° tiles, with 4000×4000 pixels per tile:
 .. code-block:: yaml
 
     storage:
-      driver: GeoTiff
+      driver: GeoTIFF
 
       crs: EPSG:4326
       tile_size:
@@ -716,6 +716,10 @@ memory per core respectively. For more details, run
 
 Release Notes
 =============
+
+0.9b2 release
+-------------
+- The GeoTIFF output driver name has changed to ``GeoTIFF`` from ``GeoTiff``
 
 0.9b1 release
 -------------

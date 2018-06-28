@@ -41,7 +41,7 @@ date_ranges:
 location: '/g/data/u46/users/dra547/statstests'
 
 storage:
-  driver: GeoTiff
+  driver: GeoTIFF
 
   crs: EPSG:3577
   tile_size:
@@ -50,7 +50,7 @@ storage:
   resolution:
           x: 25
           y: -25
-  chunking: # Must be divisible by 16 for GeoTiff
+  chunking: # Must be divisible by 16 for GeoTIFF
       x: 400
       y: 400
       time: 1
