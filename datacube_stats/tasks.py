@@ -72,7 +72,7 @@ def boundary_polygon_from_file(filename: str) -> Geometry:
     import shapely.ops
     from shapely.geometry import shape, mapping
     with fiona.open(filename) as input_region:
-        joined = shapely.ops.unary_union(list(shape(geom['geometry']) for geom in input_region))
+        joined = shapely.ops.unary_union(list(shape(geom['geometry']).buffer(0) for geom in input_region))
         final = joined.convex_hull
         crs = CRS(input_region.crs_wkt)
         boundary_polygon = Geometry(mapping(final), crs)
@@ -135,8 +135,7 @@ class GriddedTaskGenerator(object):
                 continue
             group_by_name = source_spec.get('group_by', DEFAULT_GROUP_BY)
 
-            products = [source_spec['product']] + [mask['product']
-                                                   for mask in source_spec.get('masks', [])]
+            products = [source_spec['product']] + [mask['product'] for mask in source_spec.get('masks', [])]
 
             product_query = {products[0]: {'source_filter': source_spec.get('source_filter', None)}}
 
@@ -204,6 +203,7 @@ class NonGriddedTaskGenerator(object):
         :return: new task sources
         """
         remove_index_list = list()
+
         for i, sr in enumerate(task.sources):
             v = sr.data
             if self.filter_product.get('method') == "by_hydrological_months":

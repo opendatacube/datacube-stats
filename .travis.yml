@@ -15,27 +15,25 @@ cache:
   directories:
     - $HOME/.cache/pip
 
+addons:
+  apt:
+    update: true
+    sources:
+      - sourceline: ppa:nextgis/ppa
+    packages:
+      - gdal-bin
+      - gdal-data
+      - libgdal-dev
+      - libgdal20
+      - libudunits2-0
+
+before_install:
+  - export CPLUS_INCLUDE_PATH=/usr/include/gdal
+  - export C_INCLUDE_PATH=/usr/include/gdal
 
 install:
-  - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
-  - bash miniconda.sh -f -b -p $HOME/miniconda
-  - export PATH="$HOME/miniconda/bin:$PATH"
-  - hash -r
 
-  # travis specific goo
-  - conda config --set always_yes yes --set changeps1 no
-  - conda config --show-sources
-  - conda config --show
-
-  - conda config --prepend channels conda-forge
-  - conda update --all
-
-  # print conda info
-  - conda info -a
-
-  - conda create -n datacube pytest mock boltons pytest-cov coveralls psutil hypothesis shapely 'poppler<0.60' 'GDAL<2.1.4'
-  - source activate datacube
-  - pip install pydash boltons pylint yamllint pytest-cov pycodestyle voluptuous hdmedians fiona
+  - pip install pydash boltons yamllint pycodestyle voluptuous hdmedians pytest mock boltons pytest-cov coveralls psutil hypothesis shapely fiona pylint
   - travis_retry pip install git+git://github.com/opendatacube/datacube-core.git
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/eo-datasets.git
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/digitalearthau.git

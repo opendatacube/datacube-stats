@@ -299,6 +299,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         start_time, _ = task.time_period
         sources = unsqueeze_data_array(sources, dim='time', pos=0, coord=start_time,
                                        attrs=task.time_attributes)
+
         if not sources:
             raise StatsOutputError('No valid sources found, or supplied sources do not align to the same time.\n'
                                    'Unable to write dataset metadata.')

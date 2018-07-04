@@ -23,7 +23,6 @@ import pydash
 import rasterio.features
 import xarray
 from dateutil import tz
-
 import datacube
 import datacube_stats
 from datacube.api import make_mask, GridWorkflow
@@ -764,7 +763,15 @@ def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
                                      measurements=[mask_spec['measurement']],
                                      fuse_func=mask_fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
-            mask = make_mask(mask, **mask_spec['flags'])
+            if mask_spec.get('flags') is not None:
+                mask = make_mask(mask, **mask_spec['flags'])
+            elif mask_spec.get('less_than') is not None:
+                less_than = float(mask_spec['less_than'])
+                mask = mask < less_than
+            elif mask_spec.get('greater_than') is not None:
+                greater_than = float(mask_spec['greater_than'])
+                mask = mask > greater_than
+
             if mask_inplace:
                 data = sensible_where_inplace(data, mask)
             else:
