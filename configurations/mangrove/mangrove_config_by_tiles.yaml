@@ -1,0 +1,44 @@
+output_products:
+    - name: mangrove_test
+      product_type: quick_test
+      statistic: external
+      statistic_args:
+          impl: datacube_stats.mangrove.MangroveCC
+          thresholds: [15, 40, 62]
+          shape_file: /g/data/v10/mangroves/GMW_UnionMangroveExtent_v1.3_Australia_epsg3577.shp
+      file_path_template: 'mangrove_{x}_{y}_{epoch_start:%Y%m%d}.nc'
+      output_params:
+          zlib: True
+          fletcher32: True
+
+sources:
+    - product: fc_percentile_albers_annual
+      measurements: [PV_PC_10]
+      crs: EPSG:3577 
+      masks:
+        - product: wofs_summary_albers_annual
+          measurement: frequency
+          crs: EPSG:3577 
+          less_than: 0.5
+
+date_ranges:
+    start_date: 2014-01-01
+    end_date: 2014-12-31
+
+location: ./output
+
+storage:
+  driver: NetCDF CF
+
+  crs: EPSG:3577
+  tile_size:
+          x: 100000.0
+          y: 100000.0
+  resolution:
+          x: 25
+          y: -25
+  chunking:
+      x: 100000
+      y: 100000
+      time: 1
+  dimension_order: [time, y, x]

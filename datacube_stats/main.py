@@ -768,6 +768,10 @@ def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
             elif mask_spec.get('less_than') is not None:
                 less_than = float(mask_spec['less_than'])
                 mask = mask < less_than
+            elif mask_spec.get('greater_than') is not None:
+                greater_than = float(mask_spec['greater_than'])
+                mask = mask > greater_than
+
             if mask_inplace:
                 data = sensible_where_inplace(data, mask)
             else:
