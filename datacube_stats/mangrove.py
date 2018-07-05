@@ -22,8 +22,8 @@ class MangroveCC(Statistic):
 
     def compute(self, data):
         var_name = list(data.data_vars.keys())[0]
-        data[var_name].data[np.isnan(data[var_name].data)] = 0
         rast_data = data[var_name].where(self.generate_rasterize(data[var_name]) == 1)
+        rast_data.data[np.isnan(rast_data.data)] = 0
 
         cover_extent = rast_data.copy(True)
         cover_extent.data = np.zeros(cover_extent.shape)
@@ -52,7 +52,7 @@ class MangroveCC(Statistic):
 
         xcoord = data.coords['x'].min()
         ycoord = data.coords['y'].max()
-        geotransform = (xcoord - (xres*0.5), xres, 0, ycoord + (yres*0.5), 0, yres)
+        geotransform = (xcoord - (xres*0.5), xres, 0, ycoord - (yres*0.5), 0, yres)
 
         target_ds = gdal.GetDriverByName('MEM').Create('', xt, yt, gdal.GDT_Byte)
         target_ds.SetGeoTransform(geotransform)
