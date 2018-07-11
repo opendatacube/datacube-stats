@@ -315,7 +315,7 @@ then from the top menu ``Save -> Shapefile`` to download the zipped Shapefile.
       from_file: /home/user/mdb_floodplan/mdb_floodplain.shp
 
 Whether the output will be gridded (tile-based, default) or not (feature-based) may be specified by
-setting ``gridded: true`` or ``gridded: false`` respectively. The features to generate output for
+setting ``gridded: True`` or ``gridded: False`` respectively. The features to generate output for
 may also be specified (in which case the output is feature-based),
 
 .. code-block:: yaml
@@ -416,6 +416,17 @@ For many statistics workflows, it takes longer to load the data into memory than
 it makes sense to perform multiple computations on the same set of data, and so ``output_products`` is a list of outputs, but at
 a minimum it only needs one definition.
 
+Statistic/calculation
+~~~~~~~~~~~~~~~~~~~~~
+
+Specify which statistic to use, and optionally any arguments. For example, a simple mean:
+
+.. code-block:: yaml
+
+    statistic: simple
+    statistic_args:
+      reduction_function: mean
+
 Name
 ~~~~
 
@@ -430,23 +441,13 @@ Product type
 
 Optional field allows to specify ``product_type`` field of the output product.
 Defaults to ``!!NOTSET!!``. This is needed when output is to be indexed into the
-data cube.
+datacube.
 
 .. code-block:: yaml
 
         product_type: seasonal_stats
 
 
-Statistic/calculation
-~~~~~~~~~~~~~~~~~~~~~
-
-Specify which statistic to use, and optionally any arguments. For example, a simple mean:
-
-.. code-block:: yaml
-
-    statistic: simple
-    statistic_args:
-      reduction_function: mean
 
 Output parameters
 ~~~~~~~~~~~~~~~~~
@@ -458,6 +459,19 @@ Any extra arguments to pass to the output driver for an individual output band:
        output_params:
          zlib: True
          fletcher32: True
+
+Datacube metadata
+~~~~~~~~~~~~~~~
+
+Specify arbitrary metadata to attach. The ``format`` section is required by ``datacube``. 
+
+.. code-block:: yaml
+
+      metadata:
+          format:
+              name: NetCDF
+          platform:
+              code: LANDSAT-8
 
 Filter product
 ~~~~~~~~~~~~~~
@@ -520,18 +534,6 @@ Will output filenames similar to:
     10_15/LS_PQ_COUNT_3577_10_15_2010-01-01_2011-01-01.nc
 
 
-Custom metadata
-~~~~~~~~~~~~~~~
-
-Specify arbitrary custom metadata to attach to the produced datasets.
-This is useful to resolve product ambiguity when indexing the datasets
-back to the datacube.
-
-.. code-block:: yaml
-
-      metadata:
-          platform:
-              code: LANDSAT-8
 
 
 Complete example
@@ -542,6 +544,9 @@ Complete example
     output_products:
      - name: landsat_seasonal_mean
        product_type: seasonal_stats
+       metadata:
+           format:
+               name: NetCDF
        statistic: simple
        statistic_args:
          reduction_function: mean
@@ -569,7 +574,7 @@ Complete example
        file_path_template: 'SR_N_PCT_10/SR_N_PCT_10_3577_{x:02d}_{y:02d}_{epoch_start:%Y%m%d}.nc'
 
 
-Extra metadata attributes
+Global attributes
 -------------------------
 
 Additional metadata can be specified which will be written as
@@ -682,6 +687,9 @@ and ``storage`` specifications)
    output_products:
     - name: wet_count_summary
       product_type: wofs_statistical_summary
+      metadata:
+        format:
+          name: NetCDF
       statistic: external
       statistic_args:
         impl: pseudo.example.CountWet
