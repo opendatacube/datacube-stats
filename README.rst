@@ -635,6 +635,7 @@ a list of values for ``water`` that indicate "wetness" as an argument named
 
     import xarray
     from datacube_stats.statistics import Statistic
+    from datacube.model import Measurement
 
     class CountWet(Statistic):
         def __init__(self, wet_values):
@@ -655,10 +656,7 @@ a list of values for ``water`` that indicate "wetness" as an argument named
         def measurements(self, input_measurements):
             assert 'water' in [m['name'] for m in input_measurements]
 
-            wet = {'name': 'count_wet',
-                   'dtype': 'int16',
-                   'nodata': -1,
-                   'units': '1'}
+            wet = Measurement(name='count_wet', dtype='int16', nodata= -1, units='1')
 
             return [wet]
 
