@@ -537,7 +537,7 @@ class GeoTiffOutputDriver(OutputDriver):
             'nodata': nodata,
             'width': self._geobox.width,
             'height': self._geobox.height,
-            'affine': self._geobox.affine,
+            'transform': self._geobox.affine,
             'crs': self._geobox.crs.crs_str,
             'count': num_bands
         })
