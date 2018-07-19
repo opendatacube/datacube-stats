@@ -227,7 +227,7 @@ def normalize_config(config, tile_index=None, tile_index_file=None,
     return config
 
 
-class StatsApp(object):  # pylint: disable=too-many-instance-attributes
+class StatsApp:  # pylint: disable=too-many-instance-attributes
     """
     A StatsApp can produce a set of time based statistical products.
     """

@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 
 
-class MultiTimer(object):
+class MultiTimer:
     def __init__(self):
         self._start_times = {}
         self.run_times = defaultdict(int)

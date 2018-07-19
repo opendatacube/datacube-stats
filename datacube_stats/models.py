@@ -11,7 +11,7 @@ from datacube_stats.statistics import STATS
 import warnings
 
 
-class StatsTask(object):
+class StatsTask:
     """
     Contains everything a task runner requires to produce a single statistical output.
     Including:
@@ -86,7 +86,7 @@ class StatsTask(object):
         return self.__str__()
 
 
-class DataSource(object):
+class DataSource:
     """A source was originally a dictionary containing:
 
       * data - Tile, Loadable by GridWorkflow
@@ -114,7 +114,7 @@ class DataSource(object):
         return getattr(self, item)
 
 
-class OutputProduct(object):
+class OutputProduct:
     """
     Defines an 'output_product' statistical product.
     Including:

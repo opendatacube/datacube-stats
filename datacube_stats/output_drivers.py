@@ -46,6 +46,7 @@ class RegisterDriver(abc.ABCMeta):
     A metaclass which registers all sub-classes of :class:`OutputDriver` into the OUTPUT_DRIVERS dictionary.
     """
     def __new__(mcs, name, bases, namespace, **kwargs):
+        # pylint: disable=bad-mcs-classmethod-argument
         cls = type.__new__(mcs, name, bases, namespace, **kwargs)
         if hasattr(cls, '_driver_name'):
             # pylint: disable=protected-access

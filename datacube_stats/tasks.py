@@ -79,7 +79,7 @@ def boundary_polygon_from_file(filename: str) -> Geometry:
     return boundary_polygon
 
 
-class GriddedTaskGenerator(object):
+class GriddedTaskGenerator:
     def __init__(self, storage, geopolygon=None, tile_indexes=None):
         self.grid_spec = _make_grid_spec(storage)
         self.geopolygon = geopolygon
@@ -173,7 +173,7 @@ def _make_grid_spec(storage) -> GridSpec:
                     resolution=[storage['resolution'][dim] for dim in crs.dimensions])
 
 
-class NonGriddedTaskGenerator(object):
+class NonGriddedTaskGenerator:
     """
     Make stats tasks for a single defined spatial region, not part of a grid.
 
@@ -299,7 +299,7 @@ class NonGriddedTaskGenerator(object):
                     yield task
 
 
-class ArbitraryTileMaker(object):
+class ArbitraryTileMaker:
     """
     Create a :class:`Tile` which can be used by :class:`GridWorkflow` to later load the required data.
 

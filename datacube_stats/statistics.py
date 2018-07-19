@@ -85,7 +85,6 @@ class Statistic(abc.ABC):
         See `incremental_stats.assemble_updater`
 
         """
-        return None
 
 
 class NoneStat(Statistic):
@@ -456,12 +455,15 @@ class PerPixelMetadata(abc.ABC):
 
     @abc.abstractmethod
     def compute(self, data, selected_indexes):
-        """Return a variable name and :class:`xarray.Variable` to add in to the """
-        return
+        """
+        Return a variable name and :class:`xarray.Variable` to add in to the dataset.
+        """
 
     @abc.abstractmethod
     def measurement(self):
-        return
+        """
+        Return band information on the per-pixel metadata.
+        """
 
 
 class ObservedDaysSince(PerPixelMetadata):
