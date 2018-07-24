@@ -146,7 +146,7 @@ class OutputProduct:
 
         inputs = [Measurement(**measurement)
                   for measurement in input_measurements]
-        self.data_measurements = [vars(output)
+        self.data_measurements = [dict(output)
                                   for output in statistic.measurements(inputs)]
 
         #: The ODC Product (formerly DatasetType)

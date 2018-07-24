@@ -36,8 +36,6 @@ from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence
-from digitalearthau.qsub import with_qsub_runner, TaskRunner
-from digitalearthau.runners.model import TaskDescription, DefaultJobParameters
 from .utils.timer import MultiTimer, wrap_in_timer
 from .utils import sorted_interleave, Slice, prettier_slice
 from .tasks import select_task_generator
@@ -103,6 +101,16 @@ def gather_tile_indexes(tile_index, tile_index_file):
         return tile_indexes
 
 
+def with_or_without_qsub_runner():
+    try:
+        from digitalearthau.qsub import with_qsub_runner
+        return with_qsub_runner()
+    except ImportError:
+        def identity(f):
+            return f
+        return identity
+
+
 # pylint: disable=broad-except
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
@@ -124,7 +132,7 @@ def gather_tile_indexes(tile_index, tile_index_file):
               help="The number of batch jobs to launch using PBS and the serial executor.")
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
 @ui.global_cli_options
-@with_qsub_runner()
+@with_or_without_qsub_runner()
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
@@ -343,6 +351,9 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
             return e
 
     def run_tasks(self, tasks, runner=None, task_slice=None):
+        from digitalearthau.qsub import TaskRunner
+        from digitalearthau.runners.model import TaskDescription, DefaultJobParameters
+
         if task_slice is not None:
             tasks = islice(tasks, task_slice.start, task_slice.stop, task_slice.step)
 
