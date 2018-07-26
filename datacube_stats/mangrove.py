@@ -12,13 +12,13 @@ class MangroveCC(Statistic):
         super().__init__()
         self.thresholds = thresholds
         if bands is None:
-            self.bands = ['extent', 'type']
+            self.bands = ['extent', 'canopy_cover_class']
         else:
             self.bands = bands
         self.shape_file = shape_file
 
     def measurements(self, input_measurements):
-        return [Measurement(name=band, dtype='int32', nodata=0, units='1') for band in self.bands]
+        return [Measurement(name=band, dtype='int16', nodata=0, units='1') for band in self.bands]
 
     def compute(self, data):
         var_name = list(data.data_vars.keys())[0]

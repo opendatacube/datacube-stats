@@ -13,7 +13,7 @@ from dateutil.rrule import YEARLY, MONTHLY, DAILY, rrule
 _LOG = logging.getLogger(__name__)
 
 FREQS = {'y': YEARLY, 'm': MONTHLY, 'd': DAILY}
-DURATIONS = {'y': 'years', 'm': 'months', 'd': 'days'}
+DURATIONS = {'y': 'years', 'm': 'months', 'd': 'days', 'M': 'microseconds'}
 HYDRO_START_CAL = '01/07/'
 HYDRO_END_CAL = '30/11/'
 
@@ -33,10 +33,15 @@ def date_sequence(start, end, stats_duration, step_size):
     """
     step_size, freq = parse_interval(step_size)
     stats_duration = parse_duration(stats_duration)
+    #
+    # datacube query returns the data on [start_date, end_date], which is a behaviou we don't like to see.
+    # We expect data on [start_date, end_dated).
+    #
+    exclude_duration = parse_duration('1M')
     for start_date in rrule(freq, interval=step_size, dtstart=start, until=end):
-        end_date = start_date + stats_duration
+        end_date = start_date + stats_duration - exclude_duration
         if end_date <= end:
-            yield start_date, start_date + stats_duration
+            yield start_date, end_date
 
 
 def parse_interval(interval):

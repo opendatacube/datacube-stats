@@ -39,6 +39,7 @@ class StatsProcessingError(RuntimeError):
 
 
 class Statistic(abc.ABC):
+    # pylint: disable=useless-return
     @abc.abstractmethod
     def compute(self, data: xarray.Dataset) -> xarray.Dataset:
         """
@@ -450,6 +451,7 @@ class Percentile(PerBandIndexStat):
 
 
 class PerPixelMetadata(abc.ABC):
+    # pylint: disable=useless-return
     def __init__(self, var_name='observed'):
         self._var_name = var_name
 
@@ -699,9 +701,10 @@ class ExternalPlugin(Statistic):
     def compute(self, data: xarray.Dataset) -> xarray.Dataset:
         return self.impl.compute(data)
 
-    def __getattr__(self, name):
-        # If attribute not on current object or on Statistic, try to find it on self.impl
-        return getattr(self.impl, name)
+    # caused trouble in unpickle stream
+    # def __getattr__(self, name):
+    #     # If attribute not on current object or on Statistic, try to find it on self.impl
+    #     return getattr(self.impl, name)
 
 
 class MaskMultiCounter(Statistic):
