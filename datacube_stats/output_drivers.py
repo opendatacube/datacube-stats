@@ -485,7 +485,7 @@ class GeoTiffOutputDriver(OutputDriver):
     def write_yaml(self, stat: OutputProduct, tmp_filename: Path):
         output_filename = self.output_filename_tmpname[tmp_filename]
 
-        uri = output_filename.as_uri()
+        uri = output_filename.absolute().as_uri()
 
         def band_info(measurement_name):
             return {
