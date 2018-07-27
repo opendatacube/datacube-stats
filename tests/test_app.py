@@ -39,11 +39,10 @@ def test_raises_error_on_no_sources(sample_stats_config):
 def test_can_create_output_products(sample_stats_config, mock_index):
     # GIVEN: A simple stats app
     stats_app = StatsApp(config=sample_stats_config)
-    stats_app.index = mock_index
     stats_app.output_products = _SAMPLE_OUTPUTS_SPEC
 
     # WHEN: I call configure_outputs()
-    output_prods = stats_app.configure_outputs()
+    output_prods = stats_app.configure_outputs(mock_index)
 
     # THEN: I should receive an appropriately configured output product
     assert len(output_prods) == 1
@@ -55,7 +54,7 @@ def test_can_create_output_products(sample_stats_config, mock_index):
 
     # TODO: Check output product is created
     # Based on the source product's measurements
-    stats_app.index.products.get_by_name.assert_called_with('fake_source_product')
+    mock_index.products.get_by_name.assert_called_with('fake_source_product')
 
 
 @pytest.fixture
@@ -88,9 +87,8 @@ _EXPECTED_DB_FILTER = {'cell_index': None,
 
 def create_app_with_products(sample_stats_config, mock_index):
     stats_app = StatsApp(config=sample_stats_config)
-    stats_app.index = mock_index
     stats_app.output_products = _SAMPLE_OUTPUTS_SPEC
-    output_prods = stats_app.configure_outputs()
+    output_prods = stats_app.configure_outputs(mock_index)
     return stats_app, output_prods
 
 

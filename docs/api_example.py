@@ -1,6 +1,15 @@
+import multiprocessing
+from functools import partial
+
 import yaml
 from datacube_stats import StatsApp
 from datacube import Datacube
+
+
+def execute_task(app, task):
+    output = app.execute_task(task)
+    print('result for {}:\n{}'.format(task.tile_index,
+                                      output.result['nbar_mean']))
 
 
 def main():
@@ -37,7 +46,12 @@ def main():
             y: 800
 
     input_region:
-          tile: [15, -41]
+          tiles:
+            - [15, -41]
+            - [15, -40]
+            - [15, -41]
+            - [15, -40]
+
 
     output_products:
         - name: nbar_mean
@@ -51,18 +65,15 @@ def main():
 
     print(yaml.dump(config, indent=4))
 
-    dc = Datacube()
-    app = StatsApp(config, dc.index)
+    app = StatsApp(config)
 
     print('generating tasks')
-    tasks = app.generate_tasks()
+    dc = Datacube(app='api-example')
+    tasks = app.generate_tasks(dc.index)
 
     print('running tasks')
-    for task in tasks:
-        # this method is only available for the xarray output driver
-        output = app.execute_task(task)
-        print('result for {}'.format(task.tile_index))
-        print(output.result['nbar_mean'])
+    pool = multiprocessing.Pool(4)
+    pool.map(partial(execute_task, app), tasks)
 
 
 if __name__ == '__main__':

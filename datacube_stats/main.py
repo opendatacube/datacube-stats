@@ -165,14 +165,18 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
                                   tile_index, tile_index_file, year, output_location)
 
         app = StatsApp(config, index)
+        app.log_config()
 
-        if save_tasks:
-            app.save_tasks_to_file(save_tasks)
+        if save_tasks is not None:
+            app.save_tasks_to_file(save_tasks, index)
             failed = 0
-        elif load_tasks:
-            successful, failed = app.run(runner, task_file=load_tasks, task_slice=task_slice)
         else:
-            successful, failed = app.run(runner, task_slice=task_slice)
+            if load_tasks is not None:
+                tasks = unpickle_stream(load_tasks)
+            else:
+                tasks = app.generate_tasks(index)
+
+            successful, failed = app.run_tasks(tasks, runner, task_slice)
 
         timer.pause('main')
         _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
@@ -271,7 +275,7 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
         self.filter_product = config['filter_product']
 
         #: An iterable of date ranges.
-        self.date_ranges = _configure_date_ranges(index, config)
+        self.date_ranges = _configure_date_ranges(config, index=index)
 
         #: Generates tasks to compute statistics. These tasks should be :class:`StatsTask` objects
         #: and will define spatial and temporal boundaries, as well as statistical operations to be run.
@@ -281,9 +285,6 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
         #: A class which knows how to create and write out data to a permanent storage format.
         #: Implements :class:`.output_drivers.OutputDriver`.
         self.output_driver = _prepare_output_driver(self.storage)
-
-        #: An open database connection
-        self.index = index
 
         self.global_attributes = config['global_attributes']
         self.var_attributes = config['var_attributes']
@@ -320,7 +321,7 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
             raise StatsConfigurationError('Output products must all have different names. '
                                           'Duplicates found: %s' % duplicate_names)
 
-    def _log_config(self):
+    def log_config(self):
         config = self.config_file
         _LOG.info('statistic: \'%s\' location: \'%s\'',
                   config['output_products'][0]['statistic'],
@@ -387,25 +388,15 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
 
         return result
 
-    def run(self, runner, task_file=None, task_slice=None):
-        self._log_config()
-
-        if task_file:
-            tasks = unpickle_stream(task_file)
-        else:
-            tasks = self.generate_tasks(self.configure_outputs())
-
-        return self.run_tasks(tasks, runner=runner, task_slice=task_slice)
-
-    def save_tasks_to_file(self, filename):
+    def save_tasks_to_file(self, filename, index):
         _LOG.debug('Saving tasks to %s.', filename)
-        output_products = self.configure_outputs()
+        output_products = self.configure_outputs(index)
 
-        tasks = self.generate_tasks(output_products)
+        tasks = self.generate_tasks(index, output_products)
         num_saved = pickle_stream(tasks, filename)
         _LOG.debug('Successfully saved %s tasks to %s.', num_saved, filename)
 
-    def generate_tasks(self,
+    def generate_tasks(self, index,
                        output_products: Dict[str, OutputProduct] = None,
                        metadata_type='eo') -> Iterator[StatsTask]:
         """
@@ -428,17 +419,17 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
         :return:
         """
         if output_products is None:
-            output_products = self.configure_outputs(metadata_type)
+            output_products = self.configure_outputs(index, metadata_type)
 
         is_iterative = all(op.is_iterative() for op in output_products.values())
 
-        for task in self.task_generator(index=self.index, date_ranges=self.date_ranges,
+        for task in self.task_generator(index=index, date_ranges=self.date_ranges,
                                         sources_spec=self.sources):
             task.output_products = output_products
             task.is_iterative = is_iterative
             yield task
 
-    def configure_outputs(self, metadata_type='eo') -> Dict[str, OutputProduct]:
+    def configure_outputs(self, index, metadata_type='eo') -> Dict[str, OutputProduct]:
         """
         Return dict mapping Output Product Name<->Output Product
 
@@ -448,9 +439,9 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
 
         output_products = {}
 
-        measurements = _source_measurement_defs(self.index, self.sources)
+        measurements = _source_measurement_defs(index, self.sources)
 
-        metadata_type = self.index.metadata_types.get_by_name(metadata_type)
+        metadata_type = index.metadata_types.get_by_name(metadata_type)
 
         stats_metadata = _get_stats_metadata(self.config_file)
 
@@ -862,7 +853,7 @@ def _prepare_output_driver(storage):
                                       'configuration file.'.format(msg, list(OUTPUT_DRIVERS.keys())))
 
 
-def _configure_date_ranges(index, config):
+def _configure_date_ranges(config, index=None):
     if 'date_ranges' not in config:
         raise StatsConfigurationError(dedent("""\
         No Date Range specification was found in the stats configuration file, please add a section similar to:
@@ -892,6 +883,9 @@ def _configure_date_ranges(index, config):
                                     step_size=date_ranges['step_size']))
 
     elif date_ranges.get('type') == 'find_daily_data':
+        if index is None:
+            raise ValueError('find_daily_data needs a datacube index to be passed')
+
         sources = config['sources']
         product_names = [source['product'] for source in sources]
         output = list(_find_periods_with_data(index, product_names=product_names,
