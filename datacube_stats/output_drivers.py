@@ -1,9 +1,5 @@
 """
 Provide some classes for writing data out to files on disk.
-
-The `NetcdfOutputDriver` will write multiple variables into a single file.
-
-The `RioOutputDriver` writes a single __band__ of data per file.
 """
 import abc
 import logging
@@ -178,6 +174,10 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         else:
             return written_paths
 
+    @classmethod
+    def format_name(cls):
+        return cls._driver_name
+
     def _handle_to_path(self, file_handle) -> Path:
         return Path(file_handle.name)
 
@@ -329,6 +329,10 @@ class NetCDFCFOutputDriver(OutputDriver):
     _driver_name = 'NetCDF CF'
 
     valid_extensions = ['.nc']
+
+    @classmethod
+    def format_name(cls):
+        return 'NetCDF'
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():

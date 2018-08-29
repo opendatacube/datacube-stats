@@ -446,11 +446,17 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
         stats_metadata = _get_stats_metadata(self.config_file)
 
         for output_spec in self.output_product_specs:
+            definition = dict(output_spec)
+            if 'metadata' not in definition:
+                definition['metadata'] = {}
+                if 'format' not in definition['metadata']:
+                    definition['metadata']['format'] = {'name': self.output_driver.format_name()}
+
             output_products[output_spec['name']] = OutputProduct.from_json_definition(
                 metadata_type=metadata_type,
                 input_measurements=measurements,
                 storage=self.storage,
-                definition=output_spec,
+                definition=definition,
                 stats_metadata=stats_metadata)
 
         # TODO: Write the output product to disk somewhere
