@@ -725,6 +725,10 @@ Release Notes
 
 0.9b2 release
 -------------
+    **Note:** This is a maintenance release compatible with datacube 1.6.1.
+
+- Add mangrove statistics
+- Minor changes to the Python API to support multi-processing
 - The GeoTIFF output driver name has changed to ``GeoTIFF`` from ``GeoTiff``
 
 0.9b1 release
