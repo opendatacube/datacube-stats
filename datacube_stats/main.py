@@ -556,9 +556,6 @@ def load_process_save_chunk(output_files: OutputDriver,
             if task.geom_feat:
                 geom = Geometry(task.geom_feat, CRS(task.crs_txt))
                 data = data.where(geometry_mask([geom], data.geobox, invert=True))
-            # pylint: disable=protected-access
-            if output_files._driver_name == 'None':
-                output_files.get_source(chunk, data)
 
         last_idx = len(task.output_products) - 1
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):

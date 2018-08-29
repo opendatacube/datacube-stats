@@ -154,9 +154,6 @@ class OutputDriver(with_metaclass(RegisterDriver)):
         #: dict of str to dict of str to str
         self.var_attributes = var_attributes if var_attributes is not None else {}
 
-        #: xarray of time coordinates of source
-        self.time = None
-
     def close_files(self, completed_successfully: bool) -> Iterable[Path]:
         # Turn file_handles into paths
         written_paths = list(_walk_dict(self._output_file_handles, self._handle_to_path))
@@ -279,15 +276,10 @@ class OutputDriver(with_metaclass(RegisterDriver)):
             # Align the data `Tile` with potentially many mask `Tile`s along their time axis
             all_sources = xarray.align(prod.data.sources,
                                        *[mask_tile.sources for mask_tile in prod.masks if mask_tile])
+
             # TODO: The following can fail if prod.data and prod.masks have different times
             # Which can happen in the case of a missing PQ Scene, where there is a scene overlap
             # ie. Two overlapped NBAR scenes, One PQ scene (the later)
-            for source in all_sources:
-                if self.time is None:
-                    self.time = source.coords['time']
-                else:
-                    self.time = self.time.combine_first(source.coords['time'])
-
             return add_all(sources_.sum() for sources_ in all_sources)
 
         sources = add_all(merge_sources(prod) for prod in task.sources)
@@ -613,10 +605,9 @@ class ENVIBILOutputDriver(GeoTiffOutputDriver):
 
 
 class OutputDriverResult(Exception):
-    def __init__(self, result, source, *args, **kwargs):
+    def __init__(self, result, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.result = result
-        self.source = source
 
 
 class XarrayOutputDriver(OutputDriver):
@@ -627,18 +618,15 @@ class XarrayOutputDriver(OutputDriver):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.result = {}
-        self.source = {}
 
     def close_files(self, completed_successfully):
-        raise OutputDriverResult(self.result, self.source)
+        raise OutputDriverResult(self.result)
 
     def open_output_files(self):
         for prod_name, stat in self._output_products.items():
             datasets = self._find_source_datasets(stat)
             all_measurement_defns = list(stat.product.measurements.values())
             self.create_result_storage(prod_name, datasets, all_measurement_defns)
-
-        self.create_source_storage(all_measurement_defns)
 
     def create_result_storage(self, prod_name, datasets, measurements):
         coordinates = self.create_coords(datasets)
@@ -660,12 +648,6 @@ class XarrayOutputDriver(OutputDriver):
                                  dtype=variable['dtype']).reshape(shape)
             variables.update({variable['name']: (dims, nodata)})
         return variables
-
-    def create_source_storage(self, measurements):
-        coordinates = self.create_coords(self.time)
-        shape = [coordinates['time'].shape[0], coordinates['y'].shape[0], coordinates['x'].shape[0]]
-        variables = self.create_variables(self.time.dims+self._geobox.dimensions, measurements, shape)
-        self.source['source'] = xarray.Dataset(variables, coords=coordinates)
 
     def _handle_to_path(self, file_handle) -> Path:
         return Path(file_handle.filepath())
@@ -694,11 +676,6 @@ class XarrayOutputDriver(OutputDriver):
 
     def write_global_attributes(self, attributes):
         pass
-
-    def get_source(self, chunk, datasets):
-        for measurement, values in datasets.data_vars.items():
-            time_dim = self.source['source'].coords['time'].shape[0]
-            self.source['source'][measurement][(slice(0, time_dim, None),)+chunk[1:]] = values.values.astype('int16')
 
 
 class TestOutputDriver(OutputDriver):
