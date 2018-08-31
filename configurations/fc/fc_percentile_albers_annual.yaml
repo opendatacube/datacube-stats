@@ -309,10 +309,10 @@ var_attributes:
 
 ## Computational
 # Decide based on how much can fit into memory on the node that is running the job.
-#computation:
-#  chunking:
-#    x: 2000
-#    y: 2000
+computation:
+  chunking:
+    x: 1000
+    y: 1000
 
 ## Define statistics to perform and how to store the data
 output_products:

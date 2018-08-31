@@ -100,19 +100,8 @@ storage:
 ## Computational
 computation:
   chunking:
-    x: 4000
+    x: 1000
     y: 1000
-
-input_region:
-#  tile: [12, -43]
-  from_file: /g/data/u46/users/dra547/test_stats_region/test_stats_region.shp
-#input_region:
-#
-#    crs: EPSG:4326
-##    x: [147, 148]
-##    y: [-33, -34]
-#    x: [149, 150]
-#    y: [-28, -29]
 
 ## Define statistics to perform and how to store the data
 output_products:
