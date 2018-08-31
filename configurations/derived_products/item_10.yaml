@@ -90,10 +90,9 @@ location: '/g/data/v10/ITEM/junk'
 input_region:
   from_file: '/g/data/v10/ITEM/ITEMv2_tidalmodel.shp'
   feature_id: [208]
-#
+
 storage:
   driver: NetCDF CF
-  #driver: Geotiff
 
   crs: EPSG:3577
   tile_size:
@@ -122,7 +121,7 @@ output_products:
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
+   file_path_template: 'ITEM_{name}_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
    product_type: ITEM
 
 # - name: standard_deviation 
@@ -133,7 +132,6 @@ output_products:
 #   file_path_template: 'ITEM_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}_{stat_name}.nc'
 #   product_type: ITEM
 
-#
 filter_product:
   method: by_tide_height
   args:

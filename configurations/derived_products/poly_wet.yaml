@@ -88,13 +88,11 @@ date_ranges:
 location: '/g/data/r78/tmp'
 
 input_region:
-  #from_file: '/g/data/r78/bxb547/GW_works/burdekin_polygons_albers.shp'
   from_file: '/g/data/r78/bxb547/GW_works/bur_dry_albers.shp'
   feature_id: [56] 
-#
+
 storage:
   driver: NetCDF CF
-  #driver: Geotiff
 
   crs: EPSG:3577
   tile_size:
@@ -118,7 +116,7 @@ output_products:
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'GW_WET_{x}_{y}.nc'
+   file_path_template: 'GW_WET/GW_WET_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
    product_type: COMPOSITE WET
 
 filter_product:

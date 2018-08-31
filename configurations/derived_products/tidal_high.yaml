@@ -92,10 +92,9 @@ location: '/g/data/v10/intertidal/junk'
 input_region:
    from_file: '/g/data/v10/ITEM/ITEMv2_tidalmodel.shp'
    feature_id: [94]
-#
+
 storage:
   driver: NetCDF CF
-  #driver: Geotiff
 
   crs: EPSG:3577
   tile_size:
@@ -119,7 +118,7 @@ output_products:
    output_params:
       zlib: True
       fletcher32: True
-   file_path_template: 'COMPOSITE_HIGH_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
+   file_path_template: 'COMPOSITE_HIGH/COMPOSITE_HIGH_{x}_{y}_{epoch_start:%Y%m%d}_{epoch_end:%Y%m%d}.nc'
    product_type: tidal_composite
 
 # - name: tidal_count
