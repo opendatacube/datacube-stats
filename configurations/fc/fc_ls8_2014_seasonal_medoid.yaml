@@ -20,6 +20,7 @@ sources:
           nir_saturated: False
           swir1_saturated: False
           swir2_saturated: False
+          land_sea: land
 
 date_ranges:
   start_date: 2014-09-01
