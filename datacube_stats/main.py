@@ -637,6 +637,7 @@ def load_masked_tile_lazy(tile, masks,
                           mask_nodata=False,
                           mask_inplace=False,
                           reverse=True,
+                          inverts=None,
                           src_idx=None,
                           timer=None,
                           **kwargs):
@@ -653,6 +654,7 @@ def load_masked_tile_lazy(tile, masks,
     mask_nodata  -- Convert data to float32 replacing nodata values with nan
     mask_inplace -- Apply mask without conversion to float
     reverse      -- Return data earliest observation first
+    inverts      -- Whether or not to invert the corresponding mask
     src_idx      -- If set adds extra axis called source with supplied value
     timer        -- Optionally track time
 
@@ -674,10 +676,13 @@ def load_masked_tile_lazy(tile, masks,
 
         # Load all masks and combine them all into one
         mask = None
-        for m_tile, flags, load_args in masks:
+        for (m_tile, flags, load_args), invert in zip(masks, inverts):
             m = GridWorkflow.load(m_tile[loc], **load_args)
             m, *other = m.data_vars.values()
             m = make_mask(m, **flags)
+
+            if invert:
+                m = np.logical_not(m)
 
             if mask is None:
                 mask = m
@@ -715,6 +720,7 @@ def load_masked_data_lazy(sub_tile_slice: Tuple[slice, slice, slice],
     mask_nodata = source_prod.spec.get('mask_nodata', True)
     mask_inplace = source_prod.spec.get('mask_inplace', False)
     masks = []
+    inverts = []
 
     if 'masks' in source_prod.spec:
         for mask_spec, mask_tile in zip(source_prod.spec['masks'], source_prod.masks):
@@ -725,12 +731,14 @@ def load_masked_data_lazy(sub_tile_slice: Tuple[slice, slice, slice],
                         measurements=[mask_spec['measurement']])
 
             masks.append((mask_tile[sub_tile_slice], flags, opts))
+            inverts.append(mask_spec.get('invert') is True)
 
     return load_masked_tile_lazy(data_tile,
                                  masks,
                                  mask_nodata=mask_nodata,
                                  mask_inplace=mask_inplace,
                                  reverse=reverse,
+                                 inverts=inverts,
                                  src_idx=src_idx,
                                  timer=timer,
                                  fuse_func=data_fuse_func,
@@ -776,6 +784,9 @@ def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
             elif mask_spec.get('greater_than') is not None:
                 greater_than = float(mask_spec['greater_than'])
                 mask = mask > greater_than
+
+            if mask_spec.get('invert') is True:
+                mask = np.logical_not(mask)
 
             if mask_inplace:
                 data = sensible_where_inplace(data, mask)
