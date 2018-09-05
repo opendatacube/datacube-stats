@@ -443,7 +443,7 @@ class Percentile(PerBandIndexStat):
         return xarray.merge(single(q) for q in self.qs)
 
     def measurements(self, input_measurements):
-        renamed = [Measurement(**{**vars(m), 'name': m.name + '_PC_' + str(q)})
+        renamed = [Measurement(**{**m, 'name': m.name + '_PC_' + str(q)})
                    for q in self.qs
                    for m in input_measurements]
 
