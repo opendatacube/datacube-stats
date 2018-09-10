@@ -14,7 +14,7 @@ sources:
         measurement: pixelquality
         group_by: solar_day
         fuse_func: datacube.helpers.ga_pq_fuser
-        time: [2013-01-01, 2017-01-01]
+        time: [2013-01-01, 2018-01-01]
         flags:
           contiguous: True
           cloud_acca: no_cloud
@@ -31,9 +31,13 @@ sources:
         product: wofs_albers
         measurement: water
         fuse_func: digitalearthau.utils.wofs_fuser
-        time: [2013-01-01, 2017-01-01]
+        time: [2013-01-01, 2018-01-01]
         flags:
-          dry: True
+          cloud: False
+          cloud_shadow: False
+          noncontiguous: False
+          terrain_or_low_angle: False
+          water_observed: False
   - <<: *base_source_product
     product: ls7_fc_albers
     time: [2010-01-01, 2013-06-01]
@@ -89,7 +93,7 @@ date_ranges:
   stats_duration: 1y
   step_size: 1y
 
-location: '/g/data/r78/FC-percentile/annual'
+location: '/g/data/v10/users/ea6141/FC-percentile/annual'
 
 storage:
   driver: NetCDF CF
@@ -309,10 +313,10 @@ var_attributes:
 
 ## Computational
 # Decide based on how much can fit into memory on the node that is running the job.
-computation:
-  chunking:
-    x: 1000
-    y: 1000
+#computation:
+#  chunking:
+#    x: 2000
+#    y: 2000
 
 ## Define statistics to perform and how to store the data
 output_products:
@@ -329,6 +333,7 @@ output_products:
     statistic_args:
       q: [10, 50, 90]
       per_pixel_metadata: [source, observed_date]
+      minimum_valid_observations: 3
     output_params:
       zlib: True
       fletcher32: True
