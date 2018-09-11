@@ -88,7 +88,8 @@ def _walk_dict(file_handles, func):
     """
     for _, output_fh in file_handles.items():
         if isinstance(output_fh, dict):
-            _walk_dict(output_fh, func)
+            for out in _walk_dict(output_fh, func):
+                yield out
         else:
             try:
                 yield func(output_fh)
@@ -463,14 +464,18 @@ class GeoTiffOutputDriver(OutputDriver):
                 raise ValueError('No measurements to record for {}.'.format(prod_name))
             elif num_measurements > 1 and 'var_name' in stat.file_path_template:
                 # Output each statistic product into a separate single band geotiff file
-                for measurement_name, measure_def in stat.product.measurements.items():
-                    self._open_single_band_geotiff(prod_name, stat, measurement_name)
+                tmp_filenames = [self._open_single_band_geotiff(prod_name, stat, measurement_name)
+                                 for measurement_name, measure_def in stat.product.measurements.items()]
+
+                yaml_filename = str(self._generate_output_filename(stat, var_name='').with_suffix('.yaml'))
+                self.write_yaml(stat, tmp_filenames, yaml_filename, multiband=False)
+
             else:
                 # Output all statistics into a single geotiff file, with as many bands
                 # as there are output statistic products
                 output_filename = self._prepare_output_file(stat)
 
-                self.write_yaml(stat, output_filename)
+                self.write_yaml(stat, [output_filename] * len(stat.product.measurements))
 
                 dest_fh = self._open_geotiff(prod_name, None, output_filename, num_measurements)
 
@@ -478,22 +483,25 @@ class GeoTiffOutputDriver(OutputDriver):
                     self._set_band_metadata(dest_fh, measurement_name, band=band)
                 self._output_file_handles[prod_name] = dest_fh
 
-    def write_yaml(self, stat: OutputProduct, tmp_filename: Path):
-        output_filename = self.output_filename_tmpname[tmp_filename]
+    def write_yaml(self, stat: OutputProduct, tmp_filenames: List[Path], yaml_filename=None, multiband=True):
+        output_filenames = [self.output_filename_tmpname[tmp_filename]
+                            for tmp_filename in tmp_filenames]
 
-        uri = output_filename.absolute().as_uri()
+        uris = [output_filename.absolute().as_uri()
+                for output_filename in output_filenames]
 
-        def band_info(measurement_name):
-            return {
-                'layer': list(stat.product.measurements).index(measurement_name) + 1,
-                'path': uri
-            }
+        def layer(index):
+            if multiband:
+                return index + 1
+            return 1
 
-        band_uris = {name: band_info(name) for name in stat.product.measurements}
+        band_uris = {name: {'layer': layer(index), 'path': uris[index]}
+                     for index, name in enumerate(stat.product.measurements)}
 
-        datasets = self._find_source_datasets(stat, uri=uri, band_uris=band_uris)
+        datasets = self._find_source_datasets(stat, uri=None, band_uris=band_uris)
 
-        yaml_filename = str(output_filename.with_suffix('.yaml'))
+        if yaml_filename is None:
+            yaml_filename = str(output_filenames[0].with_suffix('.yaml'))
 
         # Write to Yaml
         if len(datasets) == 1:  # I don't think there should ever be more than 1 dataset in here...
@@ -509,6 +517,7 @@ class GeoTiffOutputDriver(OutputDriver):
         dest_fh = self._open_geotiff(prod_name, measurement_name, output_filename)
         self._set_band_metadata(dest_fh, measurement_name)
         self._output_file_handles.setdefault(prod_name, {})[measurement_name] = dest_fh
+        return output_filename
 
     def _set_band_metadata(self, dest_fh, measurement_name, band=1):
         start_date, end_date = self._task.time_period
