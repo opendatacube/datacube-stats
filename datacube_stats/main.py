@@ -538,7 +538,8 @@ def load_process_save_chunk_iteratively(output_files: OutputDriver,
         for var_name, var in ds.data_vars.items():
             output_files.write_data(name, var_name, chunk, var.values)
 
-    for ds in load_data_lazy(chunk, task.sources, timer=timer):
+    geom = geometry_for_task(task)
+    for ds in load_data_lazy(chunk, task.sources, geom=geom, timer=timer):
         update(ds)
 
     with timer.time('writing_data'):
@@ -546,16 +547,21 @@ def load_process_save_chunk_iteratively(output_files: OutputDriver,
             save(name, cast_back(proc(), stat.data_measurements))
 
 
+def geometry_for_task(task: StatsTask):
+    """ Select the feature attached to the task (for feature-based masking). """
+    if task.geom_feat:
+        return Geometry(task.geom_feat, CRS(task.crs_txt))
+    else:
+        return None
+
+
 def load_process_save_chunk(output_files: OutputDriver,
                             chunk: Tuple[slice, slice, slice],
                             task: StatsTask, timer: MultiTimer):
     try:
         with timer.time('loading_data'):
-            data = load_data(chunk, task.sources)
-            # mask as per geometry now
-            if task.geom_feat:
-                geom = Geometry(task.geom_feat, CRS(task.crs_txt))
-                data = data.where(geometry_mask([geom], data.geobox, invert=True))
+            geom = geometry_for_task(task)
+            data = load_data(chunk, task.sources, geom=geom)
 
         last_idx = len(task.output_products) - 1
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):
@@ -588,11 +594,12 @@ class EmptyChunkException(Exception):
     pass
 
 
-def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
+def load_data_lazy(sub_tile_slice, sources, geom=None, reverse=False, timer=None):
     def by_time(ds):
         return ds.time.values[0]
 
-    data = [load_masked_data_lazy(sub_tile_slice, source, reverse=reverse, src_idx=source.source_index, timer=timer)
+    data = [load_masked_data_lazy(sub_tile_slice, source,
+                                  reverse=reverse, geom=geom, src_idx=source.source_index, timer=timer)
             for source in sources]
 
     if len(data) == 1:
@@ -602,15 +609,16 @@ def load_data_lazy(sub_tile_slice, sources, reverse=False, timer=None):
 
 
 def load_data(sub_tile_slice: Tuple[slice, slice, slice],
-              sources: Iterable[DataSource]) -> xarray.Dataset:
+              sources: Iterable[DataSource], geom=None) -> xarray.Dataset:
     """
     Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
 
     :param sub_tile_slice: A portion of a tile, tuple coordinates
     :param sources: a dictionary containing `data`, `spec` and `masks`
+    :param geom: polygon feature to mask by
     :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
     """
-    datasets = [load_masked_data(sub_tile_slice, source_prod)
+    datasets = [load_masked_data(sub_tile_slice, source_prod, geom=geom)
                 for source_prod in sources]  # list of datasets
 
     datasets = _remove_emptys(datasets)
@@ -637,6 +645,7 @@ def load_masked_tile_lazy(tile, masks,
                           mask_nodata=False,
                           mask_inplace=False,
                           reverse=True,
+                          geom=None,
                           inverts=None,
                           src_idx=None,
                           timer=None,
@@ -654,6 +663,7 @@ def load_masked_tile_lazy(tile, masks,
     mask_nodata  -- Convert data to float32 replacing nodata values with nan
     mask_inplace -- Apply mask without conversion to float
     reverse      -- Return data earliest observation first
+    geom         -- polygon feature to mask by
     inverts      -- Whether or not to invert the corresponding mask
     src_idx      -- If set adds extra axis called source with supplied value
     timer        -- Optionally track time
@@ -679,6 +689,7 @@ def load_masked_tile_lazy(tile, masks,
         for (m_tile, flags, load_args), invert in zip(masks, inverts):
             m = GridWorkflow.load(m_tile[loc], **load_args)
             m, *other = m.data_vars.values()
+            # TODO make use of make_mask_from_spec here
             m = make_mask(m, **flags)
 
             if invert:
@@ -689,15 +700,20 @@ def load_masked_tile_lazy(tile, masks,
             else:
                 mask &= m
 
+        if mask_inplace or not mask_nodata:
+            where = sensible_where_inplace
+        else:
+            where = sensible_where
+
         if mask is not None:
             # Apply mask in place if asked or if we already performed
             # conversion to float32, this avoids reallocation of memory and
             # hence increases the largest data set size one can load without
             # running out of memory
-            if mask_inplace or mask_nodata:
-                d = sensible_where_inplace(d, mask)
-            else:
-                d = sensible_where(d, mask)
+            d = where(d, mask)
+
+        if geom is not None:
+            d = where(d, geometry_mask([geom], d.geobox, invert=True))
 
         if src_idx is not None:
             d.coords['source'] = ('time', np.repeat(src_idx, d.time.size))
@@ -712,7 +728,7 @@ def load_masked_tile_lazy(tile, masks,
 
 def load_masked_data_lazy(sub_tile_slice: Tuple[slice, slice, slice],
                           source_prod: DataSource,
-                          reverse=False, src_idx=None, timer=None) -> xarray.Dataset:
+                          geom=None, reverse=False, src_idx=None, timer=None) -> xarray.Dataset:
     data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
     data_tile = source_prod.data[sub_tile_slice]
     data_measurements = source_prod.spec.get('measurements')
@@ -741,13 +757,30 @@ def load_masked_data_lazy(sub_tile_slice: Tuple[slice, slice, slice],
                                  inverts=inverts,
                                  src_idx=src_idx,
                                  timer=timer,
+                                 geom=geom,
                                  fuse_func=data_fuse_func,
                                  measurements=data_measurements,
                                  skip_broken_datasets=True)
 
 
+def make_mask_from_spec(loaded_mask_data, mask_spec):
+    if mask_spec.get('flags') is not None:
+        mask = make_mask(loaded_mask_data, **mask_spec['flags'])
+    elif mask_spec.get('less_than') is not None:
+        less_than = float(mask_spec['less_than'])
+        mask = loaded_mask_data < less_than
+    elif mask_spec.get('greater_than') is not None:
+        greater_than = float(mask_spec['greater_than'])
+        mask = loaded_mask_data > greater_than
+
+    if mask_spec.get('invert') is True:
+        mask = np.logical_not(mask)
+
+    return mask
+
+
 def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
-                     source_prod: DataSource) -> xarray.Dataset:
+                     source_prod: DataSource, geom=None) -> xarray.Dataset:
     data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
     data = GridWorkflow.load(source_prod.data[sub_tile_slice],
                              measurements=source_prod.spec.get('measurements'),
@@ -766,6 +799,11 @@ def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
         # Discard empty slice
         return None
 
+    if mask_inplace or not mask_nodata:
+        where = sensible_where_inplace
+    else:
+        where = sensible_where
+
     if 'masks' in source_prod.spec:
         for mask_spec, mask_tile in zip(source_prod.spec['masks'], source_prod.masks):
             if mask_tile is None:
@@ -776,23 +814,12 @@ def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
                                      measurements=[mask_spec['measurement']],
                                      fuse_func=mask_fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
-            if mask_spec.get('flags') is not None:
-                mask = make_mask(mask, **mask_spec['flags'])
-            elif mask_spec.get('less_than') is not None:
-                less_than = float(mask_spec['less_than'])
-                mask = mask < less_than
-            elif mask_spec.get('greater_than') is not None:
-                greater_than = float(mask_spec['greater_than'])
-                mask = mask > greater_than
 
-            if mask_spec.get('invert') is True:
-                mask = np.logical_not(mask)
-
-            if mask_inplace:
-                data = sensible_where_inplace(data, mask)
-            else:
-                data = sensible_where(data, mask)
+            data = where(data, make_mask_from_spec(mask, mask_spec))
             del mask
+
+    if geom is not None:
+        data = where(data, geometry_mask([geom], data.geobox, invert=True))
 
     if source_prod.source_index is not None:
         data.coords['source'] = ('time', np.repeat(source_prod.source_index, data.time.size))

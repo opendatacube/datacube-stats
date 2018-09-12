@@ -33,9 +33,11 @@ def geom_from_file(filename, feature_id):
             if feature_id is None or properties.get('ID') in feature_id or properties.get('id') in feature_id:
                 feature_list.append(properties)
                 find_feature = True
-            if int(feature.get('id')) in feature_id:
-                feature_list.append(feature)
+            elif int(feature.get('id')) in feature_id:
+                properties['ID'] = int(feature['id'])
+                feature_list.append(properties)
                 find_feature = True
+
             if find_feature:
                 geometry = feature['geometry']
                 geopolygon = Geometry(geometry, crs)
