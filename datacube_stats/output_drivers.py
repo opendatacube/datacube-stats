@@ -106,7 +106,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
     To use, instantiate the class, using it as a context manager, eg.
 
         with MyOutputDriver(task, storage, output_path):
-            output_driver.write_data(prod_name, measure_name, tile_index, values)
+            output_driver.write_data(prod_name, measure_name, chunk, values)
 
     :param StatsTask task: A StatsTask that will be producing data
         A task will contain 1 or more output products, with each output product containing 1 or more measurements
@@ -189,7 +189,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     @abc.abstractmethod
     def write_data(self, prod_name, measurement_name,
-                   tile_index: Tuple[slice, slice, slice],
+                   chunk: Tuple[slice, slice, slice],
                    values: numpy.ndarray) -> None:
         if len(self._output_file_handles) <= 0:
             raise StatsOutputError('No files opened for writing.')
@@ -238,15 +238,12 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     def _generate_output_filename(self, output_product: OutputProduct, **kwargs) -> Path:
         # Fill parameters from config file filename specification
-        params = {}
-        if self._task.tile_index is not None:
-            params['x'], params['y'] = self._task.tile_index
+        params = self._task.spatial_id.copy()
 
         params['epoch_start'], params['epoch_end'] = self._task.time_period
         params['name'] = output_product.name
         params['stat_name'] = output_product.stat_name
         params.update(output_product.extras)
-        params.update(self._task.extra_fn_params)
         params.update(kwargs)
 
         output_path = Path(self._output_path,
@@ -394,12 +391,12 @@ class NetCDFCFOutputDriver(OutputDriver):
                                           variables=variables, variable_params=variable_params,
                                           global_attributes=self.global_attributes)
 
-    def write_data(self, prod_name, measurement_name, tile_index, values):
-        self._output_file_handles[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(
+    def write_data(self, prod_name, measurement_name, chunk, values):
+        self._output_file_handles[prod_name][measurement_name][(0,) + chunk[1:]] = netcdf_writer.netcdfy_data(
             values)
         self._output_file_handles[prod_name].sync()
         _LOG.debug("Updated %s %s", measurement_name,
-                   "({})".format(", ".join(prettier_slice(x) for x in tile_index[1:])))
+                   "({})".format(", ".join(prettier_slice(x) for x in chunk[1:])))
 
     def write_global_attributes(self, attributes):
         for output_file in self._output_file_handles.values():
@@ -552,8 +549,8 @@ class GeoTiffOutputDriver(OutputDriver):
         dest_fh.update_tags(created=self._app_info)
         return dest_fh
 
-    def write_data(self, prod_name, measurement_name, tile_index, values):
-        super(GeoTiffOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
+    def write_data(self, prod_name, measurement_name, chunk, values):
+        super(GeoTiffOutputDriver, self).write_data(prod_name, measurement_name, chunk, values)
 
         prod = self._output_file_handles[prod_name]
         if isinstance(prod, dict):
@@ -564,10 +561,10 @@ class GeoTiffOutputDriver(OutputDriver):
             stat = self._output_products[prod_name]
             band_num = list(stat.product.measurements).index(measurement_name) + 1
 
-        t, y, x = tile_index
+        t, y, x = chunk
         window = ((y.start, y.stop), (x.start, x.stop))
         _LOG.debug("Updating %s.%s %s", prod_name, measurement_name,
-                   "({})".format(", ".join(prettier_slice(x) for x in tile_index[1:])))
+                   "({})".format(", ".join(prettier_slice(x) for x in chunk[1:])))
 
         dtype = self._get_dtype(prod_name, measurement_name)
 
@@ -680,7 +677,7 @@ class XarrayOutputDriver(OutputDriver):
             time_dim = self.result[prod_name].coords['time'].shape[0]
             self.result[prod_name][var_name][(slice(0, time_dim, None),) + chunk[1:]] = var.values
 
-    def write_data(self, prod_name, measurement_name, tile_index, values):
+    def write_data(self, prod_name, measurement_name, chunk, values):
         pass
 
     def write_global_attributes(self, attributes):
@@ -691,7 +688,7 @@ class TestOutputDriver(OutputDriver):
     def write_global_attributes(self, attributes):
         pass
 
-    def write_data(self, prod_name, measurement_name, tile_index, values):
+    def write_data(self, prod_name, measurement_name, chunk, values):
         pass
 
     def open_output_files(self):

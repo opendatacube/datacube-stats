@@ -63,7 +63,7 @@ def test_gridded_task_generation_with_datasets(mock_index):
     tasks = list(tasks)
     assert tasks
     assert len(tasks) == 500
-    assert set(range(-50, -40)) == set(task.tile_index[1] for task in tasks)
+    assert set(range(-50, -40)) == set(task.spatial_id['y'] for task in tasks)
 
 
 def test_non_gridded_task_generation(mock_index):
@@ -74,9 +74,8 @@ def test_non_gridded_task_generation(mock_index):
         'latitude': [-41, -42],
         'longitude': [137, 138.5]
     }
-    input_region = [input_region]
-    non_gridded_task_generator = NonGriddedTaskGenerator(input_region, filter_product=None, geopolygon=None,
-                                                         feature=None, storage=EXAMPLE_STORAGE)
+    non_gridded_task_generator = NonGriddedTaskGenerator(input_region, filter_product=None,
+                                                         features=None, storage=EXAMPLE_STORAGE)
 
     tasks = non_gridded_task_generator(mock_index, EXAMPLE_SOURCES_SPEC, EXAMPLE_DATE_RANGE)
 

@@ -28,7 +28,7 @@ import datacube_stats
 from datacube.api import make_mask, GridWorkflow
 from datacube.ui import click as ui
 from datacube.utils import read_documents, import_function
-from datacube.utils.geometry import CRS, Geometry, GeoBox
+from datacube.utils.geometry import Geometry, GeoBox
 from datacube_stats.models import OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
     NoSuchOutputDriver
@@ -518,7 +518,7 @@ def execute_task(task: StatsTask, output_driver, chunking) -> StatsTask:
         raise StatsProcessingException("Error processing task: %s" % task)
 
     timer.pause('total')
-    _LOG.debug('Completed %s %s task with %s data sources; %s', task.tile_index,
+    _LOG.debug('Completed %s %s task with %s data sources; %s', task.spatial_id,
                [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
     return task
 
@@ -549,8 +549,8 @@ def load_process_save_chunk_iteratively(output_files: OutputDriver,
 
 def geometry_for_task(task: StatsTask):
     """ Select the feature attached to the task (for feature-based masking). """
-    if task.geom_feat:
-        return Geometry(task.geom_feat, CRS(task.crs_txt))
+    if task.feature is not None:
+        return task.feature.geopolygon
     else:
         return None
 
@@ -566,7 +566,7 @@ def load_process_save_chunk(output_files: OutputDriver,
         last_idx = len(task.output_products) - 1
         for idx, (prod_name, stat) in enumerate(task.output_products.items()):
             _LOG.debug("Computing %s in tile %s %s; %s",
-                       prod_name, task.tile_index,
+                       prod_name, task.spatial_id,
                        "({})".format(", ".join(prettier_slice(c) for c in chunk)),
                        timer)
 

@@ -8,7 +8,7 @@ from datacube import Datacube
 
 def execute_task(app, task):
     output = app.execute_task(task)
-    print('result for {}:\n{}'.format(task.tile_index,
+    print('result for {}:\n{}'.format(task.spatial_id,
                                       output.result['nbar_mean']))
 
 
