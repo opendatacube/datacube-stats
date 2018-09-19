@@ -4,17 +4,17 @@ sources:
     group_by: solar_day
     measurements: [BS, PV, NPV]
     mask_nodata: False
-    time: [2013-01-01, 2018-01-01]
+    time: [2013-01-01, 2019-01-01]
     source_filter:
         product: ls8_level1_scene
         gqa_iterative_mean_xy: [0, 1]
-    masks: 
+    masks:
       - &pq_mask
         product: ls8_pq_albers
         measurement: pixelquality
         group_by: solar_day
         fuse_func: datacube.helpers.ga_pq_fuser
-        time: [2013-01-01, 2017-01-01]
+        time: [2013-01-01, 2019-01-01]
         flags:
           contiguous: True
           cloud_acca: no_cloud
@@ -27,6 +27,16 @@ sources:
           nir_saturated: False
           swir1_saturated: False
           swir2_saturated: False
+      - &wofs_mask
+        product: wofs_albers
+        measurement: water
+        fuse_func: digitalearthau.utils.wofs_fuser
+        time: [2013-01-01, 2019-01-01]
+        flags:
+          cloud: False
+          cloud_shadow: False
+          noncontiguous: False
+          water_observed: False
   - <<: *base_source_product
     product: ls7_fc_albers
     time: [2010-01-01, 2013-06-01]
@@ -36,6 +46,8 @@ sources:
     masks:
       - <<: *pq_mask
         product: ls7_pq_albers
+        time: [2010-01-01, 2013-06-01]
+      - <<: *wofs_mask
         time: [2010-01-01, 2013-06-01]
   - <<: *base_source_product
     product: ls5_fc_albers
@@ -47,6 +59,8 @@ sources:
       - <<: *pq_mask
         product: ls5_pq_albers
         time: [2003-01-01, 2012-01-01]
+      - <<: *wofs_mask
+        time: [2003-01-01, 2012-01-01]
   - <<: *base_source_product
     product: ls7_fc_albers
     time: [1999-01-01, 2003-06-01]
@@ -56,6 +70,8 @@ sources:
     masks:
       - <<: *pq_mask
         product: ls7_pq_albers
+        time: [1999-01-01, 2003-06-01]
+      - <<: *wofs_mask
         time: [1999-01-01, 2003-06-01]
   - <<: *base_source_product
     product: ls5_fc_albers
@@ -67,14 +83,16 @@ sources:
       - <<: *pq_mask
         product: ls5_pq_albers
         time: [1987-01-01, 1999-01-01]
+      - <<: *wofs_mask
+        time: [1987-01-01, 1999-01-01]
 
 date_ranges:
-  start_date: 2015-09-01
-  end_date: 2020-09-01
+  start_date: 2016-01-01
+  end_date: 2020-01-01
   stats_duration: 3m
   step_size: 3m
 
-location: '/g/data/u46/users/ia1511/Work/data/FC-percentile/seasonal'
+location: '/g/data/v10/users/ea6141/FC-percentile/seasonal'
 
 storage:
   driver: NetCDF CF
@@ -94,7 +112,7 @@ storage:
 
 global_attributes:
   title: Landsat Fractional Cover Percentiles
-  description: Landsat Fractional Cover percentile 25 metre, 100km tile, Australian Albers Equal Area projection (EPSG:3577) 
+  description: Landsat Fractional Cover percentile 25 metre, 100km tile, Australian Albers Equal Area projection (EPSG:3577)
   summary: >
       The Fractional Cover (FC) algorithm was developed by the Joint Remote Sensing
       Research Program and is described in Scarth et al. (2010). It has
@@ -144,7 +162,7 @@ global_attributes:
     - Landsat data is provided by the United States Geological Survey (USGS) through direct reception of the data at Geoscience Australias satellite reception facility or download.
     - The fractional cover algorithm was developed by the Joint Remote Sensing Research Program (JRSRP) and is described in Scarth et al. (2010). While originally calibrated in Queensland, a large collaborative effort between The Department of Agriculture & ABARES and State and Territory governments to collect additional calibration data has enabled the calibration to extend to the entire Australian continent.
     - FC_25 was made possible by new scientific and technical capabilities, the collaborative framework established by the Terrestrial Ecosystem Research Network (TERN) through the National Collaborative Research Infrastructure Strategy (NCRIS), and collaborative effort between state and Commonwealth governments.
-      
+
   references: |
     - ABARES, 2014 Australian ground cover reference sites database 2014. Australian Bureau of Agricultural and Resource Economics and Sciences, Canberra, Australia. (https://remote-sensing.nci.org.au/u39/public/html/modis/fractionalcover-sitedata-abares/index.shtml).
     - Flood, N., 2014.Continuity of Reflectance Data between Landsat-7 ETM+ and Landsat-8 OLI, for Both Top-of-Atmosphere and Surface Reflectance: A Study in the Australian Landscape. Remote Sensing, 6, 7952-7970.
@@ -152,19 +170,161 @@ global_attributes:
     - Scarth, P., Roder, A. and Schmidt, M., 2010. Tracking grazing pressure and climate interaction - the role of Landsat fractional cover in the time series analysis, Proceedings of the 15th Australasian Remote Sensing & Photogrammetry Conference, viewed 4 January 2011, scribd.com/doc/37455672/15arspc-Submission-140.
     - Schmidt, M., Denham, R. and Scarth, P., 2010. 'Fractional ground cover monitoring of pastures and agricultural areas in Queensland', Proceedings of the 15th Australasian Remote Sensing & Photogrammetry Conference, viewed 4 January 2011, www.scribd.com/doc/37455826/15arspc-Submission-119.
   coverage_content_type: modelResult
-  cdm_data_type: Grid
+
+var_attributes:
+  BS_PC_10:
+    long_name: Bare Soil 10th percentile
+    standard_name: BS_10th_percentile
+    coverage_content_type: modelResult
+
+  PV_PC_10:
+    long_name: Photosynthetic Vegetation 10th percentile
+    standard_name: PV_10th_percentile
+    coverage_content_type: modelResult
+
+  NPV_PC_10:
+    long_name: Non-photosynthetic Vegetation 10th percentile
+    standard_name: NPV_10th_percentile
+    coverage_content_type: modelResult
+
+  BS_PC_50:
+    long_name: Bare Soil 50th percentile
+    standard_name: BS_50th_percentile
+    coverage_content_type: modelResult
+
+  PV_PC_50:
+    long_name: Photosynthetic Vegetation 50th percentile
+    standard_name: PV_50th_percentile
+    coverage_content_type: modelResult
+
+  NPV_PC_50:
+    long_name: Non-photosynthetic Vegetation 50th percentile
+    standard_name: NPV_50th_percentile
+    coverage_content_type: modelResult
+
+  BS_PC_90:
+    long_name: Bare Soil 90th percentile
+    standard_name: BS_90th_percentile
+    coverage_content_type: modelResult
+
+  PV_PC_90:
+    long_name: Photosynthetic Vegetation 90th percentile
+    standard_name: PV_90th_percentile
+    coverage_content_type: modelResult
+
+  NPV_PC_90:
+    long_name: Non-photosynthetic Vegetation 90th percentile
+    standard_name: NPV_90th_percentile
+    coverage_content_type: modelResult
+
+  BS_PC_10_source:
+    long_name: Bare Soil 10th percentile source
+    standard_name: BS_10th_percentile_source
+    coverage_content_type: modelResult
+
+  PV_PC_10_source:
+    long_name: Photosynthetic Vegetation 10th percentile source
+    standard_name: PV_10th_percentile_source
+    coverage_content_type: modelResult
+
+  NPV_PC_10_source:
+    long_name: Non-photosynthetic Vegetation 10th percentile source
+    standard_name: NPV_10th_percentile_source
+    coverage_content_type: modelResult
+
+  BS_PC_50_source:
+    long_name: Bare Soil 50th percentile source
+    standard_name: BS_50th_percentile_source
+    coverage_content_type: modelResult
+
+  PV_PC_50_source:
+    long_name: Photosynthetic Vegetation 50th percentile source
+    standard_name: PV_50th_percentile_source
+    coverage_content_type: modelResult
+
+  NPV_PC_50_source:
+    long_name: Non-photosynthetic Vegetation 50th percentile source
+    standard_name: NPV_50th_percentile_source
+    coverage_content_type: modelResult
+
+  BS_PC_90_source:
+    long_name: Bare Soil 90th percentile source
+    standard_name: BS_90th_percentile_source
+    coverage_content_type: modelResult
+
+  PV_PC_90_source:
+    long_name: Photosynthetic Vegetation 90th percentile source
+    standard_name: PV_90th_percentile_source
+    coverage_content_type: modelResult
+
+  NPV_PC_90_source:
+    long_name: Non-photosynthetic Vegetation 90th percentile source
+    standard_name: NPV_90th_percentile_source
+    coverage_content_type: modelResult
+
+  BS_PC_10_observed_date:
+    long_name: Bare Soil 10th percentile observed date
+    standard_name: BS_10th_percentile_observed_date
+    coverage_content_type: modelResult
+
+  PV_PC_10_observed_date:
+    long_name: Photosynthetic Vegetation 10th percentile observed date
+    standard_name: PV_10th_percentile_observed_date
+    coverage_content_type: modelResult
+
+  NPV_PC_10_observed_date:
+    long_name: Non-photosynthetic Vegetation 10th percentile observed date
+    standard_name: NPV_10th_percentile_observed_date
+    coverage_content_type: modelResult
+
+  BS_PC_50_observed_date:
+    long_name: Bare Soil 50th percentile observed date
+    standard_name: BS_50th_percentile_observed_date
+    coverage_content_type: modelResult
+
+  PV_PC_50_observed_date:
+    long_name: Photosynthetic Vegetation 50th percentile observed date
+    standard_name: PV_50th_percentile_observed_date
+    coverage_content_type: modelResult
+
+  NPV_PC_50_observed_date:
+    long_name: Non-photosynthetic Vegetation 50th percentile observed date
+    standard_name: NPV_50th_percentile_observed_date
+    coverage_content_type: modelResult
+
+  BS_PC_90_observed_date:
+    long_name: Bare Soil 90th percentile observed date
+    standard_name: BS_90th_percentile_observed_date
+    coverage_content_type: modelResult
+
+  PV_PC_90_observed_date:
+    long_name: Photosynthetic Vegetation 90th percentile observed date
+    standard_name: PV_90th_percentile_observed_date
+    coverage_content_type: modelResult
+
+  NPV_PC_90_observed_date:
+    long_name: Non-photosynthetic Vegetation 90th percentile observed date
+    standard_name: NPV_90th_percentile_observed_date
+    coverage_content_type: modelResult
 
 ## Computational
 # Decide based on how much can fit into memory on the node that is running the job.
-computation:
-  chunking:
-    x: 600
-    y: 600
+#computation:
+#  chunking:
+#    x: 2000
+#    y: 2000
 
 ## Define statistics to perform and how to store the data
 output_products:
  - name: fc_percentile_albers_seasonal
    product_type: fractional_cover_statistical_summary
+   metadata:
+      format:
+        name: NetCDF
+      platform:
+        code: LANDSAT_5,LANDSAT_7,LANDSAT_8
+      instrument:
+        name: TM,ETM+,OLI
    statistic: percentile
    statistic_args:
        q: [10, 50, 90]
