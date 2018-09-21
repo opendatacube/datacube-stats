@@ -4,7 +4,7 @@ from osgeo import ogr
 from osgeo import gdal
 from osgeo import osr
 from datacube.model import Measurement
-from .statistics import Statistic
+from .core import Statistic
 
 
 class MangroveCC(Statistic):
