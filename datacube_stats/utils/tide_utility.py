@@ -32,7 +32,7 @@ class Feature:
         if 'ID' in self.properties:
             return self.properties['ID']
         if 'id' in self.properties:
-            return self.properties('id')
+            return self.properties['id']
         if self.fallback_id is not None:
             return int(self.fallback_id)
 
