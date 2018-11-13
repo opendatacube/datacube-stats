@@ -1,6 +1,5 @@
 # Define output directory and file structure
-#location: '/short/v10/datacube/wofs-summary'
-location: '/g/data/u46/users/bt2744/work/data/wofs/output/prod/stats'
+location: '/g/data/u46/users/bt2744/work/data/wofs/output/prod/monthly_stats'
 
 # Define inputs to perform statistics on
 sources:
@@ -12,10 +11,10 @@ sources:
 
 # Define whether and how to chunk over time
 date_ranges:
-  start_date: 1970-01-01
-  end_date: 2020-01-01
-  #start_date: 2003-01-01
-  #end_date: 2004-01-01
+  start_date: 2017-07-01
+  end_date: 2018-07-01
+  stats_duration: 1m
+  step_size: 1m
 
 storage:
   driver: NetCDF CF
@@ -35,23 +34,26 @@ storage:
 
 # Computational
 computation:
-  chunking:
-    x: 800
-    y: 800
+  chunking: # Should keep memory usage under 4gb
+    x: 2000
+    y: 2000
 
 input_region:
-  # tiles: [[-5, -25], [-8,-23]]
-  tile: [13, -35]
+  # test area
+  tiles: [[8, -20], [9, -20]]
+  # MDB area of interest
+  #from_file: /g/data/u46/users/bt2744/work/data/wofs/mdb_floodplan/mdb_floodplain.shp
+  #gridded: True
 
 # Define statistics to perform and how to store the data
 output_products:
-  - name: wofs_summary
+  - name: wofs_monthly_summary
     statistic: wofs_summary
-    product_type: wofs_statistical_summary
+    product_type: wofs_monthly_summary
     output_params:
       zlib: True
       fletcher32: True
-    file_path_template: 'WOFS_3577_{x}_{y}_summary.nc'
+    file_path_template: 'WOFS_3577_{x}_{y}_{epoch_start:%Y-%m}__summary.nc'
     metadata:
       format:
         name: NetCDF
@@ -62,10 +64,9 @@ output_products:
 
 global_attributes:
   cmi_id: "WO-STATS_25_2.1.5"
-  title: "Water Observations from Space Statistics 2.1.5"
+  title: "Water Observations from Space Monthly Statistics"
   summary: |
     WOfS-STATS (WO_STATS_2.1.5) is a set of statistical summaries of the water observations contained in WOfS (WO_2.1.5). The layers available are: the count of clear observations; the count of wet observations; the percentage of wet observations over time.
-
   institution: "Commonwealth of Australia (Geoscience Australia)"
   keywords: "AU/GA,NASA/GSFC/SED/ESD/LANDSAT,ETM+,TM,OLI,EARTH SCIENCE,SURFACE WATER,FLOOD"
   keywords_vocabulary: "GCMD"
@@ -79,3 +80,4 @@ global_attributes:
   source: "Water Observations from Space Detection Algorithm v1.5"
   references: |
     N. Mueller, A. Lewis, D. Roberts, S. Ring, R. Melrose, J. Sixsmith, L. Lymburner, A. McIntyre, P. Tan, S. Curnow, A. Ip, Water observations from space: Mapping surface water from 25 years of Landsat imagery across Australia, Remote Sensing of Environment, Volume 174, 1 March 2016, Pages 341-352, ISSN 0034-4257, http://dx.doi.org/10.1016/j.rse.2015.11.003. (http://www.sciencedirect.com/science/article/pii/S0034425715301929)
+
