@@ -1,0 +1,80 @@
+# Define output directory and file structure
+location: '/g/data/u46/users/bt2744/work/data/wofs/output/prod/seasonal_stats/dry'
+
+# Define inputs to perform statistics on
+sources:
+  - product: wofs_albers
+    measurements: [water]
+    group_by: solar_day
+    mask_nodata: False
+    fuse_func: digitalearthau.utils.wofs_fuser
+
+# April to October season
+date_ranges:
+  start_date: 1986-04-01
+  end_date: 2018-11-01
+  stats_duration: 7m
+  step_size: 1y
+
+storage:
+  driver: NetCDF CF
+
+  crs: EPSG:3577
+  tile_size:
+    x: 100000.0
+    y: 100000.0
+  resolution:
+    x: 25
+    y: -25
+  chunking:
+    x: 200
+    y: 200
+    time: 1
+  dimension_order: [time, y, x]
+
+# Computational
+computation:
+  chunking: # Should keep memory usage under 4gb
+    x: 2000
+    y: 2000
+
+#input_region:
+#  tile: [9, -20]
+
+
+# Define statistics to perform and how to store the data
+output_products:
+  - name: wofs_apr_oct_summary
+    statistic: wofs_summary
+    product_type: wofs_apr_oct_summary
+    output_params:
+      zlib: True
+      fletcher32: True
+    file_path_template: 'WOFS_3577_{x}_{y}_{epoch_start:%Y-%m}_{epoch_end:%Y-%m}_summary.nc'
+    metadata:
+      format:
+        name: NetCDF
+      platform:
+        code: LANDSAT_5,LANDSAT_7,LANDSAT_8
+      instrument:
+        name: TM,ETM,OLI
+
+global_attributes:
+  cmi_id: "WO-STATS_25_2.1.5"
+  title: "Water Observations from Space April to October Statistics"
+  summary: |
+    WOfS-STATS (WO_STATS_2.1.5) is a set of statistical summaries of the water observations contained in WOfS (WO_2.1.5). The layers available are: the count of clear observations; the count of wet observations; the percentage of wet observations over time.
+  institution: "Commonwealth of Australia (Geoscience Australia)"
+  keywords: "AU/GA,NASA/GSFC/SED/ESD/LANDSAT,ETM+,TM,OLI,EARTH SCIENCE,SURFACE WATER,FLOOD"
+  keywords_vocabulary: "GCMD"
+  product_version: "2.1.5"
+  publisher_email: earth.observation@ga.gov.au
+  publisher_name: Section Leader, Operations Section, NEMO, Geoscience Australia
+  publisher_url: http://www.ga.gov.au
+  license: "CC BY Attribution 4.0 International License"
+  cdm_data_type: "Grid"
+  product_suite: "Water Observations from Space Statistics 25m"
+  source: "Water Observations from Space Detection Algorithm v1.5"
+  references: |
+    N. Mueller, A. Lewis, D. Roberts, S. Ring, R. Melrose, J. Sixsmith, L. Lymburner, A. McIntyre, P. Tan, S. Curnow, A. Ip, Water observations from space: Mapping surface water from 25 years of Landsat imagery across Australia, Remote Sensing of Environment, Volume 174, 1 March 2016, Pages 341-352, ISSN 0034-4257, http://dx.doi.org/10.1016/j.rse.2015.11.003. (http://www.sciencedirect.com/science/article/pii/S0034425715301929)
+
