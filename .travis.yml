@@ -33,7 +33,7 @@ before_install:
 
 install:
 
-  - pip install pydash boltons yamllint pycodestyle voluptuous hdmedians pytest mock boltons pytest-cov coveralls psutil hypothesis shapely fiona pylint boto3
+  - pip install pydash boltons yamllint pycodestyle voluptuous hdmedians 'pytest>=3.6' mock boltons pytest-cov coveralls psutil hypothesis shapely fiona pylint boto3
   - travis_retry pip install git+git://github.com/opendatacube/datacube-core.git
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/eo-datasets.git
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/digitalearthau.git
