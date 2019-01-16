@@ -645,10 +645,7 @@ def load_masked_tile_lazy(tile, masks,
                           mask_nodata=False,
                           mask_inplace=False,
                           reverse=True,
-<<<<<<< HEAD
-=======
                           geom=None,
->>>>>>> a865942509478264c9f6dfa40b5cc105f9cddf9a
                           inverts=None,
                           src_idx=None,
                           timer=None,
@@ -666,10 +663,7 @@ def load_masked_tile_lazy(tile, masks,
     mask_nodata  -- Convert data to float32 replacing nodata values with nan
     mask_inplace -- Apply mask without conversion to float
     reverse      -- Return data earliest observation first
-<<<<<<< HEAD
-=======
     geom         -- polygon feature to mask by
->>>>>>> a865942509478264c9f6dfa40b5cc105f9cddf9a
     inverts      -- Whether or not to invert the corresponding mask
     src_idx      -- If set adds extra axis called source with supplied value
     timer        -- Optionally track time
@@ -820,7 +814,6 @@ def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
                                      measurements=[mask_spec['measurement']],
                                      fuse_func=mask_fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
-<<<<<<< HEAD
             if mask_spec.get('flags') is not None:
                 mask = make_mask(mask, **mask_spec['flags'])
             elif mask_spec.get('less_than') is not None:
@@ -837,10 +830,8 @@ def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
                 data = sensible_where_inplace(data, mask)
             else:
                 data = sensible_where(data, mask)
-=======
 
             data = where(data, make_mask_from_spec(mask, mask_spec))
->>>>>>> a865942509478264c9f6dfa40b5cc105f9cddf9a
             del mask
 
     if geom is not None:
