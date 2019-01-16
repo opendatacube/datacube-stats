@@ -12,40 +12,49 @@ from datacube_stats.utils.dates import get_hydrological_years
 _LOG = logging.getLogger('tide_utility')
 
 
-def geom_from_file(filename, feature_id):
+class Feature:
+    def __init__(self, properties, geometry, crs_wkt, fallback_id):
+        self.properties = properties
+        self.geometry = geometry
+        self.crs_wkt = crs_wkt
+        self.fallback_id = fallback_id
+
+    @property
+    def crs(self):
+        return CRS(self.crs_wkt)
+
+    @property
+    def geopolygon(self):
+        return Geometry(self.geometry, self.crs)
+
+    @property
+    def id(self):
+        if 'ID' in self.properties:
+            return self.properties['ID']
+        if 'id' in self.properties:
+            return self.properties['id']
+        if self.fallback_id is not None:
+            return int(self.fallback_id)
+
+
+def features_from_file(filename, feature_id):
     """
     The geometry of a feature
     :param filename: name of shape file
-    :param feature_id: the id of the wanted feature
+    :param feature_id: the list of ids of the wanted features
     """
     import fiona
 
-    geometry_list = []
-    geopolygon_list = []
-    feature_list = []
-    find_feature = False
-
+    file_empty = True
     with fiona.open(filename) as input_region:
-        crs = CRS(input_region.crs_wkt)
         for feature in input_region:
-            find_feature = False
-            properties = feature['properties']
-            if feature_id is None or properties.get('ID') in feature_id or properties.get('id') in feature_id:
-                feature_list.append(properties)
-                find_feature = True
-            if int(feature.get('id')) in feature_id:
-                feature_list.append(feature)
-                find_feature = True
-            if find_feature:
-                geometry = feature['geometry']
-                geopolygon = Geometry(geometry, crs)
-                geometry_list.append(geometry)
-                geopolygon_list.append(geopolygon)
+            file_empty = False
+            result = Feature(feature['properties'], feature['geometry'], input_region.crs_wkt, feature.get('id'))
+            if feature_id is None or (result.id is not None and result.id in feature_id):
+                yield result
 
-        if not geometry_list:
-            _LOG.info("No geometry found")
-
-        return feature_list, geometry_list, input_region.crs_wkt, geopolygon_list
+    if file_empty:
+        _LOG.info("No geometry found")
 
 
 def load_tide_model(all_dates, lon, lat):
@@ -293,35 +302,31 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
     :return: poly file name and filtered dates/times
     """
     method = filter_product.get('method')
-
-    try:
-        feature_id = feature['ID']
-    except KeyError:
-        feature_id = feature['id']
+    properties = feature.properties
 
     def by_hydrological_months(args):
         prod_type = args['type']
         months = args.get('months')
 
         sub_type = 'DY' if prod_type == 'dry' else 'WY'
-        years = {k: v for k, v in feature.items() if sub_type in k.upper()}
+        years = {k: v for k, v in properties.items() if sub_type in k.upper()}
 
-        poly_fl_name = get_poly_file_name(feature_id=feature_id, years=years)
+        poly_fl_name = get_poly_file_name(feature_id=feature.id, years=years)
         filtered_times = get_hydrological_years(years, months)
 
         return poly_fl_name, sorted(filtered_times)
 
     def by_tide_height(args):
         # get all relevant date time lists
-        lon, lat = feature['lon'], feature['lat']
+        lon, lat = properties['lon'], properties['lat']
         tide_percent = args['tide_percent']
 
         if 'tide_range' in filter_product['args']:
             # ITEM
             tide_range = args['tide_range']
 
-            filtered_times = range_tidal_data(all_dates, feature_id, tide_range, tide_percent, lon, lat)
-            poly_fl_name = get_poly_file_name(feature_id=feature_id, tide_percent=tide_percent, lon=lon, lat=lat)
+            filtered_times = range_tidal_data(all_dates, feature.id, tide_range, tide_percent, lon, lat)
+            poly_fl_name = get_poly_file_name(feature_id=feature.id, tide_percent=tide_percent, lon=lon, lat=lat)
         else:
             # low/high composite
             prod_type = args['type']
@@ -334,14 +339,14 @@ def get_filter_product(filter_product, feature, all_dates, date_ranges):
             # filter out dates as per sub classification of ebb flow
             if sub_class is not None:
                 filtered_times = get_ebb_flow(filter_product, list_low, list_high, ebb_flow)
-                poly_fl_name = get_poly_file_name(feature_id=feature_id, tide_percent=tide_percent,
+                poly_fl_name = get_poly_file_name(feature_id=feature.id, tide_percent=tide_percent,
                                                   lon=lon, lat=lat, sub_class=sub_class)
             else:
-                poly_fl_name = get_poly_file_name(feature_id=feature_id, tide_percent=tide_percent,
+                poly_fl_name = get_poly_file_name(feature_id=feature.id, tide_percent=tide_percent,
                                                   lon=lon, lat=lat, sub_class=None)
 
             _LOG.info('DATE LIST for feature %d length %d, time period: %s %s',
-                      feature_id, len(filtered_times), date_ranges, str(filtered_times))
+                      feature.id, len(filtered_times), date_ranges, str(filtered_times))
 
             filtered_times = [ft[0] for ft in filtered_times]
         return poly_fl_name, sorted(filtered_times)

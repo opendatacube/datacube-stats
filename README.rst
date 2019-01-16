@@ -723,6 +723,26 @@ memory per core respectively. For more details, run
 Release Notes
 =============
 
+0.9b4 release
+-------------
+
+    **Note:** This is another (minor) maintenance release targeting datacube 1.6.1.
+
+- Refactor that should not affect output
+- Add FC percentile configuration ``.yaml`` files
+
+0.9b3 release
+-------------
+
+    **Note:** This is another maintenance release targeting datacube 1.6.1.
+
+- ``Percentile`` now supports specifying ``minimum_valid_observations``
+- One GeoTIFF file per band option is re-enabled
+  (specify ``var_name`` in the ``file_path_template``)
+- Polygon mask is now compatible with ``mask_nodata``
+- Fix some tests
+
+
 0.9b2 release
 -------------
     **Note:** This is a maintenance release compatible with datacube 1.6.1.

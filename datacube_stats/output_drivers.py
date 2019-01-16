@@ -88,7 +88,8 @@ def _walk_dict(file_handles, func):
     """
     for _, output_fh in file_handles.items():
         if isinstance(output_fh, dict):
-            _walk_dict(output_fh, func)
+            for out in _walk_dict(output_fh, func):
+                yield out
         else:
             try:
                 yield func(output_fh)
@@ -105,7 +106,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
     To use, instantiate the class, using it as a context manager, eg.
 
         with MyOutputDriver(task, storage, output_path):
-            output_driver.write_data(prod_name, measure_name, tile_index, values)
+            output_driver.write_data(prod_name, measure_name, chunk, values)
 
     :param StatsTask task: A StatsTask that will be producing data
         A task will contain 1 or more output products, with each output product containing 1 or more measurements
@@ -188,7 +189,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     @abc.abstractmethod
     def write_data(self, prod_name, measurement_name,
-                   tile_index: Tuple[slice, slice, slice],
+                   chunk: Tuple[slice, slice, slice],
                    values: numpy.ndarray) -> None:
         if len(self._output_file_handles) <= 0:
             raise StatsOutputError('No files opened for writing.')
@@ -237,15 +238,12 @@ class OutputDriver(with_metaclass(RegisterDriver)):
 
     def _generate_output_filename(self, output_product: OutputProduct, **kwargs) -> Path:
         # Fill parameters from config file filename specification
-        params = {}
-        if self._task.tile_index is not None:
-            params['x'], params['y'] = self._task.tile_index
+        params = self._task.spatial_id.copy()
 
         params['epoch_start'], params['epoch_end'] = self._task.time_period
         params['name'] = output_product.name
         params['stat_name'] = output_product.stat_name
         params.update(output_product.extras)
-        params.update(self._task.extra_fn_params)
         params.update(kwargs)
 
         output_path = Path(self._output_path,
@@ -393,12 +391,12 @@ class NetCDFCFOutputDriver(OutputDriver):
                                           variables=variables, variable_params=variable_params,
                                           global_attributes=self.global_attributes)
 
-    def write_data(self, prod_name, measurement_name, tile_index, values):
-        self._output_file_handles[prod_name][measurement_name][(0,) + tile_index[1:]] = netcdf_writer.netcdfy_data(
+    def write_data(self, prod_name, measurement_name, chunk, values):
+        self._output_file_handles[prod_name][measurement_name][(0,) + chunk[1:]] = netcdf_writer.netcdfy_data(
             values)
         self._output_file_handles[prod_name].sync()
         _LOG.debug("Updated %s %s", measurement_name,
-                   "({})".format(", ".join(prettier_slice(x) for x in tile_index[1:])))
+                   "({})".format(", ".join(prettier_slice(x) for x in chunk[1:])))
 
     def write_global_attributes(self, attributes):
         for output_file in self._output_file_handles.values():
@@ -463,14 +461,18 @@ class GeoTiffOutputDriver(OutputDriver):
                 raise ValueError('No measurements to record for {}.'.format(prod_name))
             elif num_measurements > 1 and 'var_name' in stat.file_path_template:
                 # Output each statistic product into a separate single band geotiff file
-                for measurement_name, measure_def in stat.product.measurements.items():
-                    self._open_single_band_geotiff(prod_name, stat, measurement_name)
+                tmp_filenames = [self._open_single_band_geotiff(prod_name, stat, measurement_name)
+                                 for measurement_name, measure_def in stat.product.measurements.items()]
+
+                yaml_filename = str(self._generate_output_filename(stat, var_name='').with_suffix('.yaml'))
+                self.write_yaml(stat, tmp_filenames, yaml_filename, multiband=False)
+
             else:
                 # Output all statistics into a single geotiff file, with as many bands
                 # as there are output statistic products
                 output_filename = self._prepare_output_file(stat)
 
-                self.write_yaml(stat, output_filename)
+                self.write_yaml(stat, [output_filename] * len(stat.product.measurements))
 
                 dest_fh = self._open_geotiff(prod_name, None, output_filename, num_measurements)
 
@@ -478,22 +480,25 @@ class GeoTiffOutputDriver(OutputDriver):
                     self._set_band_metadata(dest_fh, measurement_name, band=band)
                 self._output_file_handles[prod_name] = dest_fh
 
-    def write_yaml(self, stat: OutputProduct, tmp_filename: Path):
-        output_filename = self.output_filename_tmpname[tmp_filename]
+    def write_yaml(self, stat: OutputProduct, tmp_filenames: List[Path], yaml_filename=None, multiband=True):
+        output_filenames = [self.output_filename_tmpname[tmp_filename]
+                            for tmp_filename in tmp_filenames]
 
-        uri = output_filename.absolute().as_uri()
+        uris = [output_filename.absolute().as_uri()
+                for output_filename in output_filenames]
 
-        def band_info(measurement_name):
-            return {
-                'layer': list(stat.product.measurements).index(measurement_name) + 1,
-                'path': uri
-            }
+        def layer(index):
+            if multiband:
+                return index + 1
+            return 1
 
-        band_uris = {name: band_info(name) for name in stat.product.measurements}
+        band_uris = {name: {'layer': layer(index), 'path': uris[index]}
+                     for index, name in enumerate(stat.product.measurements)}
 
-        datasets = self._find_source_datasets(stat, uri=uri, band_uris=band_uris)
+        datasets = self._find_source_datasets(stat, uri=None, band_uris=band_uris)
 
-        yaml_filename = str(output_filename.with_suffix('.yaml'))
+        if yaml_filename is None:
+            yaml_filename = str(output_filenames[0].with_suffix('.yaml'))
 
         # Write to Yaml
         if len(datasets) == 1:  # I don't think there should ever be more than 1 dataset in here...
@@ -509,6 +514,7 @@ class GeoTiffOutputDriver(OutputDriver):
         dest_fh = self._open_geotiff(prod_name, measurement_name, output_filename)
         self._set_band_metadata(dest_fh, measurement_name)
         self._output_file_handles.setdefault(prod_name, {})[measurement_name] = dest_fh
+        return output_filename
 
     def _set_band_metadata(self, dest_fh, measurement_name, band=1):
         start_date, end_date = self._task.time_period
@@ -543,8 +549,8 @@ class GeoTiffOutputDriver(OutputDriver):
         dest_fh.update_tags(created=self._app_info)
         return dest_fh
 
-    def write_data(self, prod_name, measurement_name, tile_index, values):
-        super(GeoTiffOutputDriver, self).write_data(prod_name, measurement_name, tile_index, values)
+    def write_data(self, prod_name, measurement_name, chunk, values):
+        super(GeoTiffOutputDriver, self).write_data(prod_name, measurement_name, chunk, values)
 
         prod = self._output_file_handles[prod_name]
         if isinstance(prod, dict):
@@ -555,10 +561,10 @@ class GeoTiffOutputDriver(OutputDriver):
             stat = self._output_products[prod_name]
             band_num = list(stat.product.measurements).index(measurement_name) + 1
 
-        t, y, x = tile_index
+        t, y, x = chunk
         window = ((y.start, y.stop), (x.start, x.stop))
         _LOG.debug("Updating %s.%s %s", prod_name, measurement_name,
-                   "({})".format(", ".join(prettier_slice(x) for x in tile_index[1:])))
+                   "({})".format(", ".join(prettier_slice(x) for x in chunk[1:])))
 
         dtype = self._get_dtype(prod_name, measurement_name)
 
@@ -671,7 +677,7 @@ class XarrayOutputDriver(OutputDriver):
             time_dim = self.result[prod_name].coords['time'].shape[0]
             self.result[prod_name][var_name][(slice(0, time_dim, None),) + chunk[1:]] = var.values
 
-    def write_data(self, prod_name, measurement_name, tile_index, values):
+    def write_data(self, prod_name, measurement_name, chunk, values):
         pass
 
     def write_global_attributes(self, attributes):
@@ -682,7 +688,7 @@ class TestOutputDriver(OutputDriver):
     def write_global_attributes(self, attributes):
         pass
 
-    def write_data(self, prod_name, measurement_name, tile_index, values):
+    def write_data(self, prod_name, measurement_name, chunk, values):
         pass
 
     def open_output_files(self):

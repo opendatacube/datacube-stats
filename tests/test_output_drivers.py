@@ -59,7 +59,7 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
     task = MagicMock()
     task.geobox = GeoBox(size, size, Affine(1 / size, 0.0, 151.0, 0.0, -1 / size, -29.0), CRS('EPSG:4326'))
     task.output_products = {'sample_prod': output_product}
-    task.tile_index = 0, 0
+    task.spatial_id = {'x': 0, 'y': 0}
     task.time_period = datetime.now(), datetime.now()
 
     class FakeDataset:
@@ -77,7 +77,7 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
     test_source = DataSource(data=data_tile, masks=[], spec={})
     task.sources = [test_source]
 
-    tile_index = (None, slice(0, chunk_size, None), slice(0, chunk_size, None))
+    chunk = (None, slice(0, chunk_size, None), slice(0, chunk_size, None))
     values = np.full((chunk_size, chunk_size), fill_value=7, dtype=dtype)
 
     #
@@ -85,7 +85,7 @@ def test_geotiff_outputs(tmpdir, dtype, nodata):
     #
     with GeoTiffOutputDriver(task=task, storage=storage, output_path=str(tmpdir)) as output_driver:
         output_driver.write_data(prod_name='sample_prod', measurement_name='sample_input_measurement_1',
-                                 tile_index=tile_index, values=values)
+                                 chunk=chunk, values=values)
 
     # Check that it had the desired result
     output_filename = tmpdir / 'foo_bar.tif'

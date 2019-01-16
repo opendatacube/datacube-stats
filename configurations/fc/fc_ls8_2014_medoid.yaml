@@ -27,7 +27,6 @@ sources:
           nir_saturated: False
           swir1_saturated: False
           swir2_saturated: False
-          land_sea: land
 
 
 ## Define whether and how to chunk over time

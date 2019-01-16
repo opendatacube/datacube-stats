@@ -9,7 +9,7 @@ from .output_drivers import OUTPUT_DRIVERS
 
 # pylint: disable=invalid-name
 
-valid_filepath_fields = ['x', 'y', 'feature_id', 'epoch_start', 'epoch_end', 'name', 'stat_name']
+valid_filepath_fields = ['x', 'y', 'feature_id', 'epoch_start', 'epoch_end', 'name', 'stat_name', 'var_name']
 
 
 def valid_format_string(valid_fields):

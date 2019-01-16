@@ -75,8 +75,7 @@ def mock_datacube():
 
 _SAMPLE_OUTPUTS_SPEC = [dict(name='landsat_yearly_mean',
                              statistic='mean',
-                             file_path_template='SR_N_MEAN/SR_N_MEAN_3577_{tile_index[0]}_'
-                                                '{tile_index[1]}_{time_period[0]:%Y%m%d}.nc')]
+                             file_path_template='SR_N_MEAN/SR_N_MEAN_3577_{x}_{y}_{epoch_start:%Y%m%d}.nc')]
 _EXPECTED_DB_FILTER = {'cell_index': None,
                        'geopolygon': None,
                        'group_by': 'time',

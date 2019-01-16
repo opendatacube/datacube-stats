@@ -153,7 +153,11 @@ def sensible_where_inplace(data, mask):
 
     """
     mask = xarray.ufuncs.logical_not(mask)
-    mask = mask.values
+    try:
+        mask = mask.values
+    except AttributeError:
+        # it is already an ndarray
+        pass
 
     def proc_var(a):
         if a.shape == mask.shape:

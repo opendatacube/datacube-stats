@@ -108,7 +108,7 @@ def get_hydrological_years(all_years, months=None):
             st_dt = HYDRO_START_CAL + str(year + 1)
             en_dt = HYDRO_END_CAL + str(year + 1)
         date_list = pd.date_range(st_dt, en_dt)
-        date_list = date_list.to_datetime().astype(str).tolist()
+        date_list = date_list.astype(str).tolist()
         all_dates = all_dates + date_list
     return all_dates
 
