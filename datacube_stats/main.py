@@ -817,7 +817,6 @@ def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
                                      measurements=[mask_spec['measurement']],
                                      fuse_func=mask_fuse_func,
                                      skip_broken_datasets=True)[mask_spec['measurement']]
-
             data = where(data, make_mask_from_spec(mask, mask_spec))
             del mask
 
