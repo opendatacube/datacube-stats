@@ -2,7 +2,7 @@ from datetime import datetime
 
 import numpy as np
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given, strategies as st, settings
 
 from datacube.utils.dates import date_sequence
 from datacube_stats.utils.dates import filter_time_by_source, datetime64_to_inttime
@@ -41,6 +41,7 @@ def durations(draw):
     return f'{num}{suffix}'
 
 
+@settings(deadline=2000)
 @given(start_end, durations(), durations())
 def test_date_sequence(start_end, stats_duration, step_size):
     start, end = start_end
