@@ -44,4 +44,7 @@ stats_configs = configs_dir.rglob('*/*.yaml')
 def test_all_schemas(stats_config):
     with stats_config.open() as src:
         loaded_config = yaml.load(src)
-        stats_schema(loaded_config)
+        # skip pcm and hdmedians statistics
+        if all(product['statistic'] not in ['geomedian', 'new_geomedian', 'spectral_mad']
+               for product in loaded_config['output_products']):
+            stats_schema(loaded_config)
