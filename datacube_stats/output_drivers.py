@@ -40,6 +40,14 @@ OUTPUT_DRIVERS = {}
 
 def polygon_from_sources_extents(sources, geobox):
     sources_union = geometry.unary_union(source.extent.to_crs(geobox.crs) for source in sources)
+
+    # TODO: remove ._geom check once datacube-core is fixed older versions of
+    #       datacube returned unusable Geometry object instead of None on
+    #       failure
+    if sources_union is None or sources_union._geom is None:  # pylint: disable=protected-access
+        _LOG.warning('Failed to compute "valid_region" from a set of datasets')
+        return geobox.extent
+
     valid_data = geobox.extent.intersection(sources_union)
     resolution = min([abs(x) for x in geobox.resolution])
     return valid_data.simplify(tolerance=resolution * 0.01)
