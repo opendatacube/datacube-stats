@@ -677,7 +677,7 @@ def load_masked_tile_lazy(tile, masks,
 
     """
 
-    ii = range(tile.shape[0])
+    ii = list(range(tile.shape[0]))
     if reverse:
         ii = ii[::-1]
 
