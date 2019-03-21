@@ -677,10 +677,6 @@ def load_masked_tile_lazy(tile, masks,
 
     """
 
-    ii = range(tile.shape[0])
-    if reverse:
-        ii = ii[::-1]
-
     def load_slice(i):
         loc = [slice(i, i + 1), slice(None), slice(None)]
         d = GridWorkflow.load(tile[loc], **kwargs)
@@ -726,8 +722,12 @@ def load_masked_tile_lazy(tile, masks,
 
     extract = wrap_in_timer(load_slice, timer, 'loading_data')
 
-    for i in ii:
-        yield extract(i)
+    if reverse:
+        for i in reversed(range(tile.shape[0])):
+            yield extract(i)
+    else:
+        for i in range(tile.shape[0]):
+            yield extract(i)
 
 
 def load_masked_data_lazy(sub_tile_slice: Tuple[slice, slice, slice],
