@@ -112,9 +112,6 @@ def with_or_without_qsub_runner():
         return identity
 
 
-def identity(f):
-    return f
-
 # pylint: disable=broad-except
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
@@ -140,8 +137,8 @@ def identity(f):
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, save_tasks, load_tasks,
-         tile_index, tile_index_file, output_location, year, task_slice, batch, runner=identity, qsub=None):
+def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
+         tile_index, tile_index_file, output_location, year, task_slice, batch):
 
     try:
         _log_setup()
@@ -677,6 +674,10 @@ def load_masked_tile_lazy(tile, masks,
 
     """
 
+    ii = list(range(tile.shape[0]))
+    if reverse:
+        ii = ii[::-1]
+
     def load_slice(i):
         loc = [slice(i, i + 1), slice(None), slice(None)]
         d = GridWorkflow.load(tile[loc], **kwargs)
@@ -722,12 +723,8 @@ def load_masked_tile_lazy(tile, masks,
 
     extract = wrap_in_timer(load_slice, timer, 'loading_data')
 
-    if reverse:
-        for i in reversed(range(tile.shape[0])):
-            yield extract(i)
-    else:
-        for i in range(tile.shape[0]):
-            yield extract(i)
+    for i in ii:
+        yield extract(i)
 
 
 def load_masked_data_lazy(sub_tile_slice: Tuple[slice, slice, slice],

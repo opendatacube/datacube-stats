@@ -373,7 +373,8 @@ def sorted_interleave(*iterators, key=lambda x: x, reverse=False):
         except StopIteration:
             return None
 
-    vv = list(filter(lambda x: x is not None, map(advance, iterators)))
+    vv = list(filter(lambda x: x is not None,
+                     map(advance, iterators)))
 
     while len(vv) > 0:
         (val, it), *vv = sorted(vv, key=lambda a: key(a[0]), reverse=reverse)
