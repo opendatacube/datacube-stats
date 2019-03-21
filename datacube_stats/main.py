@@ -112,6 +112,9 @@ def with_or_without_qsub_runner():
         return identity
 
 
+def identity(f):
+    return f
+
 # pylint: disable=broad-except
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
@@ -137,8 +140,8 @@ def with_or_without_qsub_runner():
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
-         tile_index, tile_index_file, output_location, year, task_slice, batch):
+def main(index, stats_config_file, save_tasks, load_tasks,
+         tile_index, tile_index_file, output_location, year, task_slice, batch, runner=identity, qsub=None):
 
     try:
         _log_setup()

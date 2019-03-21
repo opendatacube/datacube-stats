@@ -1,7 +1,7 @@
 Data Cube Statistics Tools
 ##########################
 
-|Build Status| |Coverage Status| |CodeCov Status|
+|Build Status| |CodeCov Status|
 
 Data Cube Statistics is a an application used to calculate large scale temporal statistics
 on data stored using an `Open Data Cube`_ (`ODC`_) installation. It provides a
@@ -801,9 +801,7 @@ Release Notes
 .. _dataset metadata documents: http://datacube-core.readthedocs.io/en/stable/ops/config.html#dataset-metadata-document
 .. _strftime syntax: http://strftime.org/
 .. _hdmedians python package: https://github.com/daleroberts/hdmedians
-.. |Build Status| image:: https://travis-ci.org/GeoscienceAustralia/agdc_statistics.svg?branch=master
-   :target: https://travis-ci.org/GeoscienceAustralia/agdc_statistics
-.. |Coverage Status| image:: https://coveralls.io/repos/github/GeoscienceAustralia/agdc_statistics/badge.svg?branch=master
-   :target: https://coveralls.io/github/GeoscienceAustralia/agdc_statistics?branch=master
-.. |CodeCov Status| image:: https://codecov.io/gh/GeoscienceAustralia/agdc_statistics/branch/master/graph/badge.svg
-  :target: https://codecov.io/gh/GeoscienceAustralia/agdc_statistics
+.. |Build Status| image:: https://travis-ci.org/opendatacube/datacube-stats.svg?branch=master
+   :target: https://travis-ci.org/opendatacube/datacube-stats
+.. |CodeCov Status| image:: https://codecov.io/gh/opendatacube/datacube-stats/branch/master/graph/badge.svg
+  :target: https://codecov.io/gh/opendatacube/datacube-stats

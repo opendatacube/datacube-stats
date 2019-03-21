@@ -1,39 +1,89 @@
-[MASTER]
-# ndexpr is crashing pylint. Hopefully remove this ignore when https://github.com/PyCQA/pylint/issues/1563 is fixed
-ignore=ndexpr
 
 [MESSAGES CONTROL]
-enable=python3
+# Disabled len-as-condition: Sometimes this allows more readable code as it's more explicit.
+# Eg.
+#      if dataset.uris is not None and len(dataset.uris) == 0:
+# vs
+#      if dataset.uris is not None and not dataset.uris:
 
-disable=no-self-use,
-    star-args,
-#   duplicate-code,
-    unused-argument,
-    missing-docstring,
-    no-member,
-    unused-variable,
-#   unused-import,
-    locally-disabled,
-    no-name-in-module,
-    fixme,
-    no-value-for-parameter,
-#   file-ignored,
-    no-absolute-import,
-    old-division,
-    wrong-import-order,
-    ungrouped-imports,
-    inconsistent-return-statements, # pylint bug
-    len-as-condition,
-    no-else-return,
-    too-many-lines,
-    comprehension-escape,
-    round-builtin, # py2.7
-    map-builtin-not-iterating, # py2.7
-    range-builtin-not-iterating, # py2.7
-    zip-builtin-not-iterating, # py2.7
-    nonzero-method, # py2.7
-    eq-without-hash, # py2.7
-    useless-object-inheritance
+disable=all
+
+# Enable the message, report, category or checker with the given id(s). You can
+# either give multiple identifier separated by comma (,) or put this option
+# multiple time (only on the command line, not in the configuration file where
+# it should appear only once). See also the "--disable" option for examples.
+enable=print-statement,
+       parameter-unpacking,
+       unpacking-in-except,
+       old-raise-syntax,
+       backtick,
+       long-suffix,
+       old-ne-operator,
+       old-octal-literal,
+       import-star-module-level,
+       non-ascii-bytes-literal,
+       invalid-unicode-literal,
+       c-extension-no-member,
+       apply-builtin,
+       basestring-builtin,
+       buffer-builtin,
+       cmp-builtin,
+       coerce-builtin,
+       execfile-builtin,
+       file-builtin,
+       long-builtin,
+       raw_input-builtin,
+       reduce-builtin,
+       standarderror-builtin,
+       unicode-builtin,
+       xrange-builtin,
+       coerce-method,
+       delslice-method,
+       getslice-method,
+       setslice-method,
+       dict-iter-method,
+       dict-view-method,
+       next-method-called,
+       metaclass-assignment,
+       indexing-exception,
+       raising-string,
+       reload-builtin,
+       oct-method,
+       hex-method,
+       nonzero-method,
+       cmp-method,
+       input-builtin,
+       round-builtin,
+       intern-builtin,
+       unichr-builtin,
+       map-builtin-not-iterating,
+       zip-builtin-not-iterating,
+       range-builtin-not-iterating,
+       filter-builtin-not-iterating,
+       using-cmp-argument,
+       eq-without-hash,
+       div-method,
+       idiv-method,
+       rdiv-method,
+       exception-message-attribute,
+       invalid-str-codec,
+       sys-max-int,
+       bad-python3-import,
+       deprecated-string-function,
+       deprecated-str-translate-call,
+       deprecated-itertools-function,
+       deprecated-types-field,
+       next-method-defined,
+       dict-items-not-iterating,
+       dict-keys-not-iterating,
+       dict-values-not-iterating,
+       deprecated-operator-function,
+       deprecated-urllib-function,
+       xreadlines-attribute,
+       deprecated-sys-function,
+       exception-escape,
+       useless-import-alias
+
 
 [BASIC]
 
@@ -41,7 +91,7 @@ disable=no-self-use,
 bad-functions=apply,input
 
 # Regular expression which should only match correct module names
-module-rgx=(([a-z_][a-z0-9_]*)|([A-Z][a-zA-Z0-9]+))$
+module-rgx=(([a-z_][a-z0-9-_]*)|([A-Z][a-zA-Z0-9]+))$
 
 # Regular expression which should only match correct module level names
 const-rgx=(([A-Z_][A-Z0-9_]*)|(__.*__)|_log)$
@@ -169,10 +219,8 @@ ignored-argument-names=_.*
 # Maximum number of locals for function / method body
 max-locals=16
 
-# Early return often results in clearer code.
-# The other complexity metrics are enough to prevent abuse.
 # Maximum number of return / yield for function / method body
-max-returns=128
+max-returns=6
 
 # Maximum number of branch for function / method body
 max-branches=12
@@ -198,3 +246,6 @@ max-public-methods=20
 # Exceptions that will emit a warning when being caught. Defaults to
 # "Exception"
 overgeneral-exceptions=Exception
+
+[MASTER]
+extension-pkg-whitelist=dawg,lxml
