@@ -337,6 +337,7 @@ class Percentile(PerBandIndexStat):
     """
     def __init__(self, q,
                  minimum_valid_observations=0,
+                 not_valid_mark=None,
                  per_pixel_metadata=None):
 
         if isinstance(q, Sequence):
@@ -345,6 +346,7 @@ class Percentile(PerBandIndexStat):
             self.qs = [q]
 
         self.minimum_valid_observations = minimum_valid_observations
+        self.not_valid_mark = not_valid_mark
         super(Percentile, self).__init__(per_pixel_metadata=per_pixel_metadata)
 
     def compute(self, data):
@@ -352,7 +354,8 @@ class Percentile(PerBandIndexStat):
         arr = data.to_array().values
         invalid = anynan(arr, axis=0)
         count_valid = np.count_nonzero(~invalid, axis=0)
-        not_enough = count_valid < self.minimum_valid_observations
+        not_enough = np.logical_and(count_valid < self.minimum_valid_observations,
+                                    count_valid > 0)
 
         def single(q):
             stat_func = partial(xarray.Dataset.reduce, dim='time',
@@ -368,7 +371,10 @@ class Percentile(PerBandIndexStat):
 
             def mask_not_enough(var):
                 nodata = da_nodata(var)
-                var.values[not_enough] = nodata
+                if self.not_valid_mark is not None:
+                    var.values[not_enough] = self.not_valid_mark
+                else:
+                    var.values[not_enough] = nodata
                 return var
 
             return result.apply(mask_not_enough, keep_attrs=True)
@@ -376,9 +382,14 @@ class Percentile(PerBandIndexStat):
         return xarray.merge(single(q) for q in self.qs)
 
     def measurements(self, input_measurements):
-        renamed = [Measurement(**{**m, 'name': m.name + '_PC_' + str(q)})
-                   for q in self.qs
-                   for m in input_measurements]
+        renamed = []
+        for m in input_measurements:
+            if m.dtype == 'int8':
+                data_type = 'int16'
+            else:
+                data_type = m.dtype
+            for q in self.qs:
+                renamed.append(Measurement(**{**m, 'name': m.name + '_PC_' + str(q), 'dtype': data_type}))
 
         return PerBandIndexStat(per_pixel_metadata=self.per_pixel_metadata).measurements(renamed)
 
