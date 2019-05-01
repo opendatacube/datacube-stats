@@ -16,11 +16,12 @@ import numpy
 import rasterio
 import xarray
 from boltons import fileutils
-from datacube.model import Variable, GeoPolygon
 from datacube.model.utils import make_dataset, xr_apply, datasets_to_doc
-from datacube.storage import netcdf_writer
-from datacube.storage.storage import create_netcdf_storage_unit
 from datacube.utils import unsqueeze_data_array, geometry
+from datacube.drivers.netcdf import (
+    Variable,
+    writer as netcdf_writer,
+    create_netcdf_storage_unit)
 from six import with_metaclass
 
 from .models import OutputProduct
@@ -35,6 +36,21 @@ _NETCDF_VARIABLE__PARAMETER_NAMES = {'zlib',
                                      'attrs'}
 
 OUTPUT_DRIVERS = {}
+
+
+def polygon_from_sources_extents(sources, geobox):
+    sources_union = geometry.unary_union(source.extent.to_crs(geobox.crs) for source in sources)
+
+    # TODO: remove ._geom check once datacube-core is fixed older versions of
+    #       datacube returned unusable Geometry object instead of None on
+    #       failure
+    if sources_union is None or sources_union._geom is None:  # pylint: disable=protected-access
+        _LOG.warning('Failed to compute "valid_region" from a set of datasets')
+        return geobox.extent
+
+    valid_data = geobox.extent.intersection(sources_union)
+    resolution = min([abs(x) for x in geobox.resolution])
+    return valid_data.simplify(tolerance=resolution * 0.01)
 
 
 class RegisterDriver(abc.ABCMeta):
@@ -304,7 +320,7 @@ class OutputDriver(with_metaclass(RegisterDriver)):
                                 uri=uri,
                                 band_uris=band_uris,
                                 app_info=app_info,
-                                valid_data=GeoPolygon.from_sources_extents(sources_, geobox))
+                                valid_data=polygon_from_sources_extents(sources_, geobox))
         datasets = xr_apply(sources, _make_dataset, dtype='O')  # Store in DataArray to associate Time -> Dataset
         datasets = datasets_to_doc(datasets)
         return datasets

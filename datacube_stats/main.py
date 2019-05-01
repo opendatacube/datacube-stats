@@ -25,7 +25,8 @@ import xarray
 from dateutil import tz
 import datacube
 import datacube_stats
-from datacube.api import make_mask, GridWorkflow
+from datacube.api import GridWorkflow
+from datacube.storage.masking import make_mask
 from datacube.ui import click as ui
 from datacube.utils import read_documents, import_function
 from datacube.utils.geometry import Geometry, GeoBox
@@ -673,7 +674,7 @@ def load_masked_tile_lazy(tile, masks,
 
     """
 
-    ii = range(tile.shape[0])
+    ii = list(range(tile.shape[0]))
     if reverse:
         ii = ii[::-1]
 
