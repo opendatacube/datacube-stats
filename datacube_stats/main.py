@@ -101,25 +101,12 @@ def gather_tile_indexes(tile_index, tile_index_file):
             return None
         return tile_indexes
 
-
-def with_or_without_qsub_runner():
-    try:
-        from digitalearthau.qsub import with_qsub_runner
-        return with_qsub_runner()
-    except ImportError:
-        def identity(f):
-            return f
-        return identity
-
-
 # pylint: disable=broad-except
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 @click.command(name='datacube-stats')
 @click.argument('stats_config_file', type=str, callback=_default_config, default='config.yaml',
                 metavar='STATS_CONFIG_FILE')
-@click.option('--save-tasks', type=click.Path(exists=False, writable=True, dir_okay=False))
-@click.option('--load-tasks', type=click.Path(exists=True, readable=True))
 @click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
                                                       'single tile_index specified as [X] [Y]')
 @click.option('--tile-index-file',
@@ -127,38 +114,16 @@ def with_or_without_qsub_runner():
               help="A file consisting of tile indexes specified as [X] [Y] per line")
 @click.option('--output-location', help='Override output location in configuration file')
 @click.option('--year', type=int, help='Override time period in configuration file')
-@click.option('--task-slice', type=Slice(),
-              help="The subset of tasks to perform, using Python's slice syntax.")
-@click.option('--batch', type=int,
-              help="The number of batch jobs to launch using PBS and the serial executor.")
 @click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
 @ui.global_cli_options
-@with_or_without_qsub_runner()
 @click.option('--version', is_flag=True, callback=_print_version,
               expose_value=False, is_eager=True)
 @ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
+def main(index, stats_config_file, runner, save_tasks, load_tasks,
          tile_index, tile_index_file, output_location, year, task_slice, batch):
 
     try:
         _log_setup()
-
-        if qsub is not None and batch is not None:
-            for i in range(batch):
-                child = qsub.clone()
-                child.reset_internal_args()
-                child.add_internal_args('--task-slice', '{}::{}'.format(i, batch))
-                click.echo(repr(child))
-                exit_code, _ = child(auto=True, auto_clean=[('--batch', 1)])
-                if exit_code != 0:
-                    return exit_code
-            return 0
-
-        elif qsub is not None:
-            # TODO: verify config before calling qsub submit
-            click.echo(repr(qsub))
-            exit_code, _ = qsub(auto=True)
-            return exit_code
 
         timer = MultiTimer().start('main')
 
@@ -167,17 +132,7 @@ def main(index, stats_config_file, qsub, runner, save_tasks, load_tasks,
 
         app = StatsApp(config, index)
         app.log_config()
-
-        if save_tasks is not None:
-            app.save_tasks_to_file(save_tasks, index)
-            failed = 0
-        else:
-            if load_tasks is not None:
-                tasks = unpickle_stream(load_tasks)
-            else:
-                tasks = app.generate_tasks(index)
-
-            successful, failed = app.run_tasks(tasks, runner, task_slice)
+        successful, failed = app.run_tasks(tasks, runner, task_slice)
 
         timer.pause('main')
         _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
@@ -278,11 +233,6 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
         #: An iterable of date ranges.
         self.date_ranges = _configure_date_ranges(config, index=index)
 
-        #: Generates tasks to compute statistics. These tasks should be :class:`StatsTask` objects
-        #: and will define spatial and temporal boundaries, as well as statistical operations to be run.
-        self.task_generator = select_task_generator(config['input_region'],
-                                                    self.storage, self.filter_product)
-
         #: A class which knows how to create and write out data to a permanent storage format.
         #: Implements :class:`.output_drivers.OutputDriver`.
         self.output_driver = _prepare_output_driver(self.storage)
@@ -297,7 +247,6 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
         self._ensure_unique_output_product_names()
         self._check_consistent_measurements()
 
-        assert callable(self.task_generator)
         assert callable(self.output_driver)
         assert hasattr(self.output_driver, 'open_output_files')
         assert hasattr(self.output_driver, 'write_data')
@@ -389,47 +338,6 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
 
         return result
 
-    def save_tasks_to_file(self, filename, index):
-        _LOG.debug('Saving tasks to %s.', filename)
-        output_products = self.configure_outputs(index)
-
-        tasks = self.generate_tasks(index, output_products)
-        num_saved = pickle_stream(tasks, filename)
-        _LOG.debug('Successfully saved %s tasks to %s.', num_saved, filename)
-
-    def generate_tasks(self, index,
-                       output_products: Dict[str, OutputProduct] = None,
-                       metadata_type='eo') -> Iterator[StatsTask]:
-        """
-        Generate a sequence of `StatsTask` definitions.
-
-        A Task Definition contains:
-
-          * tile_index
-          * time_period
-          * sources: (list of)
-          * output_products
-
-        Sources is a list of dictionaries containing:
-
-          * data
-          * masks (list of)
-          * spec - Source specification, containing details about which bands to load and how to apply masks.
-
-        :param output_products: List of output product definitions
-        :return:
-        """
-        if output_products is None:
-            output_products = self.configure_outputs(index, metadata_type)
-
-        is_iterative = all(op.is_iterative() for op in output_products.values())
-
-        for task in self.task_generator(index=index, date_ranges=self.date_ranges,
-                                        sources_spec=self.sources):
-            task.output_products = output_products
-            task.is_iterative = is_iterative
-            yield task
-
     def configure_outputs(self, index, metadata_type='eo') -> Dict[str, OutputProduct]:
         """
         Return dict mapping Output Product Name<->Output Product
@@ -479,369 +387,17 @@ class StatsProcessingException(Exception):
     pass
 
 
-def geometry_mask(geoms: Iterable[Geometry], geobox: GeoBox,
-                  all_touched=False, invert=False) -> np.ndarray:
-    return rasterio.features.geometry_mask([geom.to_crs(geobox.crs) for geom in geoms],
-                                           out_shape=geobox.shape,
-                                           transform=geobox.affine,
-                                           all_touched=all_touched,
-                                           invert=invert)
-
-
-def execute_task(task: StatsTask, output_driver, chunking) -> StatsTask:
-    """
-    Load data, run the statistical operations and write results out to the filesystem.
-
-    :param datacube_stats.models.StatsTask task:
-    :type output_driver: OutputDriver
-    :param chunking: dict of dimension sizes to chunk the computation by
-    """
-    timer = MultiTimer().start('total')
-    datacube.set_options(reproject_threads=1)
-
-    process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
-
-    try:
-        with output_driver(task=task) as output_files:
-            # currently for polygons process will load entirely
-            if len(chunking) == 0:
-                chunking = {'x': task.sample_tile.shape[2], 'y': task.sample_tile.shape[1]}
-            for sub_tile_slice in tile_iter(task.sample_tile, chunking):
-                process_chunk(output_files, sub_tile_slice, task, timer)
-    except OutputFileAlreadyExists as e:
-        _LOG.warning(str(e))
-    except OutputDriverResult as e:
-        # was run interactively
-        # re-raise result to be caught again by StatsApp.execute_task
-        raise e
-    except Exception as e:
-        _LOG.error("Error processing task: %s", task)
-        raise StatsProcessingException("Error processing task: %s" % task)
-
-    timer.pause('total')
-    _LOG.debug('Completed %s %s task with %s data sources; %s', task.spatial_id,
-               [d.strftime('%Y-%m-%d') for d in task.time_period], task.data_sources_length(), timer)
-    return task
-
-
-def load_process_save_chunk_iteratively(output_files: OutputDriver,
-                                        chunk: Tuple[slice, slice, slice],
-                                        task: StatsTask,
-                                        timer: MultiTimer):
-    procs = [(stat.make_iterative_proc(), name, stat) for name, stat in task.output_products.items()]
-
-    def update(ds):
-        for proc, name, _ in procs:
-            with timer.time(name):
-                proc(ds)
-
-    def save(name, ds):
-        for var_name, var in ds.data_vars.items():
-            output_files.write_data(name, var_name, chunk, var.values)
-
-    geom = geometry_for_task(task)
-    for ds in load_data_lazy(chunk, task.sources, geom=geom, timer=timer):
-        update(ds)
-
-    with timer.time('writing_data'):
-        for proc, name, stat in procs:
-            save(name, cast_back(proc(), stat.data_measurements))
-
-
-def geometry_for_task(task: StatsTask):
-    """ Select the feature attached to the task (for feature-based masking). """
-    if task.feature is not None:
-        return task.feature.geopolygon
-    else:
-        return None
-
-
-def load_process_save_chunk(output_files: OutputDriver,
-                            chunk: Tuple[slice, slice, slice],
-                            task: StatsTask, timer: MultiTimer):
-    try:
-        with timer.time('loading_data'):
-            geom = geometry_for_task(task)
-            data = load_data(chunk, task.sources, geom=geom)
-
-        last_idx = len(task.output_products) - 1
-        for idx, (prod_name, stat) in enumerate(task.output_products.items()):
-            _LOG.debug("Computing %s in tile %s %s; %s",
-                       prod_name, task.spatial_id,
-                       "({})".format(", ".join(prettier_slice(c) for c in chunk)),
-                       timer)
-
-            measurements = stat.data_measurements
-
-            with timer.time(prod_name):
-                result = stat.compute(data)
-
-                if idx == last_idx:  # make sure input data is released early
-                    del data
-
-                # restore nodata values back
-                result = cast_back(result, measurements)
-
-            # For each of the data variables, shove this chunk into the output results
-            with timer.time('writing_data'):
-                output_files.write_chunk(prod_name, chunk, result)
-
-    except EmptyChunkException:
-        _LOG.debug('Error: No data returned while loading %s for %s. May have all been masked',
-                   chunk, task)
+   return task
 
 
 class EmptyChunkException(Exception):
     pass
 
 
-def load_data_lazy(sub_tile_slice, sources, geom=None, reverse=False, timer=None):
-    def by_time(ds):
-        return ds.time.values[0]
-
-    data = [load_masked_data_lazy(sub_tile_slice, source,
-                                  reverse=reverse, geom=geom, src_idx=source.source_index, timer=timer)
-            for source in sources]
-
-    if len(data) == 1:
-        return data[0]
-
-    return sorted_interleave(*data, key=by_time, reverse=reverse)
-
-
-def load_data(sub_tile_slice: Tuple[slice, slice, slice],
-              sources: Iterable[DataSource], geom=None) -> xarray.Dataset:
-    """
-    Load a masked chunk of data from the datacube, based on a specification and list of datasets in `sources`.
-
-    :param sub_tile_slice: A portion of a tile, tuple coordinates
-    :param sources: a dictionary containing `data`, `spec` and `masks`
-    :param geom: polygon feature to mask by
-    :return: :class:`xarray.Dataset` containing loaded data. Will be indexed and sorted by time.
-    """
-    datasets = [load_masked_data(sub_tile_slice, source_prod, geom=geom)
-                for source_prod in sources]  # list of datasets
-
-    datasets = _remove_emptys(datasets)
-    if len(datasets) == 0:
-        raise EmptyChunkException()
-
-    # TODO: Add check for compatible data variable attributes
-    # flags_definition between pq products is different and is silently dropped
-    ds = xarray.concat(datasets, dim='time')  # Copies all the data
-    if len(ds.time) == 0:
-        raise EmptyChunkException()
-
-    # sort along time dim
-    return ds.sortby('time')  # Copies all the data again
-
-
 def _remove_emptys(datasets):
     return [dataset
             for dataset in datasets
             if dataset is not None]
-
-
-def load_masked_tile_lazy(tile, masks,
-                          mask_nodata=False,
-                          mask_inplace=False,
-                          reverse=True,
-                          geom=None,
-                          inverts=None,
-                          src_idx=None,
-                          timer=None,
-                          **kwargs):
-    """Given data tile and an optional list of masks load data and masks apply
-    masks to data and return one time slice at a time.
-
-
-    tile -- Tile object for main data
-    masks -- [(Tile, flags, load_args)] list of triplets describing mask to be applied to data.
-             Tile -- tile objects describing where mask data files are
-             flags -- dictionary of flags to be checked
-             load_args - dictionary of load parameters (e.g. fuse_func, measurements, etc.)
-
-    mask_nodata  -- Convert data to float32 replacing nodata values with nan
-    mask_inplace -- Apply mask without conversion to float
-    reverse      -- Return data earliest observation first
-    geom         -- polygon feature to mask by
-    inverts      -- Whether or not to invert the corresponding mask
-    src_idx      -- If set adds extra axis called source with supplied value
-    timer        -- Optionally track time
-
-
-    Returns an iterator of DataFrames one time-slice at a time
-
-    """
-
-    ii = list(range(tile.shape[0]))
-    if reverse:
-        ii = ii[::-1]
-
-    def load_slice(i):
-        loc = [slice(i, i + 1), slice(None), slice(None)]
-        d = GridWorkflow.load(tile[loc], **kwargs)
-
-        if mask_nodata:
-            d = sensible_mask_invalid_data(d)
-
-        # Load all masks and combine them all into one
-        mask = None
-        for (m_tile, flags, load_args), invert in zip(masks, inverts):
-            m = GridWorkflow.load(m_tile[loc], **load_args)
-            m, *other = m.data_vars.values()
-            # TODO make use of make_mask_from_spec here
-            m = make_mask(m, **flags)
-
-            if invert:
-                m = np.logical_not(m)
-
-            if mask is None:
-                mask = m
-            else:
-                mask &= m
-
-        if mask_inplace or not mask_nodata:
-            where = sensible_where_inplace
-        else:
-            where = sensible_where
-
-        if mask is not None:
-            # Apply mask in place if asked or if we already performed
-            # conversion to float32, this avoids reallocation of memory and
-            # hence increases the largest data set size one can load without
-            # running out of memory
-            d = where(d, mask)
-
-        if geom is not None:
-            d = where(d, geometry_mask([geom], d.geobox, invert=True))
-
-        if src_idx is not None:
-            d.coords['source'] = ('time', np.repeat(src_idx, d.time.size))
-
-        return d
-
-    extract = wrap_in_timer(load_slice, timer, 'loading_data')
-
-    for i in ii:
-        yield extract(i)
-
-
-def load_masked_data_lazy(sub_tile_slice: Tuple[slice, slice, slice],
-                          source_prod: DataSource,
-                          geom=None, reverse=False, src_idx=None, timer=None) -> xarray.Dataset:
-    data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
-    data_tile = source_prod.data[sub_tile_slice]
-    data_measurements = source_prod.spec.get('measurements')
-
-    mask_nodata = source_prod.spec.get('mask_nodata', True)
-    mask_inplace = source_prod.spec.get('mask_inplace', False)
-    masks = []
-    inverts = []
-
-    if 'masks' in source_prod.spec:
-        for mask_spec, mask_tile in zip(source_prod.spec['masks'], source_prod.masks):
-            flags = mask_spec['flags']
-            mask_fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
-            opts = dict(skip_broken_datasets=True,
-                        fuse_func=mask_fuse_func,
-                        measurements=[mask_spec['measurement']])
-
-            masks.append((mask_tile[sub_tile_slice], flags, opts))
-            inverts.append(mask_spec.get('invert') is True)
-
-    return load_masked_tile_lazy(data_tile,
-                                 masks,
-                                 mask_nodata=mask_nodata,
-                                 mask_inplace=mask_inplace,
-                                 reverse=reverse,
-                                 inverts=inverts,
-                                 src_idx=src_idx,
-                                 timer=timer,
-                                 geom=geom,
-                                 fuse_func=data_fuse_func,
-                                 measurements=data_measurements,
-                                 skip_broken_datasets=True)
-
-
-def make_mask_from_spec(loaded_mask_data, mask_spec):
-    if mask_spec.get('flags') is not None:
-        mask = make_mask(loaded_mask_data, **mask_spec['flags'])
-    elif mask_spec.get('less_than') is not None:
-        less_than = float(mask_spec['less_than'])
-        mask = loaded_mask_data < less_than
-    elif mask_spec.get('greater_than') is not None:
-        greater_than = float(mask_spec['greater_than'])
-        mask = loaded_mask_data > greater_than
-
-    if mask_spec.get('invert') is True:
-        mask = np.logical_not(mask)
-
-    return mask
-
-
-def load_masked_data(sub_tile_slice: Tuple[slice, slice, slice],
-                     source_prod: DataSource, geom=None) -> xarray.Dataset:
-    data_fuse_func = import_function(source_prod.spec['fuse_func']) if 'fuse_func' in source_prod.spec else None
-    data = GridWorkflow.load(source_prod.data[sub_tile_slice],
-                             measurements=source_prod.spec.get('measurements'),
-                             fuse_func=data_fuse_func,
-                             skip_broken_datasets=True)
-
-    mask_inplace = source_prod.spec.get('mask_inplace', False)
-    mask_nodata = source_prod.spec.get('mask_nodata', True)
-
-    if mask_nodata:
-        data = sensible_mask_invalid_data(data)
-
-    # if all NaN
-    completely_empty = all(ds for ds in xarray.ufuncs.isnan(data).all().data_vars.values())
-    if completely_empty:
-        # Discard empty slice
-        return None
-
-    if mask_inplace or not mask_nodata:
-        where = sensible_where_inplace
-    else:
-        where = sensible_where
-
-    if 'masks' in source_prod.spec:
-        for mask_spec, mask_tile in zip(source_prod.spec['masks'], source_prod.masks):
-            if mask_tile is None:
-                # Discard data due to no mask data
-                return None
-            mask_fuse_func = import_function(mask_spec['fuse_func']) if 'fuse_func' in mask_spec else None
-            mask = GridWorkflow.load(mask_tile[sub_tile_slice],
-                                     measurements=[mask_spec['measurement']],
-                                     fuse_func=mask_fuse_func,
-                                     skip_broken_datasets=True)[mask_spec['measurement']]
-            if mask_spec.get('flags') is not None:
-                mask = make_mask(mask, **mask_spec['flags'])
-            elif mask_spec.get('less_than') is not None:
-                less_than = float(mask_spec['less_than'])
-                mask = mask < less_than
-            elif mask_spec.get('greater_than') is not None:
-                greater_than = float(mask_spec['greater_than'])
-                mask = mask > greater_than
-
-            if mask_spec.get('invert') is True:
-                mask = np.logical_not(mask)
-
-            if mask_inplace:
-                data = sensible_where_inplace(data, mask)
-            else:
-                data = sensible_where(data, mask)
-
-            data = where(data, make_mask_from_spec(mask, mask_spec))
-            del mask
-
-    if geom is not None:
-        data = where(data, geometry_mask([geom], data.geobox, invert=True))
-
-    if source_prod.source_index is not None:
-        data.coords['source'] = ('time', np.repeat(source_prod.source_index, data.time.size))
-
-    return data
 
 
 def _source_measurement_defs(index, sources):
