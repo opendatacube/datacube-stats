@@ -75,12 +75,12 @@ def axisindex(a, index, axis=0):
     """
     Index array 'a' using 'index' as depth along 'axis'
     """
-    shape = index.shape
-    lshape = shape[:axis] + (1,) * (index.ndim - axis)
-    rshape = (1,) * axis + shape[axis:]
-    step = prod(shape[axis:])
-    idx = _blah(lshape, step * a.shape[axis]) + _blah(rshape) + index * step
-    return a.take(idx)
+    shape = np.array(index.shape, dtype=np.int32)
+    idx = np.zeros(a.ndim, dtype=np.int32)
+    idx[axis] = 1
+    idx[idx==0] = shape
+    # require numpy >= 1.15.0
+    return np.take_along_axis(a, index.reshape(idx), axis=axis).reshape(shape)
 
 
 def section_by_index(array, index, axis=0):
@@ -89,6 +89,7 @@ def section_by_index(array, index, axis=0):
     along the specified `axis`.
     """
     # alternative `axisindex` implementation
+
     # that avoids the index arithmetic
     # uses `numpy` fancy indexing instead
 

@@ -1,6 +1,7 @@
-import xarray
+import xarray as xr
 import numpy as np
-import pandas as pd
+import dask
+import dask.array as da
 
 from collections import Sequence
 from functools import partial
@@ -35,63 +36,63 @@ class Percentile(Transformation):
         self.quality_band = quality_band
 
     def compute(self, data):
-        # calculate masks for pixel without enough data
+
+        def single(var_data, q, nodata,):
+            indices = argpercentile(var_data, q=q, axis=-1)
+            result = axisindex(var_data, index=indices, axis=-1)
+            result[np.isnan(result)] = nodata 
+            return result
+
+        percentile = []
+        quality_count = None
+
+        if self.quality_band is not None:
+            quality_count =  (data[self.quality_band].data == True).sum(axis=0)
         for var in data.data_vars:
             if self.quality_band is not None:
                 if var == self.quality_band:
                     continue
+
+            if data[var].dtype == 'int8':
+                data_type = 'int16'
+            else:
+                data_type = data[var].dtype
+
             nodata = getattr(data[var], 'nodata', None)
             if nodata is not None:
-                data[var].attrs['dtype'] = data[var].dtype
-                data[var] = data[var].where(data[var] > nodata)
-
-        def single(q):
-            stat_func = partial(xarray.Dataset.reduce, dim='time', keep_attrs=True,
-                                func=argpercentile, q=q)
-            if self.quality_band is not None:
-                result = stat_func(data.drop(self.quality_band))
+                data[var] = data[var].where(da.fabs(data[var] - nodata) > 1e-8)
             else:
-                result = stat_func(data)
+                data[var] = data[var].astype(np.float)
 
-            def index_dataset(var):
-                return axisindex(data.data_vars[var.name].values, var.values)
+            valid_count = data[var].data.shape[0] - da.isnan(data[var].data).sum(axis=0)
+            # differentiate "sure not" and "not sure"
+            if quality_count is not None:
+                not_sure = da.logical_and((quality_count == valid_count), (valid_count < self.minimum_valid_observations))
+                sure_not = da.logical_and((quality_count != valid_count), (valid_count < self.minimum_valid_observations))
+            else:
+                not_sure = None
+                sure_not = valid_count < self.minimum_valid_observations
 
-            result = result.apply(index_dataset)
+            if nodata is None:
+                nodata = -1
 
-            def mask_not_enough(var):
-                nodata = getattr(data[var.name], 'nodata', -1)
-                valid_count = data[var.name].count(dim='time')
-
-                if self.quality_band is not None:
-                    quality_count = data[self.quality_band].where(data[self.quality_band]).count(dim='time')
-                    not_sure = (quality_count == valid_count).where(valid_count < self.minimum_valid_observations) == 1
-                    sure_not = (quality_count != valid_count).where(valid_count < self.minimum_valid_observations) == 1
-                else:
-                    not_sure = None
-                    sure_not = valid_count < self.minimum_valid_observations
+            for q in self.qs:
+                result = xr.apply_ufunc(single, data[var], kwargs={'q':q, 'nodata': nodata}, input_core_dims=[['time']],
+                                        output_dtypes=[np.float], dask='parallelized', keep_attrs=True)
 
                 if not_sure is not None:
                     if self.not_sure_mark is not None:
-                        var.values[not_sure] = self.not_sure_mark
+                        result.data[not_sure] = self.not_sure_mark
                     else:
-                        var.values[not_sure] = nodata
+                        result.data[not_sure] = nodata
+                result.data[sure_not] = nodata
 
-                var.values[sure_not] = nodata
-                var.values[np.isnan(var.values)] = nodata
-                var.attrs['nodata'] = nodata
+                result.name = var + '_PC_' + str(q)
+                result.attrs['nodata'] = nodata
+                result = result.astype(data_type)
+                percentile.append(result)
 
-                if data[var.name].attrs['dtype'] == 'int8':
-                    data_type = 'int16'
-                else:
-                    data_type = data[var.name].attrs['dtype']
-
-                var = var.astype(data_type)
-                return var
-
-            return result.apply(mask_not_enough, keep_attrs=True).rename(
-                                {var: var + '_PC_' + str(q) for var in result.data_vars})
-
-        result = xarray.merge(single(q) for q in self.qs)
+        result = xr.merge(percentile)
         result.attrs['crs'] = data.attrs['crs']
         return result
 

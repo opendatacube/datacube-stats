@@ -39,9 +39,7 @@ from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible
 from datacube_stats.utils.dates import date_sequence
 from .utils.timer import MultiTimer, wrap_in_timer
 from .utils import sorted_interleave, Slice, prettier_slice
-from .tasks import select_task_generator
 from .schema import stats_schema
-from .models import StatsTask, DataSource
 from .output_drivers import OutputDriver, OutputDriverResult
 
 __all__ = ['StatsApp', 'main']
@@ -385,9 +383,6 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
 
 class StatsProcessingException(Exception):
     pass
-
-
-   return task
 
 
 class EmptyChunkException(Exception):

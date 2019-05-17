@@ -1,5 +1,6 @@
-import xarray
+import xarray as xr
 import numpy as np
+import dask.array as da
 from datacube.model import Measurement
 from datacube.virtual.impl import Transformation
 from osgeo import ogr
@@ -59,19 +60,19 @@ class TCIndex(Transformation):
         self.var_name = f'TC{category[0].upper()}'
 
     def compute(self, data):
-        tci_var = []
+        tci_var = 0 
         for var in data.data_vars:
             nodata = getattr(data[var], 'nodata', -1)
             data[var] = data[var].where(data[var] > nodata)
-            tci_var.append(data[var] * self.coeffs[self.category][var])
-        tci_var = sum(tci_var)
-        tci_var.values[np.isnan(tci_var.values)] = -9999
-        tci = xarray.Dataset(data_vars={self.var_name: tci_var.astype('float32')},
-                             coords=data.coords,
-                             attrs=dict(crs=data.crs))
-        tci[self.var_name].attrs['nodata'] = -9999
-        tci[self.var_name].attrs['units'] = 1
-        return tci
+            tci_var += data[var] * self.coeffs[self.category][var]
+        tci_var.data[da.isnan(tci_var.data)] = -9999
+        tci_var = tci_var.astype(np.float32)
+        tci_var.name = self.var_name
+        tci_var.attrs['nodata'] = -9999
+        tci_var.attrs['units'] = 1
+        tci_var = tci_var.to_dataset()
+        tci_var.attrs['crs'] = data.attrs['crs']
+        return tci_var
 
     def measurements(self, input_measurements):
         return {self.var_name: Measurement(name=self.var_name, dtype='float32', nodata=-9999, units='1')}
@@ -97,33 +98,33 @@ class MangroveCC(Transformation):
 
         rast_data = data[var_name].where(self.generate_rasterize(data[var_name]) == 1, -9999)
 
-        cover_extent = rast_data.copy(True)
-        cover_extent.data = np.zeros(cover_extent.shape, dtype='int16') - 1
+        cover_extent = rast_data.astype(np.int16).copy(True)
+        cover_extent.data[rast_data.data <= self.thresholds[0]] = -1
         cover_extent.data[rast_data.data > self.thresholds[0]] = 1
-        cover_extent.data[np.logical_and(rast_data.data > -9999, data[var_name].data == -2)] = 0
+        cover_extent.data[da.logical_and(rast_data.data > -9999, data[var_name].data == -2)] = 0
+        cover_extent.attrs['nodata'] = -1
+        cover_extent.attrs['units'] = 1
 
-        cover_type = rast_data.copy(True)
-        cover_type.data = np.zeros(cover_type.shape, dtype='int16') - 1
+        cover_type = rast_data.astype(np.int16).copy(True)
+        cover_type.data[rast_data.data <= self.thresholds[0]] = -1
         level_threshold = 1
         for s_t in self.thresholds:
             cover_type.data[rast_data.data > s_t] = level_threshold
             level_threshold += 1
-        cover_type.data[np.logical_and(rast_data.data > -9999, data[var_name].data == -2)] = 0
+        cover_type.data[da.logical_and(rast_data.data > -9999, data[var_name].data == -2)] = 0
+        cover_type.attrs['nodata'] = -1
+        cover_type.attrs['units'] = 1
 
         outputs = {}
         outputs[self.bands[0]] = cover_extent
-        outputs[self.bands[0]].attrs['nodata'] = -1
-        outputs[self.bands[0]].attrs['units'] = 1
         outputs[self.bands[1]] = cover_type
-        outputs[self.bands[1]].attrs['nodata'] = -1
-        outputs[self.bands[1]].attrs['units'] = 1
-        return xarray.Dataset(outputs, attrs=dict(crs=data.crs))
+        return xr.Dataset(outputs, attrs=dict(crs=data.crs))
 
     def generate_rasterize(self, data):
         source_ds = ogr.Open(self.shape_file)
         source_layer = source_ds.GetLayer()
 
-        yt, xt = data[0].shape
+        yt, xt = data.shape[1:]
         xres = 25
         yres = -25
         no_data = 0
@@ -141,4 +142,5 @@ class MangroveCC(Transformation):
         band.SetNoDataValue(no_data)
 
         gdal.RasterizeLayer(target_ds, [1], source_layer, burn_values=[1])
-        return band.ReadAsArray()
+        dask_array = da.asarray(band.ReadAsArray()).rechunk(data.data.chunks[1])
+        return dask_array 
