@@ -142,5 +142,5 @@ class MangroveCC(Transformation):
         band.SetNoDataValue(no_data)
 
         gdal.RasterizeLayer(target_ds, [1], source_layer, burn_values=[1])
-        dask_array = da.asarray(band.ReadAsArray()).rechunk(data.data.chunks[1])
+        dask_array = da.asarray(band.ReadAsArray()).rechunk(data.data.chunksize[1:])
         return dask_array 

@@ -32,7 +32,7 @@ from .models import OutputProduct
 from datacube.virtual import construct
 from .output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
     NoSuchOutputDriver
-from .output_drivers import OutputDriver, OutputDriverResult
+from .output_drivers import OutputDriver
 
 _LOG = logging.getLogger(__name__)
 

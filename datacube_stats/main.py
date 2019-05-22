@@ -40,7 +40,7 @@ from datacube_stats.utils.dates import date_sequence
 from .utils.timer import MultiTimer, wrap_in_timer
 from .utils import sorted_interleave, Slice, prettier_slice
 from .schema import stats_schema
-from .output_drivers import OutputDriver, OutputDriverResult
+from .output_drivers import OutputDriver
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -290,14 +290,11 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
         Execute an individual task locally.
         Intended to be used interactively rather than on a cluster.
         """
-        try:
-            execute_task(task,
-                         output_driver=self._partially_applied_output_driver(),
-                         chunking=self.computation.get('chunking', {}))
+        execute_task(task,
+                     output_driver=self._partially_applied_output_driver(),
+                     chunking=self.computation.get('chunking', {}))
 
-            _LOG.debug('task %s finished', task)
-        except OutputDriverResult as e:
-            return e
+        _LOG.debug('task %s finished', task)
 
     def run_tasks(self, tasks, runner=None, task_slice=None):
         from digitalearthau.qsub import TaskRunner

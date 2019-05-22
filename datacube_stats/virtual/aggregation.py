@@ -4,9 +4,8 @@ import dask
 import dask.array as da
 
 from collections import Sequence
-from functools import partial
 from datacube.virtual.impl import Transformation, Measurement
-from datacube_stats.stat_funcs import argpercentile, anynan, axisindex
+from datacube_stats.stat_funcs import argpercentile,  axisindex
 
 
 class Percentile(Transformation):
@@ -37,7 +36,7 @@ class Percentile(Transformation):
 
     def compute(self, data):
 
-        def single(var_data, q, nodata,):
+        def single(var_data, q, nodata):
             indices = argpercentile(var_data, q=q, axis=-1)
             result = axisindex(var_data, index=indices, axis=-1)
             result[np.isnan(result)] = nodata 
@@ -46,6 +45,7 @@ class Percentile(Transformation):
         percentile = []
         quality_count = None
 
+        data = data.chunk({'time': -1})
         if self.quality_band is not None:
             quality_count =  (data[self.quality_band].data == True).sum(axis=0)
         for var in data.data_vars:

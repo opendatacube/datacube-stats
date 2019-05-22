@@ -596,12 +596,6 @@ class GeoTiffOutputDriver(OutputDriver):
             dest.update_tags(**attributes)
 
 
-class OutputDriverResult(Exception):
-    def __init__(self, result, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.result = result
-
-
 class TestOutputDriver(OutputDriver):
     def write_global_attributes(self, attributes):
         pass
