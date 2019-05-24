@@ -6,6 +6,7 @@ import dask.array as da
 from collections import Sequence
 from datacube.virtual.impl import Transformation, Measurement
 from datacube_stats.stat_funcs import argpercentile,  axisindex
+from pcm import gmpcm
 
 
 class Percentile(Transformation):
@@ -48,11 +49,9 @@ class Percentile(Transformation):
         data = data.chunk({'time': -1})
         if self.quality_band is not None:
             quality_count =  (data[self.quality_band].data == True).sum(axis=0)
-        for var in data.data_vars:
-            if self.quality_band is not None:
-                if var == self.quality_band:
-                    continue
+            data = data.drop(self.quality_band)
 
+        for var in data.data_vars:
             if data[var].dtype == 'int8':
                 data_type = 'int16'
             else:
@@ -111,3 +110,75 @@ class Percentile(Transformation):
             for q in self.qs:
                 renamed[key + '_PC_' + str(q)] = Measurement(**{**m, 'name': key + '_PC_' + str(q), 'dtype': data_type})
         return renamed
+    
+
+class NewGeomedianStatistic(Transformation):
+    """
+        geomedian
+    """
+    def __init__(self, eps=1e-3, num_threads=None):
+        self.eps = eps
+        self.num_threads = num_threads
+
+    def compute(self, data):
+        """
+        :param xarray.Dataset data:
+        :return: xarray.Dataset
+        """
+        dtypes = {}
+        for var in data.data_vars:
+            dtypes[var] = data[var].dtype
+            nodata = getattr(data[var], 'nodata', None)
+            if nodata is not None:
+                data[var] = data[var].where(data[var] > nodata)
+            else:
+                data[var] = data[var].astype(np.float)
+        # We need to reshape our data into Time, Y, X, Band
+        squashed_together_dimensions, normal_datacube_dimensions = self._vars_to_transpose(data)
+
+        squashed = data.to_array(dim='variable').transpose(*squashed_together_dimensions)
+        assert squashed.dims == squashed_together_dimensions
+
+        # Call Dale's function here
+        squashed = squashed.chunk({'time':-1, 'variable': -1})
+        result = xr.apply_ufunc(lambda x, num_threads: gmpcm(x, num_threads=num_threads), squashed,
+                                kwargs={'num_threads': self.num_threads},
+                                input_core_dims=[['time']], output_dtypes=[np.float],
+                                dask='parallelized', keep_attrs=True)
+        squashed = result.to_dataset(dim='variable')
+        for var in  squashed.data_vars:
+            squashed[var] = squashed[var].astype(dtypes[var])
+            squashed[var].attrs = data[var].attrs.copy()
+
+        return squashed 
+
+    @staticmethod
+    def _vars_to_transpose(data):
+        """
+        We need to be able to handle data given to use in either Geographic or Projected form.
+
+        The Data Cube provided xarrays will contain different dimensions, latitude/longitude or x/y, which means
+        the array reshaping takes different arguments.
+
+        The dimension ordering returned by this function is specific to the Geometric Median PCM functions
+        included from the `pcm` module.
+
+        :return: pcm input array dimension order, datacube dimension ordering
+        """
+        is_projected = 'x' in data.dims and 'y' in data.dims
+        is_geographic = 'longitude' in data.dims and 'latitude' in data.dims
+
+        if is_projected and is_geographic:
+            raise StatsProcessingError('Data to process contains BOTH geographic and projected dimensions, '
+                                       'unable to proceed')
+        elif not is_projected and not is_geographic:
+            raise StatsProcessingError('Data to process contains NEITHER geographic nor projected dimensions, '
+                                       'unable to proceed')
+        elif is_projected:
+            return ('time', 'y', 'x', 'variable'), ('variable', 'y', 'x')
+        else:
+            return ( 'time', 'latitude', 'longitude', 'variable'), ('variable', 'latitude', 'longitude')
+
+    def measurements(self, input_measurements):
+        return input_measurements
+
