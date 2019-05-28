@@ -252,6 +252,7 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
             for output in product:
                 with output_driver(output_product=output) as output_file:
                     results = output.compute(output.datasets)
+                    results.load()
                     output_file.write_data(results)
 
     def configure_outputs(self, dc, metadata_type='eo') -> Dict[str, OutputProduct]:
