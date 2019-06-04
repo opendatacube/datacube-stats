@@ -60,7 +60,7 @@ class TCIndex(Transformation):
         self.var_name = f'TC{category[0].upper()}'
 
     def compute(self, data):
-        tci_var = 0 
+        tci_var = 0
         for var in data.data_vars:
             nodata = getattr(data[var], 'nodata', -1)
             data[var] = data[var].where(data[var] > nodata)
@@ -143,4 +143,4 @@ class MangroveCC(Transformation):
 
         gdal.RasterizeLayer(target_ds, [1], source_layer, burn_values=[1])
         dask_array = da.asarray(band.ReadAsArray()).rechunk(data.data.chunksize[1:])
-        return dask_array 
+        return dask_array

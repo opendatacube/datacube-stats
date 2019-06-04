@@ -99,6 +99,7 @@ def gather_tile_indexes(tile_index, tile_index_file):
             return None
         return tile_indexes
 
+
 # pylint: disable=broad-except
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments

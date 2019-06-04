@@ -40,7 +40,7 @@ class Percentile(Transformation):
         def single(var_data, q, nodata):
             indices = argpercentile(var_data, q=q, axis=-1)
             result = axisindex(var_data, index=indices, axis=-1)
-            result[np.isnan(result)] = nodata 
+            result[np.isnan(result)] = nodata
             return result
 
         percentile = []
@@ -48,7 +48,7 @@ class Percentile(Transformation):
 
         data = data.chunk({'time': -1})
         if self.quality_band is not None:
-            quality_count =  (data[self.quality_band].data == True).sum(axis=0)
+            quality_count = (data[self.quality_band].data).sum(axis=0)
             data = data.drop(self.quality_band)
 
         for var in data.data_vars:
@@ -66,8 +66,10 @@ class Percentile(Transformation):
             valid_count = data[var].data.shape[0] - da.isnan(data[var].data).sum(axis=0)
             # differentiate "sure not" and "not sure"
             if quality_count is not None:
-                not_sure = da.logical_and((quality_count == valid_count), (valid_count < self.minimum_valid_observations))
-                sure_not = da.logical_and((quality_count != valid_count), (valid_count < self.minimum_valid_observations))
+                not_sure = da.logical_and((quality_count == valid_count),
+                                          (valid_count < self.minimum_valid_observations))
+                sure_not = da.logical_and((quality_count != valid_count),
+                                          (valid_count < self.minimum_valid_observations))
             else:
                 not_sure = None
                 sure_not = valid_count < self.minimum_valid_observations
@@ -76,8 +78,9 @@ class Percentile(Transformation):
                 nodata = -1
 
             for q in self.qs:
-                result = xr.apply_ufunc(single, data[var], kwargs={'q':q, 'nodata': nodata}, input_core_dims=[['time']],
-                                        output_dtypes=[np.float], dask='parallelized', keep_attrs=True)
+                result = xr.apply_ufunc(single, data[var], kwargs={'q': q, 'nodata': nodata},
+                                        input_core_dims=[['time']], output_dtypes=[np.float],
+                                        dask='parallelized', keep_attrs=True)
 
                 if not_sure is not None:
                     if self.not_sure_mark is not None:
@@ -110,7 +113,7 @@ class Percentile(Transformation):
             for q in self.qs:
                 renamed[key + '_PC_' + str(q)] = Measurement(**{**m, 'name': key + '_PC_' + str(q), 'dtype': data_type})
         return renamed
-    
+
 
 class NewGeomedianStatistic(Transformation):
     """
@@ -140,17 +143,17 @@ class NewGeomedianStatistic(Transformation):
         assert squashed.dims == squashed_together_dimensions
 
         # Call Dale's function here
-        squashed = squashed.chunk({'time':-1, 'variable': -1})
+        squashed = squashed.chunk({'time': -1, 'variable': -1})
         result = xr.apply_ufunc(lambda x, num_threads: gmpcm(x, num_threads=num_threads), squashed,
                                 kwargs={'num_threads': self.num_threads},
                                 input_core_dims=[['time']], output_dtypes=[np.float],
                                 dask='parallelized', keep_attrs=True)
         squashed = result.to_dataset(dim='variable')
-        for var in  squashed.data_vars:
+        for var in squashed.data_vars:
             squashed[var] = squashed[var].astype(dtypes[var])
             squashed[var].attrs = data[var].attrs.copy()
 
-        return squashed 
+        return squashed
 
     @staticmethod
     def _vars_to_transpose(data):
@@ -177,8 +180,7 @@ class NewGeomedianStatistic(Transformation):
         elif is_projected:
             return ('time', 'y', 'x', 'variable'), ('variable', 'y', 'x')
         else:
-            return ( 'time', 'latitude', 'longitude', 'variable'), ('variable', 'latitude', 'longitude')
+            return ('time', 'latitude', 'longitude', 'variable'), ('variable', 'latitude', 'longitude')
 
     def measurements(self, input_measurements):
         return input_measurements
-

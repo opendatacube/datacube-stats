@@ -78,7 +78,7 @@ def axisindex(a, index, axis=0):
     shape = np.array(index.shape, dtype=np.int32)
     idx = np.zeros(a.ndim, dtype=np.int32)
     idx[axis] = 1
-    idx[idx==0] = shape
+    idx[idx == 0] = shape
     # require numpy >= 1.15.0
     return np.take_along_axis(a, index.reshape(idx), axis=axis).reshape(shape)
 
