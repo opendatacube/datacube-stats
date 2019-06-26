@@ -1,8 +1,3 @@
-try:
-    from datacube.model import Product
-except ImportError:
-    from datacube.model import DatasetType as Product
-
 from datacube.model import Measurement
 
 import warnings
@@ -72,6 +67,11 @@ class OutputProduct:
             'storage': storage,
             'measurements': data_measurements
         }
+        try:
+            from datacube.model import Product
+        except ImportError:
+            from datacube.model import DatasetType as Product
+
         Product.validate(product_definition)
         return Product(metadata_type, product_definition)
 

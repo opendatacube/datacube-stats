@@ -137,7 +137,7 @@ class NewGeomedianStatistic(Transformation):
             else:
                 data[var] = data[var].astype(np.float)
         # We need to reshape our data into Time, Y, X, Band
-        squashed_together_dimensions, normal_datacube_dimensions = self._vars_to_transpose(data)
+        squashed_together_dimensions = self._vars_to_transpose(data)
 
         squashed = data.to_array(dim='variable').transpose(*squashed_together_dimensions)
         assert squashed.dims == squashed_together_dimensions
@@ -178,9 +178,9 @@ class NewGeomedianStatistic(Transformation):
             raise StatsProcessingError('Data to process contains NEITHER geographic nor projected dimensions, '
                                        'unable to proceed')
         elif is_projected:
-            return ('time', 'y', 'x', 'variable'), ('variable', 'y', 'x')
+            return ('time', 'y', 'x', 'variable')
         else:
-            return ('time', 'latitude', 'longitude', 'variable'), ('variable', 'latitude', 'longitude')
+            return ('time', 'latitude', 'longitude', 'variable')
 
     def measurements(self, input_measurements):
         return input_measurements
