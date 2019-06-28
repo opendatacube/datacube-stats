@@ -15,6 +15,7 @@ from textwrap import dedent
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Iterable, Iterator, Tuple
+import os
 from os import path
 
 import click
@@ -34,8 +35,9 @@ import json
 import hashlib
 from shapely.geometry import Polygon, mapping
 from datacube.utils.geometry import CRS, Geometry
-import dask
+import pickle
 from queue import Queue
+from copy import deepcopy
 
 _LOG = logging.getLogger(__name__)
 
@@ -43,33 +45,7 @@ DEFAULT_TILE_INDEX_FILE = 'landsat_tile_list.txt'
 TILE_SIZE = 60000.
 
 
-def local_task_generator(client, query_workers, datacube_config, stats_config):
-    input_region = stats_config['input_region']
-    date_ranges = stats_config['date_ranges']
-    product_name = ''
-    for product in stats_config['output_products']:
-        if product_name == product['name']:
-            _LOG.error("More than one product with the same name %s", product_name)
-        product_name = product['name']
-        recipe = dict(product['recipe'])
-        virtual_product = construct(**recipe)
-        virtual_datasets_with_config = generate_virtual_datasets(client, query_workers, datacube_config,
-                                                                 virtual_product, input_region, date_ranges)
-        yield ProductWithDef(product, virtual_product, virtual_datasets_with_config)
-
-
-def generate_virtual_datasets(client, query_workers, datacube_config, virtual_product, input_region, date_range):
-    def query_group(datacube_config, kwargs):
-        dc = Datacube(config=datacube_config)
-        kwargs['geopolygon'] = Geometry(kwargs['geopolygon'], CRS(kwargs['crs']))
-        kwargs.pop('crs', None)
-        try:
-            datasets = virtual_product.query(dc, **kwargs)
-        except Exception as e:
-            _LOG.warning('something weird happend %s', e)
-            return None
-        return virtual_product.group(datasets, **kwargs)
-
+def generate_task_queue(product_name, input_region, date_range):
     if 'tiles' not in input_region:
         _LOG.debug('tiles only')
     sensor_source = input_region.get('sensor_source')
@@ -79,22 +55,56 @@ def generate_virtual_datasets(client, query_workers, datacube_config, virtual_pr
         stride = 2
     else:
         _LOG.error('Dont understand the sensor source %s', sensor_source)
-    task_priority = 0
-    for tile in input_region['tiles']:
-        for date in date_range:
+
+    task_queue = {}
+    for date in date_range:
+        for tile in input_region['tiles']:
+            _LOG.debug("query tile date %s", (tile, date))
             tile_geojson = convert_tile_to_geojson(tile, stride, TILE_SIZE)
-            query_unit = QueryUnit(date, tile_geojson)
+            query_unit = QueryUnit(product_name, date, tile_geojson)
             query_string = {}
             query_string['geopolygon'] = tile_geojson
             query_string['time'] = date
             # query by tile index implies crs
             query_string['crs'] = 'EPSG:3577'
-            _LOG.debug("query string %s", query_string)
-            grouped = client.submit(query_group, datacube_config, query_string,
-                                    key='query-'+query_unit.hash(),
-                                    priority=task_priority, workers=query_workers)
-            task_priority -= 1
-            yield VirtualDatasetsWithConfig(task_priority, query_unit, grouped, tile, date)
+            task_queue[query_unit.hash()] = {'query_string': query_string, 'tile': tile}
+    return task_queue
+
+
+def local_task_generator(client, query_workers, datacube_config, stats_config, tasks):
+    for product in stats_config['output_products']:
+        product_name = product['name']
+        recipe = dict(product['recipe'])
+        virtual_product = construct(**recipe)
+        virtual_datasets_with_config = generate_virtual_datasets(client, query_workers, datacube_config,
+                                                                 virtual_product, tasks[product_name])
+        yield ProductWithDef(product, virtual_product, virtual_datasets_with_config)
+
+
+def generate_virtual_datasets(client, query_workers, datacube_config, virtual_product, tasks):
+    def query_group(datacube_config, kwargs):
+        dc = Datacube(config=datacube_config)
+        kwargs['geopolygon'] = Geometry(kwargs['geopolygon'], CRS(kwargs['crs']))
+        kwargs.pop('crs', None)
+        try:
+            datasets = virtual_product.query(dc, **kwargs)
+            grouped = virtual_product.group(datasets, **kwargs)
+        except Exception as e:
+            _LOG.warning('something weird happend %s', e)
+            return None
+        else:
+            return grouped
+
+    task_priority = 0
+    for key, value in tasks.items():
+        query_string = value.get('query_string')
+        tile = value.get('tile')
+        _LOG.debug("query tile date %s", query_string)
+        grouped = client.submit(query_group, datacube_config, query_string,
+                                key='query-'+key,
+                                priority=task_priority, workers=query_workers)
+        task_priority -= 1
+        yield VirtualDatasetsWithConfig(task_priority, key, grouped, tile, query_string['time'])
 
 
 TASK_GENERATOR_REG = {
@@ -152,10 +162,6 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
         stats_config = normalize_space_range(stats_config, tile_index, tile_index_file)
         task_generator = TASK_GENERATOR_REG.get(task_generator)
 
-        from dask.distributed import Client
-        client = Client(scheduler_file=scheduler_file)
-        _LOG.debug('Run on cluster with workers %s', client.ncores())
-
         output_config = stats_config.copy()
         output_config.pop('output_products', None)
         output_config.pop('input_region', None)
@@ -163,6 +169,12 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
 
         # play nice to the database
         query_workers = min(query_workers, 10)
+
+        from dask.distributed import Client
+        client = Client(scheduler_file=scheduler_file)
+        client.wait_for_workers(query_workers)
+        _LOG.debug('Run on cluster with workers %s', client.ncores())
+
         i = query_workers
         query_worker_list = []
         for worker in client.scheduler_info()['workers'].keys():
@@ -175,8 +187,32 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
         if queue_size is None:
             queue_size = 2 * query_workers
 
-        compute_checking = ComputeCheck(queue_size=queue_size)
-        products = task_generator(client, query_worker_list, datacube_config, stats_config)
+        checkpoint_path = stats_config.get('location') + '/checkpointing'
+        checkpoint_file = checkpoint_path + '/checkpointing.pkl'
+        if not path.exists(checkpoint_path):
+            os.mkdir(checkpoint_path)
+            restart = False
+        elif not path.exists(checkpoint_file):
+            restart = False
+        else:
+            restart = True
+        compute_checking = ComputeCheck(queue_size=queue_size, restart=restart, checkpoint=checkpoint_file)
+
+        if compute_checking.restored != {}:
+            tasks = deepcopy(compute_checking.restored)
+        else:
+            input_region = stats_config['input_region']
+            date_range = stats_config['date_ranges']
+            tasks = {}
+            product_name = ''
+            for product in stats_config['output_products']:
+                if product_name == product['name']:
+                    _LOG.error("More than one product with the same name %s", product_name)
+                product_name = product['name']
+                tasks[product_name] = generate_task_queue(product_name, input_region, date_range)
+            compute_checking.restored = deepcopy(tasks)
+
+        products = task_generator(client, query_worker_list, datacube_config, stats_config, tasks)
         for product in products:
             metadata_type = retrieve_metadata_type(datacube_config)
             _LOG.debug("metadata type %s", metadata_type)
@@ -190,20 +226,29 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
                 _LOG.debug("output product %s", datasets)
                 output = client.submit(app.generate_products, metadata_type, datasets,
                                        priority=virtual_datasets_with_config.task_priority,
-                                       key='output-' + virtual_datasets_with_config.query_unit.hash(),
+                                       key='output-' + virtual_datasets_with_config.key,
                                        workers=query_worker_list)
 
                 future = client.submit(app.load_save, output,
                                        priority=virtual_datasets_with_config.task_priority,
-                                       key='save-' + virtual_datasets_with_config.query_unit.hash(),
+                                       key='save-' + virtual_datasets_with_config.key,
                                        workers=query_worker_list)
 
                 future.add_done_callback(compute_checking.future_done)
-                compute_checking.set(virtual_datasets_with_config.query_unit, future)
+                compute_checking.set(virtual_datasets_with_config.key, future)
                 _LOG.debug("submit compute future %s", future)
         _LOG.debug("waiting for the result %s", compute_checking.result)
         client.gather(list(compute_checking.result.values()))
-        _LOG.debug("computation to be done %s", compute_checking.query)
+        _LOG.debug("computation to be done %s", compute_checking.restored)
+        os.remove(compute_checking.checkpoint)
+
+        def shutdown(dask_scheduler=None):
+            from dask.distributed import utils
+            dask_scheduler.finished()
+            with utils.ignoring(RuntimeError):
+                dask_scheduler.close(close_workers=True)
+
+        client.run_on_scheduler(shutdown)
 
     except Exception as e:
         _LOG.error(e)
@@ -301,7 +346,7 @@ def gather_tile_indexes(tile_index, tile_index_file):
         tile_indexes = [tuple(int(x) for x in l.split()) for l in fl]
         if len(tile_indexes) == 0:
             return None
-        return tile_indexes
+    return tile_indexes
 
 
 def convert_tile_to_geojson(tile_index, stride=1, tile_size=60000.):
@@ -312,52 +357,63 @@ def convert_tile_to_geojson(tile_index, stride=1, tile_size=60000.):
 
 
 class QueryUnit():
-    def __init__(self, time: tuple, space: dict):
+    def __init__(self, product: str, time: tuple, space: dict):
         if not isinstance(space, dict):
             raise ValueError("space has to be a geojson")
         if not isinstance(time, tuple):
             raise ValueError("time has to be a tuple of (datetime.datetime, datetime.datetime)")
         self.time = time
         self.space = space
+        self.product = product
 
     def hash(self):
-        hashable = {'time:': {'start': str(self.time[0]), 'end': str(self.time[1])}}
+        hashable = {'time:': {'start': str(self.time[0]), 'end': str(self.time[1])}, 'product': self.product}
         hashable.update(self.space)
         return hashlib.md5(json.dumps(hashable, sort_keys=True).encode('utf-8')).hexdigest()
 
 
 class ComputeCheck():
-    def __init__(self, queue_size=2, restart=False):
+    def __init__(self, queue_size=2, restart=False, checkpoint=None):
+        self.checkpoint = checkpoint
         if restart:
             # read in the pickle file of parameters
-            pass
+            with open(checkpoint, 'rb') as f:
+                self.restored = pickle.load(f)
         else:
-            self.query = {}
-            self.result = {}
+            self.restored = {}
+        self.result = {}
         self.output_queue = Queue(maxsize=queue_size)
 
     def inc(self):
         self.output_queue.put(1)
 
-    def set(self, query: QueryUnit, result):
-        self.query.update({query.hash(): query})
-        self.result.update({query.hash(): result})
+    def set(self, key, result):
+        self.result.update({key: result})
 
     def future_done(self, result):
         if result.done():
             query_hash = result.key.split('-')[1]
-            _LOG.debug("query done %s", self.query[query_hash].time)
             _LOG.debug("future status %s", result.status)
             self.output_queue.get()
-            future = self.result.pop(query_hash, None)
-            query = self.query.pop(query_hash, None)
+            if result.status == 'finished':
+                future = self.result.pop(query_hash, None)
+                for key, value in self.restored.items():
+                    query = value.pop(query_hash, None)
+                    if query is not None:
+                        _LOG.debug("query done %s", query)
+                        break
+                with open(self.checkpoint, 'wb') as f:
+                    pickle.dump(self.restored, f)
+            else:
+                _LOG.debug("retry the future %s", result)
+                result.retry()
             return 0
 
 
 class VirtualDatasetsWithConfig():
-    def __init__(self, task_priority: int, query_unit: QueryUnit, datasets, input_region, date_range):
+    def __init__(self, task_priority: int, key, datasets, input_region, date_range):
         self.task_priority = task_priority
-        self.query_unit = query_unit
+        self.key = key
         self.datasets = datasets
         self.input_region = input_region
         self.date_range = date_range
@@ -414,6 +470,8 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
                        var_attributes=self.var_attributes)
 
     def generate_products(self, metadata_type, virtual_datasets):
+        if virtual_datasets is None:
+            return None, None
         definition = self.output_product_spec
 
         extras = dict({'epoch_start': self.stats_config['date_range'][0],
@@ -464,6 +522,9 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
 
     def load_save(self, args):
         output, results = args
+        if results is None:
+            _LOG.warning("No data to load")
+            return -1
         output_driver = self._partially_applied_output_driver()
         from distributed import secede, rejoin
         secede()
