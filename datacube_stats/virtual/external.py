@@ -61,10 +61,10 @@ class TCIndex(Transformation):
 
     def compute(self, data):
         tci_var = 0
-        for var in data.data_vars:
+        for var, key in zip(data.data_vars, self.coeffs[self.category].keys()):
             nodata = getattr(data[var], 'nodata', -1)
             data[var] = data[var].where(data[var] > nodata)
-            tci_var += data[var] * self.coeffs[self.category][var]
+            tci_var += data[var] * self.coeffs[self.category][key]
         tci_var.data[da.isnan(tci_var.data)] = -9999
         tci_var = tci_var.astype(np.float32)
         tci_var.name = self.var_name

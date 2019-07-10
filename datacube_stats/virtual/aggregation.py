@@ -57,11 +57,11 @@ class Percentile(Transformation):
             else:
                 data_type = data[var].dtype
 
-            nodata = getattr(data[var], 'nodata', None)
-            if nodata is not None:
+            nodata = getattr(data[var], 'nodata', float('nan'))
+            if not np.isnan(nodata):
                 data[var] = data[var].where(da.fabs(data[var] - nodata) > 1e-8)
             else:
-                data[var] = data[var].astype(np.float)
+                data[var].data = data[var].data.astype(np.float)
 
             valid_count = data[var].data.shape[0] - da.isnan(data[var].data).sum(axis=0)
             # differentiate "sure not" and "not sure"
@@ -75,7 +75,7 @@ class Percentile(Transformation):
                 sure_not = valid_count < self.minimum_valid_observations
 
             if nodata is None:
-                nodata = -1
+                nodata = -1 
 
             for q in self.qs:
                 result = xr.apply_ufunc(single, data[var], kwargs={'q': q, 'nodata': nodata},
@@ -130,9 +130,9 @@ class NewGeomedianStatistic(Transformation):
         dtypes = {}
         for var in data.data_vars:
             dtypes[var] = data[var].dtype
-            nodata = getattr(data[var], 'nodata', None)
-            if nodata is not None:
-                data[var] = data[var].where(data[var] > nodata)
+            nodata = getattr(data[var], 'nodata', np.float('nan'))
+            if not np.isnan(nodata):
+                data[var] = data[var].where(da.fabs(data[var] - nodata) > 1e-8)
             else:
                 data[var].data = data[var].data.astype(np.float)
         # We need to reshape our data into Time, Y, X, Band
