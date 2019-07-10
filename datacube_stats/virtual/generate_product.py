@@ -41,7 +41,7 @@ from copy import deepcopy
 
 _LOG = logging.getLogger(__name__)
 
-DEFAULT_TILE_INDEX_FILE = 'landsat_tile_list.txt'
+DEFAULT_TILE_INDEX_FILE = 'landsat_tiles.txt'
 TILE_SIZE = 60000.
 
 
@@ -169,10 +169,12 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
 
         # play nice to the database
         query_workers = min(query_workers, 10)
+        if queue_size is None:
+            queue_size = 2 * query_workers
 
         from dask.distributed import Client
         client = Client(scheduler_file=scheduler_file)
-        client.wait_for_workers(query_workers)
+        client.wait_for_workers(queue_size)
         _LOG.debug('Run on cluster with workers %s', client.ncores())
 
         i = query_workers
@@ -184,9 +186,7 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
             i -= 1
 
         _LOG.debug('Workers to perform query %s', query_worker_list)
-        if queue_size is None:
-            queue_size = 2 * query_workers
-
+        
         checkpoint_path = stats_config.get('location') + '/checkpointing'
         checkpoint_file = checkpoint_path + '/checkpointing.pkl'
         if not path.exists(checkpoint_path):

@@ -89,9 +89,8 @@ class Percentile(Transformation):
                         result.data[not_sure] = nodata
                 result.data[sure_not] = nodata
 
+                result.data = result.data.astype(data_type)
                 result.name = var + '_PC_' + str(q)
-                result.attrs['nodata'] = nodata
-                result = result.astype(data_type)
                 percentile.append(result)
 
         result = xr.merge(percentile)
@@ -135,7 +134,7 @@ class NewGeomedianStatistic(Transformation):
             if nodata is not None:
                 data[var] = data[var].where(data[var] > nodata)
             else:
-                data[var] = data[var].astype(np.float)
+                data[var].data = data[var].data.astype(np.float)
         # We need to reshape our data into Time, Y, X, Band
         squashed_together_dimensions = self._vars_to_transpose(data)
 
@@ -150,7 +149,7 @@ class NewGeomedianStatistic(Transformation):
                                 dask='parallelized', keep_attrs=True)
         squashed = result.to_dataset(dim='variable')
         for var in squashed.data_vars:
-            squashed[var] = squashed[var].astype(dtypes[var])
+            squashed[var].data = squashed[var].data.astype(dtypes[var])
             squashed[var].attrs = data[var].attrs.copy()
 
         return squashed

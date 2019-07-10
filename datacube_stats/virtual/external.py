@@ -70,6 +70,7 @@ class TCIndex(Transformation):
         tci_var.name = self.var_name
         tci_var.attrs['nodata'] = -9999
         tci_var.attrs['units'] = 1
+        tci_var.attrs['crs'] = data.attrs['crs']
         tci_var = tci_var.to_dataset()
         tci_var.attrs['crs'] = data.attrs['crs']
         return tci_var
