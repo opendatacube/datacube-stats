@@ -16,7 +16,7 @@ class MaskByValue(Transformation):
         self.smaller_than = smaller_than
         if self.greater_than is not None and self.smaller_than is not None:
             if self.greater_than > self.smaller_than:
-                raise("greater_than should smaller than smaller_than")
+                raise Exception("greater_than should smaller than smaller_than")
         self.mask_measurement_name = mask_measurement_name
 
     def compute(self, data):
@@ -35,7 +35,7 @@ class MaskByValue(Transformation):
 
     def measurements(self, input_measurements):
         if self.mask_measurement_name not in list(input_measurements.keys()):
-            raise("have to mask by the band in product")
+            raise Exception("have to mask by the band in product")
 
         return {self.mask_measurement_name: Measurement(name=self.mask_measurement_name,
                                                         dtype='bool', nodata=0, units=1)}

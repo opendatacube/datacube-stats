@@ -1,0 +1,285 @@
+date_ranges:
+  start_date: 2005-01-01
+  end_date: 2019-01-01
+  stats_duration: 1y
+  step_size: 1y
+
+input_region:
+    tiles: [[0, -16]]
+    sensor_source: landsat
+
+location: './fc_percentile/'
+#location: './FC-percentile-notsure/annual'
+
+storage:
+    driver: GeoTIFF
+
+    crs: EPSG:3577
+    tile_size:
+        x: 120000.0
+        y: 120000.0
+    resolution:
+        x: 25
+        y: -25
+    chunking:
+        x: 512
+        y: 512
+        time: 1
+    dimension_order: [time, y, x]
+
+global_attributes:
+  title: Landsat Fractional Cover Percentiles
+  description: Landsat Fractional Cover percentile 25 metre, 100km tile, Australian Albers Equal Area projection (EPSG:3577)
+  summary: >
+      The Fractional Cover (FC) algorithm was developed by the Joint Remote Sensing
+      Research Program and is described in Scarth et al. (2010). It has
+      been implemented by Geoscience Australia for every observation from Landsat
+      Thematic Mapper (Landsat 5), Enhanced Thematic Mapper (Landsat 7) and Operational
+      Land Imager (Landsat 8) acquired since 1987. It is calculated from surface
+      reflectance (SR-N_25_2.0.0).
+
+      FC provides fractional cover representation of the proportions of green or
+      photosynthetic vegetation, non-photosynthetic vegetation, and bare surface cover
+      across the Australian continent. The fractions are retrieved by inverting multiple
+      linear regression estimates and using synthetic endmembers in a constrained
+      non-negative least squares unmixing model. For further information please see
+      the articles below describing the method implemented which are free to read:
+
+      Scarth, P, Roder, A and Schmidt, M 2010,
+      'Tracking grazing pressure and climate interaction - the role of Landsat fractional cover in time series analysis',
+      Proceedings of the 15th Australasian Remote Sensing & Photogrammetry Conference
+
+      Schmidt, M, Denham, R and Scarth, P 2010,
+      'Fractional ground cover monitoring of pastures and agricultural areas in Queensland',
+      Proceedings of the 15th Australasian Remote Sensing & Photogrammetry Conference
+
+      A summary of the algorithm developed by the Joint Remote Sensing Centre is also available
+      from the AusCover website: http://www.auscover.org.au/purl/landsat-fractional-cover-jrsrp
+
+      Fractional cover data can be used to identify large scale patterns and trends and inform
+      evidence based decision making and policy on topics including wind and water erosion risk,
+      soil carbon dynamics, land management practices and rangeland condition. This information
+      could enable policy agencies, natural and agricultural land resource managers, and
+      scientists to monitor land conditions over large areas over long time frames.
+
+      Water Observations from Space (WOfS) is a gridded dataset indicating areas where surface water
+      has been observed using the Geoscience Australia (GA) Earth observation satellite data holdings.
+  institution: Commonwealth of Australia (Geoscience Australia)
+  keywords_vocabulary: GCMD
+  keywords: AU/GA,NASA/GSFC/SED/ESD/LANDSAT,REFLECTANCE,ETM+,TM,OLI,EARTH SCIENCE
+  platform: LANDSAT-5,LANDSAT-7,LANDSAT-8
+  instrument: TM,ETM+,OLI
+  publisher_email: earth.observation@ga.gov.au
+  publisher_name: Section Leader, Operations Section, NEMO, Geoscience Australia
+  publisher_url: http://www.ga.gov.au
+  license: CC BY Attribution 4.0 International License
+  cdm_data_type: Grid
+  product_version: 2
+  product_suite: Fractional Cover Stats 25m
+  source: percentiles of fractional cover unmixing model v2017_06_09
+  acknowledgment: |
+    - Landsat data is provided by the United States Geological Survey (USGS) through direct reception of the data at Geoscience Australias satellite reception facility or download.
+    - The fractional cover algorithm was developed by the Joint Remote Sensing Research Program (JRSRP) and is described in Scarth et al. (2010). While originally calibrated in Queensland, a large collaborative effort between The Department of Agriculture & ABARES and State and Territory governments to collect additional calibration data has enabled the calibration to extend to the entire Australian continent.
+    - FC_25 was made possible by new scientific and technical capabilities, the collaborative framework established by the Terrestrial Ecosystem Research Network (TERN) through the National Collaborative Research Infrastructure Strategy (NCRIS), and collaborative effort between state and Commonwealth governments.
+    - WOfS is being developed in parallel with the National Flood Studies Database system which will provide Flood Study documentation and reports to a wide range of users.
+  references: |
+    - ABARES, 2014 Australian ground cover reference sites database 2014. Australian Bureau of Agricultural and Resource Economics and Sciences, Canberra, Australia. (https://remote-sensing.nci.org.au/u39/public/html/modis/fractionalcover-sitedata-abares/index.shtml).
+    - Flood, N., 2014.Continuity of Reflectance Data between Landsat-7 ETM+ and Landsat-8 OLI, for Both Top-of-Atmosphere and Surface Reflectance: A Study in the Australian Landscape. Remote Sensing, 6, 7952-7970.
+    - Muir, J., Schmidt, M., Tindall, D., Trevithick, R., Scarth, P., Stewart, J., 2011. Guidelines for Field measurement of fractional ground cover: a technical handbook supporting the Australian collaborative land use and management program. Tech. rep., Queensland Department of Environment and Resource Management for the Australian Bureau of Agricultural and Resource Economics and Sciences, Canberra.
+    - Scarth, P., Roder, A. and Schmidt, M., 2010. Tracking grazing pressure and climate interaction - the role of Landsat fractional cover in the time series analysis, Proceedings of the 15th Australasian Remote Sensing & Photogrammetry Conference, viewed 4 January 2011, scribd.com/doc/37455672/15arspc-Submission-140.
+    - Schmidt, M., Denham, R. and Scarth, P., 2010. 'Fractional ground cover monitoring of pastures and agricultural areas in Queensland', Proceedings of the 15th Australasian Remote Sensing & Photogrammetry Conference, viewed 4 January 2011, www.scribd.com/doc/37455826/15arspc-Submission-119.
+    - N. Mueller, A. Lewis, D. Roberts, S. Ring, R. Melrose, J. Sixsmith, L. Lymburner, A. McIntyre, P. Tan, S. Curnow, A. Ip, Water observations from space: Mapping surface water from 25 years of Landsat imagery across Australia, Remote Sensing of Environment, Volume 174, 1 March 2016, Pages 341-352, ISSN 0034-4257, http://dx.doi.org/10.1016/j.rse.2015.11.003. (http://www.sciencedirect.com/science/article/pii/S0034425715301929)
+  coverage_content_type: modelResult
+
+var_attributes:
+  BS_PC_10:
+    long_name: Bare Soil 10th percentile
+    standard_name: BS_10th_percentile
+    coverage_content_type: modelResult
+
+  PV_PC_10:
+    long_name: Photosynthetic Vegetation 10th percentile
+    standard_name: PV_10th_percentile
+    coverage_content_type: modelResult
+
+  NPV_PC_10:
+    long_name: Non-photosynthetic Vegetation 10th percentile
+    standard_name: NPV_10th_percentile
+    coverage_content_type: modelResult
+
+  BS_PC_50:
+    long_name: Bare Soil 50th percentile
+    standard_name: BS_50th_percentile
+    coverage_content_type: modelResult
+
+  PV_PC_50:
+    long_name: Photosynthetic Vegetation 50th percentile
+    standard_name: PV_50th_percentile
+    coverage_content_type: modelResult
+
+  NPV_PC_50:
+    long_name: Non-photosynthetic Vegetation 50th percentile
+    standard_name: NPV_50th_percentile
+    coverage_content_type: modelResult
+
+  BS_PC_90:
+    long_name: Bare Soil 90th percentile
+    standard_name: BS_90th_percentile
+    coverage_content_type: modelResult
+
+  PV_PC_90:
+    long_name: Photosynthetic Vegetation 90th percentile
+    standard_name: PV_90th_percentile
+    coverage_content_type: modelResult
+
+  NPV_PC_90:
+    long_name: Non-photosynthetic Vegetation 90th percentile
+    standard_name: NPV_90th_percentile
+    coverage_content_type: modelResult
+
+## Computational
+# Decide based on how much can fit into memory on the node that is running the job.
+computation:
+  chunking:
+    x: 800
+    y: 800
+
+## Define statistics to perform and how to store the data
+output_products:
+  - name: fc_percentile_albers_annual
+    product_type: fractional_cover_statistical_summary
+    metadata:
+      format:
+        name: NetCDF
+      platform:
+        code: LANDSAT_5,LANDSAT_7,LANDSAT_8
+      instrument:
+        name: TM,ETM+,OLI
+    recipe:
+        aggregate: datacube_stats.aggregation.Percentile
+        q: [10, 50, 90]
+        minimum_valid_observations: 3
+        quality_band: clear_observ
+        not_sure_mark: -2
+        group_by: year
+        input:
+            juxtapose:
+              - transform: apply_mask
+                mask_measurement_name: water
+                input:
+                  juxtapose:
+                    - collate:
+                        - transform: apply_mask
+                          mask_measurement_name: pixelquality
+                          input:
+                            juxtapose:
+                              - product: ls8_fc_albers
+                                measurements: [BS, PV, NPV]
+                                source_filter:
+                                  product: ls8_level1_scene
+                                  gqa_iterative_mean_xy: [0, 1]
+                                dataset_predicate: datacube_stats.main.ls8_on
+                              - transform: make_mask
+                                input:
+                                  product: ls8_pq_albers
+                                  fuse_func: datacube.helpers.ga_pq_fuser
+                                flags:
+                                  contiguous: True
+                                  cloud_acca: no_cloud
+                                  cloud_fmask: no_cloud
+                                  cloud_shadow_acca: no_cloud_shadow
+                                  cloud_shadow_fmask: no_cloud_shadow
+                                  blue_saturated: False
+                                  green_saturated: False
+                                  red_saturated: False
+                                  nir_saturated: False
+                                  swir1_saturated: False
+                                  swir2_saturated: False
+                                mask_measurement_name: pixelquality
+                        - transform: apply_mask
+                          mask_measurement_name: pixelquality
+                          input:
+                            juxtapose:
+                              - product: ls7_fc_albers
+                                measurements: [BS, PV, NPV]
+                                source_filter:
+                                  product: ls7_level1_scene
+                                  gqa_iterative_mean_xy: [0, 1]
+                                dataset_predicate: datacube_stats.main.ls7_on
+                              - transform: make_mask
+                                input:
+                                  product: ls7_pq_albers
+                                  fuse_func: datacube.helpers.ga_pq_fuser
+                                flags:
+                                  contiguous: True
+                                  cloud_acca: no_cloud
+                                  cloud_fmask: no_cloud
+                                  cloud_shadow_acca: no_cloud_shadow
+                                  cloud_shadow_fmask: no_cloud_shadow
+                                  blue_saturated: False
+                                  green_saturated: False
+                                  red_saturated: False
+                                  nir_saturated: False
+                                  swir1_saturated: False
+                                  swir2_saturated: False
+                                mask_measurement_name: pixelquality
+                        - transform: apply_mask
+                          mask_measurement_name: pixelquality
+                          input:
+                            juxtapose:
+                              - product: ls5_fc_albers
+                                measurements: [BS, PV, NPV]
+                                source_filter:
+                                  product: ls5_level1_scene
+                                  gqa_iterative_mean_xy: [0, 1]
+                                dataset_predicate: datacube_stats.main.ls5_on
+                              - transform: make_mask
+                                input:
+                                  product: ls5_pq_albers
+                                  fuse_func: datacube.helpers.ga_pq_fuser
+                                flags:
+                                  contiguous: True
+                                  cloud_acca: no_cloud
+                                  cloud_fmask: no_cloud
+                                  cloud_shadow_acca: no_cloud_shadow
+                                  cloud_shadow_fmask: no_cloud_shadow
+                                  blue_saturated: False
+                                  green_saturated: False
+                                  red_saturated: False
+                                  nir_saturated: False
+                                  swir1_saturated: False
+                                  swir2_saturated: False
+                                mask_measurement_name: pixelquality
+                    - transform: make_mask  
+                      input:
+                        product: wofs_albers
+                        fuse_func: digitalearthau.utils.wofs_fuser
+                      flags:
+                        cloud: False
+                        cloud_shadow: False
+                        noncontiguous: False
+                        terrain_or_low_angle: False
+                        water_observed: False
+                      mask_measurement_name: water
+              - transform: formula
+                output: 
+                  clear_observ: 
+                    formula: water
+                input:
+                    transform: make_mask  
+                    input:
+                      product: wofs_albers
+                      fuse_func: digitalearthau.utils.wofs_fuser
+                    flags:
+                      cloud: False
+                      cloud_shadow: False
+                      noncontiguous: False
+                      terrain_or_low_angle: False
+                    mask_measurement_name: water
+    crs: EPSG:3577
+    output_params:
+      predictor: 2
+      resampling: nearest
+      overview_level: 5
+    #file_path_template: 'LS_FC_PC/{x}_{y}/LS_FC_PC_3577_{x}_{y}_{epoch_start:%Y%m%d}.nc'
+    file_path_template: 'LS_FC_PC/x_{x}/y_{y}/{epoch_start:%Y}/LS_FC_PC_3577_{x}_{y}_{epoch_start:%Y%m%d}_{var_name}.tif'

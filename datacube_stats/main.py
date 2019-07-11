@@ -7,6 +7,7 @@ This command is run as ``datacube-stats``, all operation are driven by a configu
 import copy
 import logging
 import sys
+import yaml
 
 from functools import partial
 from itertools import islice
@@ -14,73 +15,321 @@ from textwrap import dedent
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Iterable, Iterator, Tuple
+import os
 from os import path
 
 import click
 import numpy as np
 import pandas as pd
 import pydash
-import rasterio.features
 import xarray
 from dateutil import tz
-import datacube
-import datacube_stats
+from datacube import Datacube
 from datacube.api import GridWorkflow
 from datacube.storage.masking import make_mask
 from datacube.ui import click as ui
 from datacube.utils import read_documents, import_function
-from datacube.utils.geometry import Geometry, GeoBox
-from datacube_stats.models import OutputProduct
-from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
-    NoSuchOutputDriver
-from datacube_stats.statistics import StatsConfigurationError, STATS
-from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
-from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
-from datacube_stats.utils.dates import date_sequence
-from .utils.timer import MultiTimer, wrap_in_timer
-from .utils import sorted_interleave, Slice, prettier_slice
-from .schema import stats_schema
-from .output_drivers import OutputDriver
+from .utils.dates import date_sequence
+from datacube.virtual import construct
+import json
+import hashlib
+from shapely.geometry import Polygon, mapping
+from datacube.utils.geometry import CRS, Geometry
+import pickle
+from queue import Queue
+from copy import deepcopy
 
-__all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
 
-
-def _default_config(ctx, param, value):
-    if path.exists(value):
-        return value
-
-    ctx.fail('STATS_CONFIG_FILE not provided.')
+DEFAULT_TILE_INDEX_FILE = 'landsat_tiles.txt'
+TILE_SIZE = 60000.
 
 
-def _print_version(ctx, param, value):
-    if not value or ctx.resilient_parsing:
-        return
+def generate_task_queue(product_name, input_region, date_range):
+    if 'tiles' not in input_region:
+        _LOG.debug('tiles only')
+    sensor_source = input_region.get('sensor_source')
+    if sensor_source == 'sentile2':
+        stride = 1
+    elif sensor_source == 'landsat':
+        stride = 2
+    else:
+        _LOG.error('Dont understand the sensor source %s', sensor_source)
 
-    click.echo(
-        '{prog}, version {version}'.format(
-            prog='Data Cube',
-            version=datacube.__version__
-        )
-    )
+    task_queue = {}
+    for date in date_range:
+        for tile in input_region['tiles']:
+            _LOG.debug("query tile date %s", (tile, date))
+            tile_geojson = convert_tile_to_geojson(tile, stride, TILE_SIZE)
+            query_unit = QueryUnit(product_name, date, tile_geojson)
+            query_string = {}
+            query_string['geopolygon'] = tile_geojson
+            query_string['time'] = date
+            # query by tile index implies crs
+            query_string['crs'] = 'EPSG:3577'
+            task_queue[query_unit.hash()] = {'query_string': query_string, 'tile': tile}
+    return task_queue
 
-    click.echo(
-        '{prog}, version {version}'.format(
-            prog='Data Cube Statistics',
-            version=datacube_stats.__version__
-        )
-    )
-    ctx.exit()
+
+def local_task_generator(client, query_workers, datacube_config, stats_config, tasks):
+    for product in stats_config['output_products']:
+        product_name = product['name']
+        recipe = dict(product['recipe'])
+        virtual_product = construct(**recipe)
+        virtual_datasets_with_config = generate_virtual_datasets(client, query_workers, datacube_config,
+                                                                 virtual_product, tasks[product_name])
+        yield ProductWithDef(product, virtual_product, virtual_datasets_with_config)
 
 
-def list_statistics(ctx, param, value):
-    if not value or ctx.resilient_parsing:
-        return
+def generate_virtual_datasets(client, query_workers, datacube_config, virtual_product, tasks):
+    def query_group(datacube_config, kwargs):
+        dc = Datacube(config=datacube_config)
+        kwargs['geopolygon'] = Geometry(kwargs['geopolygon'], CRS(kwargs['crs']))
+        kwargs.pop('crs', None)
+        try:
+            datasets = virtual_product.query(dc, **kwargs)
+            grouped = virtual_product.group(datasets, **kwargs)
+        except Exception as e:
+            _LOG.warning('something weird happend %s', e)
+            return None
+        else:
+            return grouped
 
-    for name, stat in STATS.items():
-        click.echo(name)
+    task_priority = 0
+    for key, value in tasks.items():
+        query_string = value.get('query_string')
+        tile = value.get('tile')
+        _LOG.debug("query tile date %s", query_string)
+        grouped = client.submit(query_group, datacube_config, query_string,
+                                key='query-'+key,
+                                priority=task_priority, workers=query_workers)
+        task_priority -= 1
+        yield VirtualDatasetsWithConfig(task_priority, key, grouped, tile, query_string['time'])
 
-    ctx.exit()
+
+TASK_GENERATOR_REG = {
+        'IDNO': local_task_generator
+        }
+
+
+def ls8_on(dataset):
+    LS8_START_DATE = datetime(2013, 1, 1)
+    return dataset.center_time >= LS8_START_DATE
+
+
+def ls7_on(dataset):
+    LS7_STOP_DATE = datetime(2003, 5, 31)
+    LS7_STOP_AGAIN = datetime(2013, 5, 31)
+    LS7_START_AGAIN = datetime(2010, 1, 1)
+    return dataset.center_time <= LS7_STOP_DATE or (dataset.center_time >= LS7_START_AGAIN
+                                                    and dataset.center_time <= LS7_STOP_AGAIN)
+
+
+def ls5_on(dataset):
+    LS5_START_AGAIN = datetime(2003, 1, 1)
+    LS5_STOP_DATE = datetime(1998, 12, 31)
+    LS5_STOP_AGAIN = datetime(2011, 12, 31)
+    return dataset.center_time <= LS5_STOP_DATE or (dataset.center_time >= LS5_START_AGAIN
+                                                    and dataset.center_time <= LS5_STOP_AGAIN)
+
+
+# pylint: disable=broad-except
+# pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+@click.command(name='generate-product')
+@click.argument('stats_config_file', type=str, default='config.yaml', metavar='STATS_CONFIG_FILE')
+@click.option('--task-generator',  type=str, help='Select a task generator or...not', default='IDNO')
+@click.option('--scheduler-file',  type=str, help='The Json file of the scheduler default=./scheduler.json',
+              default='./scheduler.json')
+@click.option('--query-workers',  type=int, help='How many workers to perform query default=2', default=2)
+@click.option('--queue-size',  type=int, help='The queue size to apply backpressure on finishing tasks '
+                                              'defualt=2*query-workers')
+@click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
+                                                      'single tile_index specified as [X] [Y]')
+@click.option('--tile-index-file',
+              type=click.Path(exists=True, readable=True, dir_okay=False),
+              help="A file consisting of tile indexes specified as [X] [Y] per line")
+@click.option('--output-location', help='Override output location in configuration file')
+@click.option('--year', type=int, help='Override time period in configuration file')
+@ui.global_cli_options
+@ui.pass_config
+def main(datacube_config, stats_config_file, task_generator, scheduler_file, query_workers, queue_size,
+         tile_index, tile_index_file, output_location, year):
+
+    try:
+        stats_config = normalize_config(read_config(stats_config_file), output_location)
+        stats_config = normalize_time_range(stats_config, year)
+        stats_config = normalize_space_range(stats_config, tile_index, tile_index_file)
+        task_generator = TASK_GENERATOR_REG.get(task_generator)
+
+        output_config = stats_config.copy()
+        output_config.pop('output_products', None)
+        output_config.pop('input_region', None)
+        output_config.pop('date_ranges', None)
+
+        # play nice to the database
+        query_workers = min(query_workers, 10)
+        if queue_size is None:
+            queue_size = 2 * query_workers
+
+        from dask.distributed import Client
+        client = Client(scheduler_file=scheduler_file)
+        client.wait_for_workers(queue_size)
+        _LOG.debug('Run on cluster with workers %s', client.ncores())
+
+        i = query_workers
+        query_worker_list = []
+        for worker in client.scheduler_info()['workers'].keys():
+            if i <= 0:
+                break
+            query_worker_list.append(worker)
+            i -= 1
+
+        _LOG.debug('Workers to perform query %s', query_worker_list)
+
+        checkpoint_path = stats_config.get('location') + '/checkpointing'
+        checkpoint_file = checkpoint_path + '/checkpointing.pkl'
+        if not path.exists(checkpoint_path):
+            os.mkdir(checkpoint_path)
+            restart = False
+        elif not path.exists(checkpoint_file):
+            restart = False
+        else:
+            restart = True
+        compute_checking = ComputeCheck(queue_size=queue_size, restart=restart, checkpoint=checkpoint_file)
+
+        if compute_checking.restored != {}:
+            tasks = deepcopy(compute_checking.restored)
+        else:
+            input_region = stats_config['input_region']
+            date_range = stats_config['date_ranges']
+            tasks = {}
+            product_name = ''
+            for product in stats_config['output_products']:
+                if product_name == product['name']:
+                    _LOG.error("More than one product with the same name %s", product_name)
+                product_name = product['name']
+                tasks[product_name] = generate_task_queue(product_name, input_region, date_range)
+            compute_checking.restored = deepcopy(tasks)
+
+        products = task_generator(client, query_worker_list, datacube_config, stats_config, tasks)
+        for product in products:
+            metadata_type = retrieve_metadata_type(datacube_config)
+            _LOG.debug("metadata type %s", metadata_type)
+            output_config['output_product'] = product.product_definition
+            for virtual_datasets_with_config in product.datasets:
+                output_config['input_region'] = virtual_datasets_with_config.input_region
+                output_config['date_range'] = virtual_datasets_with_config.date_range
+                app = StatsApp(output_config, product.product)
+                compute_checking.inc()
+                datasets = virtual_datasets_with_config.datasets
+                _LOG.debug("output product %s", datasets)
+                output = client.submit(app.generate_products, metadata_type, datasets,
+                                       priority=virtual_datasets_with_config.task_priority,
+                                       key='output-' + virtual_datasets_with_config.key,
+                                       workers=query_worker_list)
+
+                future = client.submit(app.load_save, output,
+                                       priority=virtual_datasets_with_config.task_priority,
+                                       key='save-' + virtual_datasets_with_config.key,
+                                       workers=query_worker_list)
+
+                future.add_done_callback(compute_checking.future_done)
+                compute_checking.set(virtual_datasets_with_config.key, future)
+                _LOG.debug("submit compute future %s", future)
+        _LOG.debug("waiting for the result %s", compute_checking.result)
+        client.gather(list(compute_checking.result.values()))
+        _LOG.debug("computation to be done %s", compute_checking.restored)
+        os.remove(compute_checking.checkpoint)
+
+        def shutdown(dask_scheduler=None):
+            from dask.distributed import utils
+            dask_scheduler.finished()
+            with utils.ignoring(RuntimeError):
+                dask_scheduler.close(close_workers=True)
+
+        client.run_on_scheduler(shutdown)
+
+    except Exception as e:
+        _LOG.error(e)
+        sys.exit(1)
+
+    return 0
+
+
+def read_config(config_file):
+    _, stats_config = next(read_documents(config_file))
+    return stats_config
+
+
+def normalize_time_range(stats_config, year=None):
+
+    if 'date_ranges' not in stats_config:
+        stats_config['date_ranges'] = {}
+        stats_config['date_ranges']['start_date'] = '1987-01-01'
+        stats_config['date_ranges']['end_date'] = datetime.now().date()
+
+    # if year is not none
+    # then override the date_range
+    # deal with the inconsistancy between date_sequence not inluding the end_date
+    # and the datacube query including the end_date
+    if year is not None:
+        start_date = '{}-01-01'.format(year)
+        end_date = '{}-01-01'.format(year+1)
+        stats_config['date_ranges'] = date_sequence(start=pd.to_datetime(start_date),
+                                                    end=pd.to_datetime(end_date),
+                                                    stats_duration='1y',
+                                                    step_size='1y')
+        return stats_config
+
+    if 'stats_duration' in stats_config['date_ranges'] and 'step_size' in stats_config['date_ranges']:
+        stats_config['date_ranges'] = date_sequence(start=pd.to_datetime(stats_config['date_ranges']['start_date']),
+                                                    end=pd.to_datetime(stats_config['date_ranges']['end_date']),
+                                                    stats_duration=stats_config['date_ranges']['stats_duration'],
+                                                    step_size=stats_config['date_ranges']['step_size'])
+    else:
+        stats_config['date_ranges'] = [(pd.to_datetime(stats_config['date_ranges']['start_date']),
+                                        pd.to_datetime(stats_config['date_ranges']['end_date']))]
+    return stats_config
+
+
+def normalize_space_range(stats_config, tile_index=None, tile_index_file=None):
+    if tile_index is not None and len(tile_index) == 0:
+        tile_index = None
+
+    # if tile indices or indices file is not none
+    # then override the input_region
+    tile_indexes = gather_tile_indexes(tile_index, tile_index_file)
+    input_region = stats_config.get('input_region')
+    if input_region is None:
+        input_region = {}
+        if tile_indexes is None:
+            tile_index_file = DEFAULT_TILE_INDEX_FILE
+            tile_indexes = gather_tile_indexes(tile_index_file=tile_index_file)
+        input_region['tiles'] = tile_indexes
+    elif tile_indexes is not None:
+        input_region['tiles'] = tile_indexes
+
+    if tile_index_file is not None:
+        if 'sentinel2' in tile_index_file:
+            input_region['sensor_source'] = 'sentinel2'
+        elif 'landsat' in tile_index_file:
+            input_region['sensor_source'] = 'landsat'
+    elif input_region.get('sensor_source') is None:
+            _LOG.error('Need sensor source to calculate the coordinates for tile %s:'
+                       'sentinel2 or landsat', tile_indexes)
+
+    stats_config['input_region'] = input_region
+    return stats_config
+
+
+def normalize_config(stats_config, output_location):
+    # Write files to current directory if not set in stats_config or command line
+    stats_config['location'] = output_location or stats_config.get('location', '')
+    stats_config['computation'] = stats_config.get('computation', {})
+    stats_config['global_attributes'] = stats_config.get('global_attributes', {})
+    stats_config['var_attributes'] = stats_config.get('var_attributes', {})
+    return stats_config
 
 
 def gather_tile_indexes(tile_index, tile_index_file):
@@ -97,101 +346,84 @@ def gather_tile_indexes(tile_index, tile_index_file):
         tile_indexes = [tuple(int(x) for x in l.split()) for l in fl]
         if len(tile_indexes) == 0:
             return None
-        return tile_indexes
+    return tile_indexes
 
 
-# pylint: disable=broad-except
-# pylint: disable=too-many-locals
-# pylint: disable=too-many-arguments
-@click.command(name='datacube-stats')
-@click.argument('stats_config_file', type=str, callback=_default_config, default='config.yaml',
-                metavar='STATS_CONFIG_FILE')
-@click.option('--tile-index', nargs=2, type=int, help='Override input_region specified in configuration with a '
-                                                      'single tile_index specified as [X] [Y]')
-@click.option('--tile-index-file',
-              type=click.Path(exists=True, readable=True, dir_okay=False),
-              help="A file consisting of tile indexes specified as [X] [Y] per line")
-@click.option('--output-location', help='Override output location in configuration file')
-@click.option('--year', type=int, help='Override time period in configuration file')
-@click.option('--list-statistics', is_flag=True, callback=list_statistics, expose_value=False)
-@ui.global_cli_options
-@click.option('--version', is_flag=True, callback=_print_version,
-              expose_value=False, is_eager=True)
-@ui.pass_index(app_name='datacube-stats')
-def main(index, stats_config_file, runner, save_tasks, load_tasks,
-         tile_index, tile_index_file, output_location, year, task_slice, batch):
-
-    try:
-        _log_setup()
-
-        timer = MultiTimer().start('main')
-
-        config = normalize_config(read_config(stats_config_file),
-                                  tile_index, tile_index_file, year, output_location)
-
-        app = StatsApp(config, index)
-        app.log_config()
-        successful, failed = app.run_tasks(tasks, runner, task_slice)
-
-        timer.pause('main')
-        _LOG.info('Stats processing completed in %s seconds.', timer.run_times['main'])
-
-        if failed > 0:
-            raise click.ClickException('%s of %s tasks not completed successfully.' % (failed, successful + failed))
-
-    except Exception as e:
-        _LOG.error(e)
-        sys.exit(1)
-
-    return 0
+def convert_tile_to_geojson(tile_index, stride=1, tile_size=60000.):
+    return mapping(Polygon([(tile_index[0]*tile_size, tile_index[1]*tile_size),
+                            ((tile_index[0]+stride)*tile_size, tile_index[1]*tile_size),
+                            ((tile_index[0]+stride)*tile_size, (tile_index[1]-stride)*tile_size),
+                            (tile_index[0]*tile_size, (tile_index[1]-stride)*tile_size)]))
 
 
-def _log_setup():
-    _LOG.debug('Loaded datacube_stats %s from %s.', datacube_stats.__version__, datacube_stats.__path__)
-    _LOG.debug('Running against datacube-core %s from %s', datacube.__version__, datacube.__path__)
+class QueryUnit():
+    def __init__(self, product: str, time: tuple, space: dict):
+        if not isinstance(space, dict):
+            raise ValueError("space has to be a geojson")
+        if not isinstance(time, tuple):
+            raise ValueError("time has to be a tuple of (datetime.datetime, datetime.datetime)")
+        self.time = time
+        self.space = space
+        self.product = product
+
+    def hash(self):
+        hashable = {'time:': {'start': str(self.time[0]), 'end': str(self.time[1])}, 'product': self.product}
+        hashable.update(self.space)
+        return hashlib.md5(json.dumps(hashable, sort_keys=True).encode('utf-8')).hexdigest()
 
 
-def read_config(stats_config_file):
-    _, config = next(read_documents(stats_config_file))
-    stats_schema(config)
-    return config
+class ComputeCheck():
+    def __init__(self, queue_size=2, restart=False, checkpoint=None):
+        self.checkpoint = checkpoint
+        if restart:
+            # read in the pickle file of parameters
+            with open(checkpoint, 'rb') as f:
+                self.restored = pickle.load(f)
+        else:
+            self.restored = {}
+        self.result = {}
+        self.output_queue = Queue(maxsize=queue_size)
+
+    def inc(self):
+        self.output_queue.put(1)
+
+    def set(self, key, result):
+        self.result.update({key: result})
+
+    def future_done(self, result):
+        if result.done():
+            query_hash = result.key.split('-')[1]
+            _LOG.debug("future status %s", result.status)
+            self.output_queue.get()
+            if result.status == 'finished':
+                future = self.result.pop(query_hash, None)
+                for key, value in self.restored.items():
+                    query = value.pop(query_hash, None)
+                    if query is not None:
+                        _LOG.debug("query done %s", query)
+                        break
+                with open(self.checkpoint, 'wb') as f:
+                    pickle.dump(self.restored, f)
+            else:
+                _LOG.debug("retry the future %s", result)
+                result.retry()
+            return 0
 
 
-def normalize_config(config, tile_index=None, tile_index_file=None,
-                     year=None, output_location=None):
-    if tile_index is not None and len(tile_index) == 0:
-        tile_index = None
+class VirtualDatasetsWithConfig():
+    def __init__(self, task_priority: int, key, datasets, input_region, date_range):
+        self.task_priority = task_priority
+        self.key = key
+        self.datasets = datasets
+        self.input_region = input_region
+        self.date_range = date_range
 
-    tile_indexes = gather_tile_indexes(tile_index, tile_index_file)
 
-    input_region = config.get('input_region')
-    if tile_indexes is not None:
-        if input_region is None:
-            input_region = {'tiles': tile_indexes}
-        elif 'geometry' in input_region:
-            input_region.update({'tiles': tile_indexes})
-        elif 'from_file' not in input_region:
-            input_region = {'tiles': tile_indexes}
-
-    config['input_region'] = input_region
-
-    if year is not None:
-        if 'date_ranges' not in config:
-            config['date_ranges'] = {}
-
-        config['date_ranges']['start_date'] = '{}-01-01'.format(year)
-        config['date_ranges']['end_date'] = '{}-01-01'.format(year + 1)
-
-    # Write files to current directory if not set in config or command line
-    config['location'] = output_location or config.get('location', '')
-
-    config['computation'] = config.get('computation', {})
-    config['filter_product'] = config.get('filter_product', {})
-
-    config['global_attributes'] = config.get('global_attributes', {})
-    config['var_attributes'] = config.get('var_attributes', {})
-
-    return config
+class ProductWithDef():
+    def __init__(self, product_def: dict, virtual_product, virtual_datasets: VirtualDatasetsWithConfig):
+        self.product_definition = product_def
+        self.product = virtual_product
+        self.datasets = virtual_datasets
 
 
 class StatsApp:  # pylint: disable=too-many-instance-attributes
@@ -199,85 +431,36 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
     A StatsApp can produce a set of time based statistical products.
     """
 
-    def __init__(self, config, index=None):
+    def __init__(self, stats_config, virtual_product):
         """
+
         Create a StatsApp to run a processing job, based on a configuration dict.
         """
-        config = normalize_config(config)
-
         #: Dictionary containing the configuration
-        self.config_file = config
+        self.stats_config = stats_config
 
         #: Description of output file format
-        self.storage = config['storage']
-
-        #: Definition of source products, including their name, which variables to pull from them, and
-        #: a specification of any masking that should be applied.
-        self.sources = config['sources']
+        self.storage = stats_config['storage']
 
         #: List of filenames and statistical methods used, describing what the outputs of the run will be.
-        self.output_product_specs = config['output_products']
+        self.output_product_spec = stats_config['output_product']
 
         #: Base directory to write output files to.
         #: Files may be created in a sub-directory, depending on the configuration of the
         #: :attr:`output_driver`.
-        self.location = config['location']
-
-        #: How to slice a task up spatially to to fit into memory.
-        self.computation = config['computation']
-
-        #: Define filter product to accept all derive product attributes
-        self.filter_product = config['filter_product']
-
-        #: An iterable of date ranges.
-        self.date_ranges = _configure_date_ranges(config, index=index)
+        self.location = stats_config['location']
 
         #: A class which knows how to create and write out data to a permanent storage format.
         #: Implements :class:`.output_drivers.OutputDriver`.
         self.output_driver = _prepare_output_driver(self.storage)
 
-        self.global_attributes = config['global_attributes']
-        self.var_attributes = config['var_attributes']
+        self.global_attributes = stats_config['global_attributes']
+        self.var_attributes = stats_config['var_attributes']
 
-        self.validate()
-
-    def validate(self):
-        """Check StatsApp is correctly configured and raise an error if errors are found."""
-        self._ensure_unique_output_product_names()
-        self._check_consistent_measurements()
-
-        assert callable(self.output_driver)
-        assert hasattr(self.output_driver, 'open_output_files')
-        assert hasattr(self.output_driver, 'write_data')
-
-        _LOG.debug('config file is valid.')
-
-    def _check_consistent_measurements(self):
-        """Part of configuration validation"""
-        try:
-            first_source = self.sources[0]
-        except IndexError:
-            raise StatsConfigurationError('No data sources specified.')
-        if not all(first_source.get('measurements') == source.get('measurements') for source in self.sources):
-            raise StatsConfigurationError("Configuration Error: listed measurements of source products "
-                                          "are not all the same.")
-
-    def _ensure_unique_output_product_names(self):
-        """Part of configuration validation"""
-        output_names = [prod['name'] for prod in self.output_product_specs]
-        duplicate_names = [x for x in output_names if output_names.count(x) > 1]
-        if duplicate_names:
-            raise StatsConfigurationError('Output products must all have different names. '
-                                          'Duplicates found: %s' % duplicate_names)
-
-    def log_config(self):
-        config = self.config_file
-        _LOG.info('statistic: \'%s\' location: \'%s\'',
-                  config['output_products'][0]['statistic'],
-                  config['location'])
+        self.virtual_product = virtual_product
 
     def _partially_applied_output_driver(self):
-        app_info = _get_app_metadata(self.config_file)
+        app_info = _get_app_metadata(self.stats_config)
 
         return partial(self.output_driver,
                        output_path=self.location,
@@ -286,169 +469,110 @@ class StatsApp:  # pylint: disable=too-many-instance-attributes
                        global_attributes=self.global_attributes,
                        var_attributes=self.var_attributes)
 
-    def execute_task(self, task):
-        """
-        Execute an individual task locally.
-        Intended to be used interactively rather than on a cluster.
-        """
-        execute_task(task,
-                     output_driver=self._partially_applied_output_driver(),
-                     chunking=self.computation.get('chunking', {}))
+    def generate_products(self, metadata_type, virtual_datasets):
+        if virtual_datasets is None:
+            return None, None
+        definition = self.output_product_spec
 
-        _LOG.debug('task %s finished', task)
+        extras = dict({'epoch_start': self.stats_config['date_range'][0],
+                       'epoch_end': self.stats_config['date_range'][1],
+                       'x': self.stats_config['input_region'][0],
+                       'y': self.stats_config['input_region'][1]})
 
-    def run_tasks(self, tasks, runner=None, task_slice=None):
-        from digitalearthau.qsub import TaskRunner
-        from digitalearthau.runners.model import TaskDescription, DefaultJobParameters
+        if 'metadata' not in definition:
+            definition['metadata'] = {}
+        if 'format' not in definition['metadata']:
+            definition['metadata']['format'] = {'name': self.output_driver.format_name()}
 
-        if task_slice is not None:
-            tasks = islice(tasks, task_slice.start, task_slice.stop, task_slice.step)
+        from .models import OutputProduct
+        output = OutputProduct.from_json_definition(metadata_type=metadata_type,
+                                                    virtual_datasets=virtual_datasets,
+                                                    virtual_product=self.virtual_product,
+                                                    storage=self.storage,
+                                                    definition=definition,
+                                                    extras=extras)
+        if self.stats_config.get('computation') is not None:
+            dask_chunks = self.stats_config['computation'].get('chunking')
+        results = output.compute(output.datasets, dask_chunks=dask_chunks)
+        return output, results
 
+    def load(self, args):
+        output, results = args
+        from distributed import secede, rejoin
+        secede()
+        try:
+            return output, results.load()
+        except Exception as e:
+            _LOG.error("some dask error I dont know %s", e)
+        return output, None
+
+    def save(self, args):
+        output, results = args
+        if results is None:
+            _LOG.error("fail in loading data")
+            return -1
         output_driver = self._partially_applied_output_driver()
-        task_runner = partial(execute_task,
-                              output_driver=output_driver,
-                              chunking=self.computation.get('chunking', {}))
+        try:
+            with output_driver(output_product=output) as output_file:
+                    output_file.write_data(results)
+        except Exception as e:
+            _LOG.warning("Check this %s", e)
+            return -1
+        return 0
 
-        # does not need to be thorough for now
-        task_desc = TaskDescription(type_='datacube_stats',
-                                    task_dt=datetime.utcnow().replace(tzinfo=tz.tzutc()),
-                                    events_path=Path(self.location) / 'events',
-                                    logs_path=Path(self.location) / 'logs',
-                                    jobs_path=Path(self.location) / 'jobs',
-                                    parameters=DefaultJobParameters(query={},
-                                                                    source_products=[],
-                                                                    output_products=[]))
-
-        task_desc.logs_path.mkdir(parents=True, exist_ok=True)
-        task_desc.events_path.mkdir(parents=True, exist_ok=True)
-        task_desc.jobs_path.mkdir(parents=True, exist_ok=True)
-
-        if runner is None:
-            runner = TaskRunner()
-
-        result = runner(task_desc, tasks, task_runner)
-
-        _LOG.debug('Stopping runner.')
-        runner.stop()
-        _LOG.debug('Runner stopped.')
-
-        return result
-
-    def configure_outputs(self, index, metadata_type='eo') -> Dict[str, OutputProduct]:
-        """
-        Return dict mapping Output Product Name<->Output Product
-
-        StatProduct describes the structure and how to compute the output product.
-        """
-        _LOG.debug('Creating output products')
-
-        output_products = {}
-
-        measurements = _source_measurement_defs(index, self.sources)
-
-        metadata_type = index.metadata_types.get_by_name(metadata_type)
-
-        stats_metadata = _get_stats_metadata(self.config_file)
-
-        for output_spec in self.output_product_specs:
-            definition = dict(output_spec)
-            if 'metadata' not in definition:
-                definition['metadata'] = {}
-                if 'format' not in definition['metadata']:
-                    definition['metadata']['format'] = {'name': self.output_driver.format_name()}
-
-            output_products[output_spec['name']] = OutputProduct.from_json_definition(
-                metadata_type=metadata_type,
-                input_measurements=measurements,
-                storage=self.storage,
-                definition=definition,
-                stats_metadata=stats_metadata)
-
-        # TODO: Write the output product to disk somewhere
-
-        return output_products
+    def load_save(self, args):
+        output, results = args
+        if results is None:
+            _LOG.warning("No data to load")
+            return -1
+        output_driver = self._partially_applied_output_driver()
+        from distributed import secede, rejoin
+        secede()
+        results.load()
+        rejoin()
+        try:
+            with output_driver(output_product=output) as output_file:
+                output_file.write_data(results)
+        except Exception as e:
+            _LOG.warning("Check this %s", e)
+            return -1
+        return 0
 
     def __str__(self):
-        return "StatsApp: sources=({}), output_driver={}, output_products=({})".format(
-            ', '.join(source['product'] for source in self.sources),
+        return "StatsApp:  output_driver={}, output_products=({})".format(
             self.output_driver,
-            ', '.join(out_spec['name'] for out_spec in self.output_product_specs)
+            self.output_product_spec
         )
 
     def __repr__(self):
         return str(self)
 
 
-class StatsProcessingException(Exception):
-    pass
-
-
-class EmptyChunkException(Exception):
-    pass
-
-
-def _remove_emptys(datasets):
-    return [dataset
-            for dataset in datasets
-            if dataset is not None]
-
-
-def _source_measurement_defs(index, sources):
+def retrieve_metadata_type(datacube_config, metadata_type='eo'):
     """
-
-    Look up desired measurements from sources in the database index. Note that
-    multiple sources are meant to be of the same shape, we only support
-    combining equivalent products from different sensors.
-
-    :return: list of measurement definitions
+    return metadata_type with the input string
     """
-    # Check all source measurements are equal
-    first_source = sources[0]
-
-    # Ensure specified sources match
-    for other_source in sources[1:]:
-        if other_source.get('measurements') != first_source.get('measurements'):
-            raise StatsConfigurationError('Measurements in configured sources do not match. To combine sources'
-                                          'they must all be identical. %s measurements are %s while %s measurements '
-                                          'are %s' % (first_source['product'], first_source['measurements'],
-                                                      other_source['product'], other_source['measurements']))
-
-    # TODO: should probably check that all products exist and are of compatible shape
-
-    available_measurements = index.products.get_by_name(first_source['product']).measurements
-    requested_measurements = first_source.get('measurements', available_measurements.keys())
-
-    try:
-        return [available_measurements[name] for name in requested_measurements]
-    except KeyError:
-        raise StatsConfigurationError('Some of the requested measurements were not present in the product definition')
+    dc = Datacube(config=datacube_config)
+    return dc.index.metadata_types.get_by_name(metadata_type)
 
 
 def _get_app_metadata(config_file):
-    config = copy.deepcopy(config_file)
-    if 'global_attributes' in config:
-        del config['global_attributes']
+    stats_config = copy.deepcopy(config_file)
+    if 'global_attributes' in stats_config:
+        del stats_config['global_attributes']
     return {
         'lineage': {
             'algorithm': {
-                'name': 'datacube-stats',
-                'version': datacube_stats.__version__,
-                'repo_url': 'https://github.com/GeoscienceAustralia/datacube-stats.git',
+                'name': 'virtual-product',
                 'parameters': {'configuration_file': config_file}
             },
         }
     }
 
 
-def _get_stats_metadata(cfg):
-    """ Build metadata.stats subtree for the product definition
-    """
-    period = pydash.get(cfg, 'date_ranges.stats_duration', '*')
-    step = pydash.get(cfg, 'date_ranges.step_size', '*')
-    return dict(period=period, step=step)
-
-
 def _prepare_output_driver(storage):
+    from .output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
+                                NoSuchOutputDriver
     try:
         return get_driver_by_name(storage['driver'])
     except NoSuchOutputDriver:
@@ -458,54 +582,6 @@ def _prepare_output_driver(storage):
             msg = 'No output driver specified.'
         raise StatsConfigurationError('{} Specify one of {} in storage->driver in the '
                                       'configuration file.'.format(msg, list(OUTPUT_DRIVERS.keys())))
-
-
-def _configure_date_ranges(config, index=None):
-    if 'date_ranges' not in config:
-        raise StatsConfigurationError(dedent("""\
-        No Date Range specification was found in the stats configuration file, please add a section similar to:
-
-        date_ranges:
-          start_date: 2010-01-01
-          end_date: 2011-01-01
-          stats_duration: 3m
-          step_size: 3m
-
-        This will produce 4 x quarterly statistics from the year 2010.
-        """))
-    date_ranges = config['date_ranges']
-    if 'start_date' not in date_ranges or 'end_date' not in date_ranges:
-        raise StatsConfigurationError("Must specified both `start_date` and `end_date`"
-                                      " in `date_ranges:` section of configuration")
-
-    if 'stats_duration' not in date_ranges and 'step_size' not in date_ranges:
-        start = pd.to_datetime(date_ranges['start_date'])
-        end = pd.to_datetime(date_ranges['end_date'])
-        output = [(start, end)]
-
-    elif date_ranges.get('type', 'simple') == 'simple':
-        output = list(date_sequence(start=pd.to_datetime(date_ranges['start_date']),
-                                    end=pd.to_datetime(date_ranges['end_date']),
-                                    stats_duration=date_ranges['stats_duration'],
-                                    step_size=date_ranges['step_size']))
-
-    elif date_ranges.get('type') == 'find_daily_data':
-        if index is None:
-            raise ValueError('find_daily_data needs a datacube index to be passed')
-
-        sources = config['sources']
-        product_names = [source['product'] for source in sources]
-        output = list(_find_periods_with_data(index, product_names=product_names,
-                                              start_date=date_ranges['start_date'],
-                                              end_date=date_ranges['end_date']))
-    else:
-        raise StatsConfigurationError('Unknown date_ranges specification. Should be type=simple or '
-                                      'type=find_daily_data')
-    _LOG.debug("Selecting data for date ranges: %s", output)
-
-    if not output:
-        raise StatsConfigurationError('Time period configuration results in 0 periods of interest.')
-    return output
 
 
 if __name__ == '__main__':

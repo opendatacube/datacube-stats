@@ -5,7 +5,7 @@ import dask.array as da
 
 from collections import Sequence
 from datacube.virtual.impl import Transformation, Measurement
-from datacube_stats.stat_funcs import argpercentile,  axisindex
+from .stat_funcs import argpercentile,  axisindex
 from pcm import gmpcm
 
 
@@ -75,7 +75,7 @@ class Percentile(Transformation):
                 sure_not = valid_count < self.minimum_valid_observations
 
             if nodata is None:
-                nodata = -1 
+                nodata = -1
 
             for q in self.qs:
                 result = xr.apply_ufunc(single, data[var], kwargs={'q': q, 'nodata': nodata},

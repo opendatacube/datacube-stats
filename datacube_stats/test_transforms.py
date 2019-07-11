@@ -3,8 +3,8 @@ import pytest
 import xarray as xr
 import dask.array as da
 from datetime import datetime, timedelta
-from datacube_stats.virtual.aggregation import Percentile, NewGeomedianStatistic
-from datacube_stats.virtual.external import MangroveCC, TCIndex, MaskByValue
+from .aggregation import Percentile, NewGeomedianStatistic
+from .external import MangroveCC, TCIndex, MaskByValue
 
 x_range = (-33000, -23000)
 y_range = (-1310000, -1300000)
