@@ -68,9 +68,7 @@ class TCIndex(Transformation):
         tci_var.data[da.isnan(tci_var.data)] = -9999
         tci_var = tci_var.astype(np.float32)
         tci_var.name = self.var_name
-        tci_var.attrs['nodata'] = -9999
-        tci_var.attrs['units'] = 1
-        tci_var.attrs['crs'] = data.attrs['crs']
+        tci_var.attrs = dict(nodata=-9999, units=1, crs=data.attrs['crs'])
         tci_var = tci_var.to_dataset()
         tci_var.attrs['crs'] = data.attrs['crs']
         return tci_var
@@ -103,8 +101,7 @@ class MangroveCC(Transformation):
         cover_extent.data[rast_data.data <= self.thresholds[0]] = -1
         cover_extent.data[rast_data.data > self.thresholds[0]] = 1
         cover_extent.data[da.logical_and(rast_data.data > -9999, data[var_name].data == -2)] = 0
-        cover_extent.attrs['nodata'] = -1
-        cover_extent.attrs['units'] = 1
+        cover_extent.attrs = dict(nodata=-1, units=1, crs=data.attrs['crs'])
 
         cover_type = rast_data.astype(np.int16).copy(True)
         cover_type.data[rast_data.data <= self.thresholds[0]] = -1
@@ -113,8 +110,7 @@ class MangroveCC(Transformation):
             cover_type.data[rast_data.data > s_t] = level_threshold
             level_threshold += 1
         cover_type.data[da.logical_and(rast_data.data > -9999, data[var_name].data == -2)] = 0
-        cover_type.attrs['nodata'] = -1
-        cover_type.attrs['units'] = 1
+        cover_type.attrs = dict(nodata=-1, units=1, crs=data.attrs['crs'])
 
         outputs = {}
         outputs[self.bands[0]] = cover_extent

@@ -124,7 +124,7 @@ class NewGeomedianStatistic(Transformation):
 
     def compute(self, data):
         """
-        :param xarray.Dataset data:
+        param xarray.Dataset data:
         :return: xarray.Dataset
         """
         dtypes = {}
@@ -183,3 +183,51 @@ class NewGeomedianStatistic(Transformation):
 
     def measurements(self, input_measurements):
         return input_measurements
+
+
+class WofsStats(Transformation):
+    """
+    Example stats calculator for Wofs
+
+    It's very hard coded, but maybe that's a good thing.
+    """
+
+    def __init__(self, freq_only=False):
+        self.freq_only = freq_only
+
+    def compute(self, data):
+        is_integer_type = np.issubdtype(data.water.dtype, np.integer)
+
+        if not is_integer_type:
+            raise StatsProcessingError("Attempting to count bit flags on non-integer data. Provided data is: {}"
+                                       .format(data.water))
+
+        # 128 == clear and wet, 132 == clear and wet and masked for sea
+        # The PQ sea mask that we use is dodgy and should be ignored. It excludes lots of useful data
+        wet = ((data.water == 128) | (data.water == 132)).sum(dim='time')
+        wet.attrs = dict(nodata=-1, units=1, crs=data.crs)
+        dry = ((data.water == 0) | (data.water == 4)).sum(dim='time')
+        dry.attrs = dict(nodata=-1, units=1, crs=data.crs)
+        clear = wet + dry
+        with np.errstate(divide='ignore', invalid='ignore'):
+            frequency = wet / clear
+            frequecy.attrs = dict(nodata=-1, units=1, crs=data.crs)
+        if self.freq_only:
+            return xr.Dataset({'frequency': frequency}, attrs=dict(crs=data.crs))
+        else:
+            return xr.Dataset({'count_wet': wet,
+                               'count_clear': clear,
+                               'frequency': frequency}, attrs=dict(crs=data.crs))
+
+    def measurements(self, input_measurements):
+        measurement_names = set(m.name for m in input_measurements)
+        assert 'water' in measurement_names
+
+        wet = Measurement(name='count_wet', dtype='int16', nodata=-1, units='1')
+        dry = Measurement(name='count_clear', dtype='int16', nodata=-1, units='1')
+        frequency = Measurement(name='frequency', dtype='float32', nodata=-1, units='1')
+
+        if self.freq_only:
+            return {'frequency': frequency}
+        else:
+            return {'count_wet': wet, 'count_clear': dry, 'frequency': frequency}
