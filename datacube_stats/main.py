@@ -38,6 +38,7 @@ from datacube.utils.geometry import CRS, Geometry
 import pickle
 from queue import Queue
 from copy import deepcopy
+from time import sleep
 
 _LOG = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ def generate_virtual_datasets(client, query_workers, datacube_config, virtual_pr
     for key, value in tasks.items():
         query_string = value.get('query_string')
         tile = value.get('tile')
-        _LOG.debug("query tile date %s", query_string)
+        _LOG.debug("query string %s", query_string)
         grouped = client.submit(query_group, datacube_config, query_string,
                                 key='query-'+key,
                                 priority=task_priority, workers=query_workers)
@@ -174,16 +175,29 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
 
         from dask.distributed import Client
         client = Client(scheduler_file=scheduler_file)
-        client.wait_for_workers(queue_size)
+        num_cores = 0
+        num_workers = 1
+        while True:
+            client.wait_for_workers(num_workers)
+            for cores in client.ncores().values():
+                _LOG.debug("current cores %s", cores)
+                num_cores += cores
+            if num_cores >= queue_size:
+                break
+            else:
+                num_workers += 1
+                sleep(5)
+
         _LOG.debug('Run on cluster with workers %s', client.ncores())
 
         i = query_workers
         query_worker_list = []
-        for worker in client.scheduler_info()['workers'].keys():
+        for worker, detail in client.scheduler_info()['workers'].items():
             if i <= 0:
                 break
-            query_worker_list.append(worker)
-            i -= 1
+            if 'query' in detail.get('name', ''):
+                query_worker_list.append(worker)
+                i -= int(detail.get('ncores', 1))
 
         _LOG.debug('Workers to perform query %s', query_worker_list)
 
@@ -218,10 +232,10 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
             _LOG.debug("metadata type %s", metadata_type)
             output_config['output_product'] = product.product_definition
             for virtual_datasets_with_config in product.datasets:
+                compute_checking.inc()
                 output_config['input_region'] = virtual_datasets_with_config.input_region
                 output_config['date_range'] = virtual_datasets_with_config.date_range
                 app = StatsApp(output_config, product.product)
-                compute_checking.inc()
                 datasets = virtual_datasets_with_config.datasets
                 _LOG.debug("output product %s", datasets)
                 output = client.submit(app.generate_products, metadata_type, datasets,
@@ -394,8 +408,8 @@ class ComputeCheck():
         if result.done():
             query_hash = result.key.split('-')[1]
             _LOG.debug("future status %s", result.status)
-            self.output_queue.get()
             if result.status == 'finished':
+                self.output_queue.get()
                 future = self.result.pop(query_hash, None)
                 for key, value in self.restored.items():
                     query = value.pop(query_hash, None)

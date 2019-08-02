@@ -6,7 +6,7 @@ import dask.array as da
 from collections import Sequence
 from datacube.virtual.impl import Transformation, Measurement
 from .stat_funcs import argpercentile,  axisindex
-from pcm import gmpcm
+from hdstats import pcm
 
 
 class Percentile(Transformation):
@@ -118,9 +118,10 @@ class NewGeomedianStatistic(Transformation):
     """
         geomedian
     """
-    def __init__(self, eps=1e-3, num_threads=None):
+    def __init__(self, eps=1e-3, num_threads=None, split=4):
         self.eps = eps
         self.num_threads = num_threads
+        self.split = split
 
     def compute(self, data):
         """
@@ -128,58 +129,44 @@ class NewGeomedianStatistic(Transformation):
         :return: xarray.Dataset
         """
         dtypes = {}
+        squashed = []
         for var in data.data_vars:
             dtypes[var] = data[var].dtype
-            nodata = getattr(data[var], 'nodata', np.float('nan'))
+            nodata = getattr(data[var], 'nodata', np.float32('nan'))
             if not np.isnan(nodata):
                 data[var] = data[var].where(da.fabs(data[var] - nodata) > 1e-8)
             else:
-                data[var].data = data[var].data.astype(np.float)
-        # We need to reshape our data into Time, Y, X, Band
-        squashed_together_dimensions = self._vars_to_transpose(data)
+                data[var].data = data[var].data.astype(np.float32)
+            squashed.append(data[var].data.astype(np.float32))
 
-        squashed = data.to_array(dim='variable').transpose(*squashed_together_dimensions)
-        assert squashed.dims == squashed_together_dimensions
+        squashed = da.stack(squashed, axis=-1)
+        chunk_size = np.ceil(np.array(squashed.chunksize[1:3])/self.split).astype(int)
+        squashed = squashed.rechunk((-1,)+tuple(chunk_size)+(-1,))
 
         # Call Dale's function here
-        squashed = squashed.chunk({'time': -1, 'variable': -1})
-        result = xr.apply_ufunc(lambda x, num_threads: gmpcm(x, num_threads=num_threads), squashed,
-                                kwargs={'num_threads': self.num_threads},
-                                input_core_dims=[['time']], output_dtypes=[np.float],
-                                dask='parallelized', keep_attrs=True)
-        squashed = result.to_dataset(dim='variable')
-        for var in squashed.data_vars:
-            squashed[var].data = squashed[var].data.astype(dtypes[var])
-            squashed[var].attrs = data[var].attrs.copy()
+        squashed = squashed.map_blocks(lambda x, num_threads: pcm.gm(x.transpose([1, 2, 3, 0]),
+                                                                     num_threads=num_threads, nocheck=True),
+                                       num_threads=self.num_threads, name='hdstats_gm',
+                                       drop_axis=0, dtype=np.float32)
+        i = 0
+        result = []
+        for var in data.data_vars:
+            variable = xr.DataArray(squashed[:, :, i].rechunk(data[var].data.chunksize[1:]),
+                                    dims=data[var].dims[1:], name=var,
+                                    attrs=data[var].attrs.copy())
+            variable.data[da.isnan(variable.data)] = getattr(data[var], 'nodata', np.float32('nan'))
+            variable.data = variable.data.astype(dtypes[var])
 
-        return squashed
+            for dim in variable.dims:
+                variable.coords[dim] = data[var].coords[dim]
 
-    @staticmethod
-    def _vars_to_transpose(data):
-        """
-        We need to be able to handle data given to use in either Geographic or Projected form.
+            result.append(variable)
+            i += 1
 
-        The Data Cube provided xarrays will contain different dimensions, latitude/longitude or x/y, which means
-        the array reshaping takes different arguments.
+        result = xr.merge(result)
+        result.attrs = data.attrs.copy()
 
-        The dimension ordering returned by this function is specific to the Geometric Median PCM functions
-        included from the `pcm` module.
-
-        :return: pcm input array dimension order, datacube dimension ordering
-        """
-        is_projected = 'x' in data.dims and 'y' in data.dims
-        is_geographic = 'longitude' in data.dims and 'latitude' in data.dims
-
-        if is_projected and is_geographic:
-            raise StatsProcessingError('Data to process contains BOTH geographic and projected dimensions, '
-                                       'unable to proceed')
-        elif not is_projected and not is_geographic:
-            raise StatsProcessingError('Data to process contains NEITHER geographic nor projected dimensions, '
-                                       'unable to proceed')
-        elif is_projected:
-            return ('time', 'y', 'x', 'variable')
-        else:
-            return ('time', 'latitude', 'longitude', 'variable')
+        return result
 
     def measurements(self, input_measurements):
         return input_measurements
@@ -196,6 +183,7 @@ class WofsStats(Transformation):
         self.freq_only = freq_only
 
     def compute(self, data):
+        data = data.chunk({'time': -1})
         is_integer_type = np.issubdtype(data.water.dtype, np.integer)
 
         if not is_integer_type:
@@ -231,3 +219,35 @@ class WofsStats(Transformation):
             return {'frequency': frequency}
         else:
             return {'count_wet': wet, 'count_clear': dry, 'frequency': frequency}
+
+
+class Count(Transformation):
+    """
+    Count the number of True=1 along time axis
+
+    Use `expressions: formula` to convert values as needed
+    """
+    def __init__(self):
+        return
+
+    def compute(self, data):
+        data = data.chunk({'time': -1})
+        results = []
+        for var in data.data_vars:
+            count = da.count_nonzero(data[var].data, axis=0)
+            re = xr.DataArray(count, dims=data[var].dims[1:], name='count_'+var)
+            for dim in re.dims:
+                re.coords[dim] = data[var].coords[dim]
+            re.attrs = dict(nodata=0, units=1, crs=data[var].crs)
+            results.append(re)
+        results = xr.merge(results)
+        results.attrs['crs'] = data.crs
+        return results
+
+    def measurements(self, input_measurements):
+        output_measurements = {}
+        for m in input_measurements.keys():
+            count = Measurement(name='count_'+m, dtype='int16', nodata=0, units='1')
+            output_measurements.update({'count_'+m: count})
+
+        return output_measurements
