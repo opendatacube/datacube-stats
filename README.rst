@@ -723,6 +723,16 @@ memory per core respectively. For more details, run
 Release Notes
 =============
 
+1.0 release
+-----------
+
+    **Note:** This is the last release before our planned move to make use
+    of virtual products now available in ODC core. This version should be
+    compatible with datacube 1.7.
+
+- Minor update to the percentile algorithm
+- Some PyLint fixes
+
 0.9b4 release
 -------------
 
