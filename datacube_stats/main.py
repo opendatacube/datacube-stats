@@ -10,25 +10,17 @@ import sys
 import yaml
 
 from functools import partial
-from itertools import islice
-from textwrap import dedent
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Iterable, Iterator, Tuple
 import os
 from os import path
 
 import click
 import numpy as np
 import pandas as pd
-import pydash
-import xarray
-from dateutil import tz
 from datacube import Datacube
-from datacube.api import GridWorkflow
-from datacube.storage.masking import make_mask
 from datacube.ui import click as ui
-from datacube.utils import read_documents, import_function
+from datacube.utils import read_documents
 from .utils.dates import date_sequence
 from datacube.virtual import construct
 import json
@@ -37,8 +29,8 @@ from shapely.geometry import Polygon, mapping
 from datacube.utils.geometry import CRS, Geometry
 import pickle
 from queue import Queue
-from copy import deepcopy
 from time import sleep
+import threading
 
 _LOG = logging.getLogger(__name__)
 
@@ -125,10 +117,16 @@ def ls7_on(dataset):
     return dataset.center_time <= LS7_STOP_DATE or (dataset.center_time >= LS7_START_AGAIN
                                                     and dataset.center_time <= LS7_STOP_AGAIN)
 
-
 def ls5_on(dataset):
     LS5_START_AGAIN = datetime(2003, 1, 1)
     LS5_STOP_DATE = datetime(1998, 12, 31)
+    LS5_STOP_AGAIN = datetime(2011, 12, 31)
+    return dataset.center_time <= LS5_STOP_DATE or (dataset.center_time >= LS5_START_AGAIN
+                                                    and dataset.center_time <= LS5_STOP_AGAIN)
+
+def ls5_on_1ym(dataset):
+    LS5_START_AGAIN = datetime(2003, 1, 1)
+    LS5_STOP_DATE = datetime(1999, 12, 31)
     LS5_STOP_AGAIN = datetime(2011, 12, 31)
     return dataset.center_time <= LS5_STOP_DATE or (dataset.center_time >= LS5_START_AGAIN
                                                     and dataset.center_time <= LS5_STOP_AGAIN)
@@ -137,7 +135,7 @@ def ls5_on(dataset):
 # pylint: disable=broad-except
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
-@click.command(name='generate-product')
+@click.command(name='stats_product')
 @click.argument('stats_config_file', type=str, default='config.yaml', metavar='STATS_CONFIG_FILE')
 @click.option('--task-generator',  type=str, help='Select a task generator or...not', default='IDNO')
 @click.option('--scheduler-file',  type=str, help='The Json file of the scheduler default=./scheduler.json',
@@ -190,6 +188,7 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
 
         _LOG.debug('Run on cluster with workers %s', client.ncores())
 
+        client.get_versions(check=True)
         i = query_workers
         query_worker_list = []
         for worker, detail in client.scheduler_info()['workers'].items():
@@ -204,7 +203,7 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
         checkpoint_path = stats_config.get('location') + '/checkpointing'
         checkpoint_file = checkpoint_path + '/checkpointing.pkl'
         if not path.exists(checkpoint_path):
-            os.mkdir(checkpoint_path)
+            os.makedirs(checkpoint_path)
             restart = False
         elif not path.exists(checkpoint_file):
             restart = False
@@ -213,7 +212,7 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
         compute_checking = ComputeCheck(queue_size=queue_size, restart=restart, checkpoint=checkpoint_file)
 
         if compute_checking.restored != {}:
-            tasks = deepcopy(compute_checking.restored)
+            tasks = copy.deepcopy(compute_checking.restored)
         else:
             input_region = stats_config['input_region']
             date_range = stats_config['date_ranges']
@@ -224,7 +223,7 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
                     _LOG.error("More than one product with the same name %s", product_name)
                 product_name = product['name']
                 tasks[product_name] = generate_task_queue(product_name, input_region, date_range)
-            compute_checking.restored = deepcopy(tasks)
+            compute_checking.restored = copy.deepcopy(tasks)
 
         products = task_generator(client, query_worker_list, datacube_config, stats_config, tasks)
         for product in products:
@@ -397,6 +396,7 @@ class ComputeCheck():
             self.restored = {}
         self.result = {}
         self.output_queue = Queue(maxsize=queue_size)
+        self.lock = threading.Lock()
 
     def inc(self):
         self.output_queue.put(1)
@@ -409,15 +409,16 @@ class ComputeCheck():
             query_hash = result.key.split('-')[1]
             _LOG.debug("future status %s", result.status)
             if result.status == 'finished':
-                self.output_queue.get()
-                future = self.result.pop(query_hash, None)
-                for key, value in self.restored.items():
-                    query = value.pop(query_hash, None)
-                    if query is not None:
-                        _LOG.debug("query done %s", query)
-                        break
-                with open(self.checkpoint, 'wb') as f:
-                    pickle.dump(self.restored, f)
+                with self.lock:
+                    self.output_queue.get()
+                    future = self.result.pop(query_hash, None)
+                    for key, value in self.restored.items():
+                        query = value.pop(query_hash, None)
+                        if query is not None:
+                            _LOG.debug("query done %s", query)
+                            break
+                    with open(self.checkpoint, 'wb') as f:
+                        pickle.dump(self.restored, f)
             else:
                 _LOG.debug("retry the future %s", result)
                 result.retry()

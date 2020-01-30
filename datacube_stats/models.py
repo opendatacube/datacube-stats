@@ -72,7 +72,8 @@ class OutputProduct:
         except ImportError:
             from datacube.model import DatasetType as Product
 
-        Product.validate(product_definition)
+        # Disable this due to a json schema validation bug in datacube-core
+        # Product.validate(product_definition)
         return Product(metadata_type, product_definition)
 
     def __str__(self):
