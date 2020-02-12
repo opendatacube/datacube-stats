@@ -393,7 +393,7 @@ class NetCDFCFOutputDriver(OutputDriver):
 
     def _nco_from_sources(self, sources, geobox, measurements, variable_params, filename):
 
-        coordinates = OrderedDict((name, geometry.Coordinate(coord.values, coord.units))
+        coordinates = OrderedDict((name, coord)
                                   for name, coord in sources.coords.items())
         coordinates.update(geobox.coordinates)
 
