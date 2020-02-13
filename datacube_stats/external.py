@@ -6,7 +6,9 @@ from datacube.virtual.impl import Transformation
 from osgeo import ogr
 from osgeo import gdal
 from osgeo import osr
+import logging
 
+_LOG = logging.getLogger(__name__)
 
 class MaskByValue(Transformation):
     '''
@@ -141,3 +143,61 @@ class MangroveCC(Transformation):
         gdal.RasterizeLayer(target_ds, [1], source_layer, burn_values=[1])
         dask_array = da.asarray(band.ReadAsArray()).rechunk(data.data.chunksize[1:])
         return dask_array
+
+class ndvi_clim_mean(Transformation):
+    """
+    Calculate rolling quarterly NDVI mean climatolgies
+
+    """
+    def __init__(self):
+
+        self.quarter= {'JFM': [1,2,3],
+                       'FMA': [2,3,4],
+                       'MAM': [3,4,5],
+                       'AMJ': [4,5,6],
+                       'MJJ': [5,6,7],
+                       'JJA': [6,7,8],
+                       'JAS': [7,8,9],
+                       'ASO': [8,9,10],
+                       'SON': [9,10,11],
+                       'OND': [10,11,12],
+                       'NDJ': [11,12,1],
+                       'DJF': [12,1,2],
+                      }
+        self.var_names = list(self.quarter.keys())
+
+    def compute(self, data):
+        _LOG.info("length of input data:%s", str(len(data.time.values)))
+        def attrs_reassign(da, dtype=np.float32):
+            da_attr = data.attrs
+            da = da.assign_attrs(**da_attr)
+            return da
+
+        data = data.where(data != -999)
+        _LOG.info("data array %s", data)
+
+        ndvi = xr.Dataset(data_vars={'ndvi': (data.nbart_nir - data.nbart_red) / (data.nbart_nir + data.nbart_red)},
+                              coords=data.coords,
+                              attrs=dict(crs=data.crs))
+
+        ndvi_var = []
+        for q in self.quarter.keys():
+            ix = ndvi['time.month'].isin(self.quarter[q])
+            ndvi_clim_mean = ndvi.where(ix, drop = True).mean(dim='time')
+            ndvi_clim_mean = ndvi_clim_mean.to_array(name=q).drop('variable').squeeze()
+            ndvi_var.append(ndvi_clim_mean)
+
+        q_clim_mean = xr.merge(ndvi_var)
+        #assign back attributes
+        q_clim_mean.attrs = data.attrs
+        q_clim_mean = q_clim_mean.apply(attrs_reassign, keep_attrs=True)
+        _LOG.info("results %s", q_clim_mean)
+
+        return q_clim_mean
+
+    def measurements(self, input_measurements):
+        output_measurements = dict()
+        for m_name in self.var_names:
+            output_measurements[m_name] = Measurement(name=m_name, dtype='float32', nodata=-999, units='1')
+
+        return output_measurements

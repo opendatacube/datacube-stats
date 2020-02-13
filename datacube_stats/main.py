@@ -187,8 +187,9 @@ def main(datacube_config, stats_config_file, task_generator, scheduler_file, que
                 sleep(5)
 
         _LOG.debug('Run on cluster with workers %s', client.ncores())
+        version_info = client.get_versions(check=True)
+        _LOG.debug('Cluster version info %s', version_info)
 
-        client.get_versions(check=True)
         i = query_workers
         query_worker_list = []
         for worker, detail in client.scheduler_info()['workers'].items():
@@ -301,8 +302,8 @@ def normalize_time_range(stats_config, year=None):
                                                     stats_duration=stats_config['date_ranges']['stats_duration'],
                                                     step_size=stats_config['date_ranges']['step_size'])
     else:
-        stats_config['date_ranges'] = [(pd.to_datetime(stats_config['date_ranges']['start_date']),
-                                        pd.to_datetime(stats_config['date_ranges']['end_date']))]
+        stats_config['date_ranges'] = [(pd.to_datetime(stats_config['date_ranges']['start_date']).date(),
+                                        pd.to_datetime(stats_config['date_ranges']['end_date']).date())]
     return stats_config
 
 

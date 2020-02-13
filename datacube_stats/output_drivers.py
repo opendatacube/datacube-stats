@@ -520,7 +520,6 @@ class GeoTiffOutputDriver(OutputDriver):
                 datasets = datasets_to_doc(datasets)
                 with fileutils.atomic_save(yaml_filename) as yaml_dst:
                     yaml_dst.write(datasets.values[0])
-
         else:
             _LOG.error('Unexpected more than 1 dataset %r being written at once, '
                        'investigate!', datasets)
