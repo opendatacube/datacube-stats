@@ -723,6 +723,16 @@ memory per core respectively. For more details, run
 Release Notes
 =============
 
+1.0.1 release
+-----------
+
+    **Note:** This is the last release before our planned move to make use
+    of virtual products now available in ODC core. This version should be
+    compatible with (yet to be released) ``datacube`` 1.8.
+
+- Fix NetCDF CF driver issue with ODC 1.8
+
+
 1.0 release
 -----------
 

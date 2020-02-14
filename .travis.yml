@@ -34,7 +34,8 @@ before_install:
 install:
 
   - pip install pydash boltons yamllint pycodestyle voluptuous hdmedians 'pytest>=3.6' mock boltons pytest-cov coveralls psutil hypothesis shapely fiona pylint boto3 'numpy>=1.17'
-  - pip install datacube==1.7 gdal==2.4.0
+  - pip install gdal==2.4.0
+  - travis_retry pip install git+git://github.com/opendatacube/datacube-core.git@develop
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/eo-datasets.git@eodatasets1
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/digitalearthau.git
   - pip install . --no-deps --upgrade
