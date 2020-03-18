@@ -30,6 +30,8 @@ class MaskByValue(Transformation):
 
         results = results > -9999
         results.attrs['crs'] = data.attrs['crs']
+        results = results.to_dataset()
+        results.attrs['crs'] = data.attrs['crs']
         return results
 
     def measurements(self, input_measurements):
