@@ -723,23 +723,19 @@ memory per core respectively. For more details, run
 Release Notes
 =============
 
-1.0.1 release
------------
-
+1.0.2 release
+-------------
     **Note:** This is the last release before our planned move to make use
     of virtual products now available in ODC core. This version should be
-    compatible with (yet to be released) ``datacube`` 1.8.
+    compatible ``datacube`` 1.805b or 06b.
+- Fix incompatibilities with ODC 1.8
 
+1.0.1 release
+-------------
 - Fix NetCDF CF driver issue with ODC 1.8
-
 
 1.0 release
 -----------
-
-    **Note:** This is the last release before our planned move to make use
-    of virtual products now available in ODC core. This version should be
-    compatible with datacube 1.7.
-
 - Minor update to the percentile algorithm
 - Some PyLint fixes
 
