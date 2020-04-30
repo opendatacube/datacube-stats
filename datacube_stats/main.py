@@ -32,17 +32,16 @@ from datacube.utils import read_documents, import_function
 from datacube.utils.geometry import Geometry, GeoBox
 from datacube_stats.models import OutputProduct
 from datacube_stats.output_drivers import OUTPUT_DRIVERS, OutputFileAlreadyExists, get_driver_by_name, \
-    NoSuchOutputDriver
+    NoSuchOutputDriver, OutputDriver, OutputDriverResult
 from datacube_stats.statistics import StatsConfigurationError, STATS
 from datacube_stats.utils import cast_back, pickle_stream, unpickle_stream, _find_periods_with_data
 from datacube_stats.utils import tile_iter, sensible_mask_invalid_data, sensible_where, sensible_where_inplace
 from datacube_stats.utils.dates import date_sequence
-from .utils.timer import MultiTimer, wrap_in_timer
-from .utils import sorted_interleave, Slice, prettier_slice
-from .tasks import select_task_generator
-from .schema import stats_schema
-from .models import StatsTask, DataSource
-from .output_drivers import OutputDriver, OutputDriverResult
+from datacube_stats.utils.timer import MultiTimer, wrap_in_timer
+from datacube_stats.utils import sorted_interleave, Slice, prettier_slice
+from datacube_stats.tasks import select_task_generator
+from datacube_stats.schema import stats_schema
+from datacube_stats.models import StatsTask, DataSource
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -497,7 +496,6 @@ def execute_task(task: StatsTask, output_driver, chunking) -> StatsTask:
     :param chunking: dict of dimension sizes to chunk the computation by
     """
     timer = MultiTimer().start('total')
-    datacube.set_options(reproject_threads=1)
 
     process_chunk = load_process_save_chunk_iteratively if task.is_iterative else load_process_save_chunk
 

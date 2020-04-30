@@ -4,12 +4,12 @@ from pandas._libs import json
 from datacube.utils.geometry import Geometry, CRS
 from datacube_stats.tasks import NonGriddedTaskGenerator, ArbitraryTileMaker, GriddedTaskGenerator, \
     select_task_generator
-from dateutil.parser import parse
+from datetime import datetime
 
 EXAMPLE_STORAGE = {'crs': 'EPSG:4326', 'resolution': {'latitude': 0.1, 'longitude': 0.1},
                    'tile_size': {'latitude': 1, 'longitude': 1}}
 EXAMPLE_SOURCES_SPEC = [{'product': 'fake_product'}]
-EXAMPLE_DATE_RANGE = [(parse('2000-01-01'), parse('2001-01-01'))]
+EXAMPLE_DATE_RANGE = [('2000-01-01', '2001-01-01')]
 
 BIG_POLYGON = {
     "type": "Polygon",
@@ -42,7 +42,7 @@ BIG_POLYGON = {
 
 class FakeDataset:
     extent = Geometry(BIG_POLYGON, crs=CRS('EPSG:4326'))
-    center_time = object()
+    center_time = datetime(2001, 5, 10)
     crs = CRS('EPSG:4326')
 
 

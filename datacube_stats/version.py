@@ -5,4 +5,4 @@ defined in datacube_stats/__init__.py then install would fail because there are 
 dependencies imported in datacube_stats/__init__.py that are not present until after
 install. Do not import anything into this module."""
 
-__version__ = '1.0.1'
+__version__ = '1.0.2'
