@@ -38,6 +38,7 @@ install:
   - travis_retry pip install git+git://github.com/opendatacube/datacube-core.git@develop
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/eo-datasets.git@eodatasets1
   - travis_retry pip install git+git://github.com/GeoscienceAustralia/digitalearthau.git
+  - travis_retry pip install --extra-index-url="https://packages.dea.ga.gov.au" odc-algo 
   - pip install . --no-deps --upgrade
 
   - pip freeze

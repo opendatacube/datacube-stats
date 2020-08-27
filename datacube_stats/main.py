@@ -42,6 +42,7 @@ from datacube_stats.utils import sorted_interleave, Slice, prettier_slice
 from datacube_stats.tasks import select_task_generator
 from datacube_stats.schema import stats_schema
 from datacube_stats.models import StatsTask, DataSource
+from odc.algo import fmask_to_bool
 
 __all__ = ['StatsApp', 'main']
 _LOG = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ def gather_tile_indexes(tile_index, tile_index_file):
         return [tile_index]
 
     with open(tile_index_file) as fl:
-        tile_indexes = [tuple(int(x) for x in l.split()) for l in fl]
+        tile_indexes = [tuple(int(x) for x in t.split()) for t in fl]
         if len(tile_indexes) == 0:
             return None
         return tile_indexes
@@ -771,6 +772,9 @@ def make_mask_from_spec(loaded_mask_data, mask_spec):
     elif mask_spec.get('greater_than') is not None:
         greater_than = float(mask_spec['greater_than'])
         mask = loaded_mask_data > greater_than
+    elif mask_spec.get('nonmasked_values') is not None:
+        valid_values = mask_spec['nonmasked_values']
+        mask = fmask_to_bool(loaded_mask_data, valid_values)
 
     if mask_spec.get('invert') is True:
         mask = np.logical_not(mask)
