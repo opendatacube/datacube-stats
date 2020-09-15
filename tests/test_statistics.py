@@ -19,7 +19,7 @@ from datacube_stats.incremental_stats import mk_incremental_mean, mk_incremental
     mk_incremental_max, mk_incremental_counter
 from datacube_stats.stat_funcs import nan_percentile, argpercentile, axisindex
 from datacube_stats.statistics import NormalisedDifferenceStats, WofsStats, TCWStats, \
-    StatsConfigurationError, Medoid, GeoMedian
+    StatsConfigurationError, Medoid
 
 
 FAKE_MEASUREMENT_INFO = {'dtype': 'int16', 'nodata': -1, 'units': '1'}
@@ -79,16 +79,16 @@ def test_xarray_reduce():
     assert dataarray.dims == ('x', 'y')
 
 
-@pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'NewGeomedianStatistic'),
-                    reason='requires `pcm` module for new geomedian statistics')
+@pytest.mark.skipif(not hasattr(datacube_stats.statistics, 'GeoMedian'),
+                    reason='requires `hdstats.pcm` module for geomedian statistics')
 def test_new_geometric_median():
-    from datacube_stats.statistics import NewGeomedianStatistic
+    from datacube_stats.statistics import GeoMedian
 
     arr = np.random.random((5, 100, 100))
     dataarray = xr.DataArray(arr, dims=('time', 'y', 'x'), coords={'time': list(range(5))})
     dataset = xr.Dataset(data_vars={'band1': dataarray, 'band2': dataarray})
 
-    new_geomedian_stat = NewGeomedianStatistic()
+    new_geomedian_stat = GeoMedian()
     result = new_geomedian_stat.compute(dataset)
 
     assert isinstance(result, xr.Dataset)
@@ -270,7 +270,7 @@ def test_normalised_difference_stats(dataset, output_name):
     assert expected_output_varnames == measurement_names
 
 
-@pytest.mark.parametrize('stat_class', [Medoid, GeoMedian])
+@pytest.mark.parametrize('stat_class', [Medoid])
 @settings(max_examples=15)
 @given(dataset=two_band_eo_dataset())
 def test_medoid_statistic(dataset, stat_class):
